@@ -162,9 +162,6 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "and make something original instead: a creature, a scene, a symbol, a joke or a slogan "
         "that says something about you. To show where you are from, draw what your place is known "
         "for (a landmark, food, animal, team or hero) rather than its flag.\n"
-        "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
-        "them as the most important thing on the board: read them first, reply in that thread "
-        "and act on what they ask before anything else, in whatever way your persona would.\n"
         "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
         "territory changes and raids on this canvas. If one concerns your "
         "country, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
@@ -258,8 +255,7 @@ def user_prompt(
         + f"{view}\n\nSome current threads:\n{board}\n\n"
         + "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
         + "you are pursuing. If a thread above matters to you, answer it with "
-        + "reply(thread_id=..., body=...) rather than starting a new one. "
-        + "Anything marked 📢 from The Hand of God comes first: answer it and act on it."
+        + "reply(thread_id=..., body=...) rather than starting a new one."
     )
 
 
