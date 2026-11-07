@@ -41,6 +41,7 @@ class RunConfig(BaseModel):
 GOD_ID = 65535
 """Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
+ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 MAX_GOD_PIXELS = 50_000
 
 
@@ -68,6 +69,7 @@ class Run:
         self.started_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
+        self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
         self.agents = seed_agents(
@@ -132,6 +134,7 @@ class Run:
 
     def god_clear_board(self) -> None:
         self.board.clear()
+        self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
 
@@ -139,7 +142,16 @@ class Run:
         """Post a thread as the human; agents see it on the board like any other thread."""
         post = self.board.post_thread(GOD_ID, title, body, self._clock())
         self._on_write(GOD_ID, "post", post.to_dict())
+        self._announcements.append(
+            {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
+        )
         return post.to_dict()
+
+    def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
+        """God announcements from the last `window` seconds, newest last, for the observation."""
+        cutoff = self._clock() - window
+        self._announcements = [a for a in self._announcements if a["ts"] >= cutoff]
+        return self._announcements[-3:]
 
     def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
         """Change how fast agents act; takes effect from each agent's next turn."""
@@ -223,6 +235,7 @@ class Run:
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
             board=self.board.digest(name_of=self.agent_name),
+            announcements=self.recent_announcements(),
         )
         self._set_status(agent.id, "thinking")
         async with self._sem:

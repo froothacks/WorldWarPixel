@@ -99,3 +99,19 @@ def test_god_endpoints_can_be_locked_with_a_token(monkeypatch: pytest.MonkeyPatc
             client.post(f"/runs/{rid}/stop")
     finally:
         get_settings.cache_clear()
+
+
+def test_announcements_reach_the_observation_until_they_expire() -> None:
+    clock = [1000.0]
+    run = Run("g", CONFIG, EventLog(), RandomWalkPolicy(seed=1), clock=lambda: clock[0])
+    assert run.recent_announcements() == []
+    post = run.god_announce("Draw hearts", "A heart for every flag, please.")
+    (a,) = run.recent_announcements()
+    assert a["thread_id"] == post["thread_id"] and a["title"] == "Draw hearts"
+    clock[0] += 599
+    assert len(run.recent_announcements()) == 1
+    clock[0] += 2
+    assert run.recent_announcements() == []
+    run.god_announce("Again", "x")
+    run.god_clear_board()
+    assert run.recent_announcements() == []

@@ -190,9 +190,15 @@ def user_prompt(agent: AgentSpec, obs: Observation, view: str) -> str:
         )
         or "- (no threads yet; you could start one)"
     )
+    announce = "".join(
+        f'\n📢 ANNOUNCEMENT from The Hand of God (thread {a["thread_id"]}): "{a["title"]}" — '
+        f"{a['body']}\nEveryone sees this. React however your persona would: reply in that "
+        "thread, join in, protest, or ignore it.\n"
+        for a in obs.announcements
+    )
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
-        f"{view}\n\nMost active threads:\n{board}\n\n"
+        f"{announce}{view}\n\nMost active threads:\n{board}\n\n"
         "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
         "budget. If a thread above interests you, answer it with reply(thread_id=..., body=...) "
         "rather than starting a new one."

@@ -37,6 +37,7 @@ class Observation:
     canvas_width: int
     canvas_height: int
     board: list[dict[str, Any]]
+    announcements: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Policy(Protocol):
