@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,6 +53,7 @@ class ToolSet:
         sink: EventSink,
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
+        pending: Mapping[tuple[int, int], tuple[int, int]] | None = None,
     ) -> None:
         self._canvas = canvas
         self._board = board
@@ -61,6 +62,16 @@ class ToolSet:
         self._sink = sink
         self._clock = clock
         self._writer = writer
+        self._pending = pending if pending is not None else {}
+        """(x, y) -> (color, owner) of pixels handed to the writer but not yet on the canvas."""
+
+    def _get(self, x: int, y: int) -> int:
+        hit = self._pending.get((x, y))
+        return hit[0] if hit else self._canvas.get(x, y)
+
+    def _owner(self, x: int, y: int) -> int:
+        hit = self._pending.get((x, y))
+        return hit[1] if hit else self._canvas.owner(x, y)
 
     def _check(self, kind: str, n: int) -> None:
         left = getattr(self.budget, kind)
@@ -120,15 +131,13 @@ class ToolSet:
         # Visible progress first: cells whose colour changes, then same-coloured cells we merely
         # claim from other agents (or from the blank background).
         wanted = [
-            (x, y, c)
-            for x, y, c in cells
-            if self._canvas.in_bounds(x, y) and self._canvas.get(x, y) != c
+            (x, y, c) for x, y, c in cells if self._canvas.in_bounds(x, y) and self._get(x, y) != c
         ] + [
             (x, y, c)
             for x, y, c in cells
             if self._canvas.in_bounds(x, y)
-            and self._canvas.get(x, y) == c
-            and self._canvas.owner(x, y) != self._agent_id
+            and self._get(x, y) == c
+            and self._owner(x, y) != self._agent_id
         ]
         if not cells:
             raise ToolError("the stencil is empty")

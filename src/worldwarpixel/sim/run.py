@@ -259,14 +259,15 @@ class Run:
 
     async def _agent_loop(self, agent: AgentSpec) -> None:
         queue: asyncio.Queue[PixelWrite] = asyncio.Queue()
-        painter = asyncio.create_task(self._painter(agent, queue))
+        pending: dict[tuple[int, int], tuple[int, int]] = {}
+        painter = asyncio.create_task(self._painter(agent, queue, pending))
         try:
             await self._sleep(self.rng.random() * agent.cooldown)
             last_turn = self.started_at or self._clock()
             while True:
                 await self._running.wait()
                 now = self._clock()
-                await self._turn(agent, now - last_turn, queue)
+                await self._turn(agent, now - last_turn, queue, pending)
                 last_turn = now
                 j = self.config.jitter
                 await self._sleep(agent.cooldown * (1 + self.rng.uniform(-j, j)))
@@ -277,12 +278,19 @@ class Run:
             with contextlib.suppress(asyncio.CancelledError):
                 await painter
 
-    async def _painter(self, agent: AgentSpec, queue: asyncio.Queue[PixelWrite]) -> None:
+    async def _painter(
+        self,
+        agent: AgentSpec,
+        queue: asyncio.Queue[PixelWrite],
+        pending: dict[tuple[int, int], tuple[int, int]],
+    ) -> None:
         """Drip an agent's queued pixels onto the canvas one every `pixel_interval` seconds."""
         while True:
             w = await queue.get()
             await self._running.wait()
             apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
+            if pending.get((w.x, w.y)) == (w.color, w.agent_id):
+                del pending[(w.x, w.y)]
             if queue.empty() and self.status.get(agent.id) == "painting":
                 self._set_status(agent.id, "idle")
             interval = self.config.pixel_interval
@@ -290,7 +298,11 @@ class Run:
                 await self._sleep(interval)
 
     async def _turn(
-        self, agent: AgentSpec, elapsed: float, queue: asyncio.Queue[PixelWrite] | None = None
+        self,
+        agent: AgentSpec,
+        elapsed: float,
+        queue: asyncio.Queue[PixelWrite] | None = None,
+        pending: dict[tuple[int, int], tuple[int, int]] | None = None,
     ) -> None:
         budget = TurnBudget(self.config.pixels_per_turn, self.config.posts_per_turn)
         sink = lambda kind, payload: self._on_write(agent.id, kind, payload)  # noqa: E731
@@ -301,8 +313,12 @@ class Run:
                 return
             for w in writes:
                 queue.put_nowait(w)
+                if pending is not None:
+                    pending[(w.x, w.y)] = (w.color, w.agent_id)
 
-        tools = ToolSet(self.canvas, self.board, agent.id, budget, sink, self._clock, writer)
+        tools = ToolSet(
+            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
+        )
         obs = Observation(
             elapsed=elapsed,
             budget=budget,
