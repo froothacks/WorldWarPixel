@@ -3,6 +3,8 @@ import json
 import random
 from typing import Any
 
+import pytest
+
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
@@ -15,7 +17,7 @@ from worldwarpixel.sim.llm_policy import (
     system_prompt,
 )
 from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
-from worldwarpixel.sim.tools import ToolSet, TurnBudget
+from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
 class _Obj:
@@ -355,6 +357,19 @@ def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> 
     a4 = {"country": "peru", "x": 100, "y": 10, "width": 20}
     policy._dispatch(third, tools_for(third), "draw_flag", a4)
     assert a4["x"] == 100 - 20 - 2
+    # no room right, left or below: the drawing stays put instead of leaving the canvas
+    small = Canvas(40, 20)
+    tiny = ToolSet(small, board, third.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0)
+    policy._projects[second.id] = (
+        "draw_flag",
+        {"country": "japan", "x": 2, "y": 2, "width": 36},
+        5,
+    )
+    a5 = {"country": "peru", "x": 2, "y": 2, "width": 36}
+    policy._dispatch(third, tiny, "draw_flag", a5)
+    assert (a5["x"], a5["y"]) == (2, 2) and "moved" not in a5
+    with pytest.raises(ToolError):
+        tiny.paint_stencil([(100, 100, 5)])
     # the first agent continuing its own flag is never moved
     again = dict(flag)
     policy._dispatch(first, tools_for(first), "draw_flag", again)

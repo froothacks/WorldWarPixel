@@ -458,7 +458,9 @@ class LLMPolicy:
             tools.record_action(name, _public_args(name, args), result)
         return json.dumps(result)
 
-    def _avoid_collision(self, agent: AgentSpec, a: dict[str, Any], width: int, w: int) -> None:
+    def _avoid_collision(
+        self, agent: AgentSpec, a: dict[str, Any], size: tuple[int, int], canvas: tuple[int, int]
+    ) -> None:
         """Starting a new drawing exactly where someone else is drawing? Shift it alongside.
 
         Small models copy the coordinates they see; this turns a pile-up into a row of drawings.
@@ -472,6 +474,8 @@ class LLMPolicy:
             for aid, p in self._projects.items()
             if aid != agent.id
         }
+        width, height = size
+        w, h = canvas
         for _ in range(8):
             other = taken.get((a["x"], a["y"]))
             if other is None:
@@ -481,8 +485,10 @@ class LLMPolicy:
                 a["x"] = a["x"] + ow + 2
             elif a["x"] - width - 2 >= 0:
                 a["x"] = a["x"] - width - 2
-            else:
+            elif a["y"] + oh + 2 + height <= h:
                 a["y"] = a["y"] + oh + 2
+            else:
+                return  # nowhere to go; paint where asked rather than off the canvas
             a["moved"] = True
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
@@ -539,14 +545,14 @@ class LLMPolicy:
                 a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["width"] = min(max(int(a.get("width", 24)), 9), 36)
-                self._avoid_collision(agent, a, a["width"], w)
+                self._avoid_collision(agent, a, _footprint("draw_flag", a), (w, h))
                 return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
             case "draw_text":
                 a["text"] = str(a["text"])[:24]
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"] = colour(a.get("color"))
                 a["scale"] = _scale(a.get("scale", 1))
-                self._avoid_collision(agent, a, len(a["text"]) * 4 * a["scale"], w)
+                self._avoid_collision(agent, a, _footprint("draw_text", a), (w, h))
                 return tools.paint_stencil(
                     text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
                 )
@@ -555,7 +561,7 @@ class LLMPolicy:
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
                 a["scale"] = _scale(a.get("scale", 1))
-                self._avoid_collision(agent, a, 9 * a["scale"], w)
+                self._avoid_collision(agent, a, _footprint("draw_shape", a), (w, h))
                 return tools.paint_stencil(
                     shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
                 )
