@@ -61,10 +61,14 @@ export default function Territory({ store, version, agents, palette, highlight, 
 
   const [counts, setCounts] = useState<{ per: Uint32Array; god: number; painted: number; at: number } | null>(null);
   const trend = useRef<{ per: Uint32Array; at: number } | null>(null);
+  const lastPer = useRef<Uint32Array | null>(null);
   const lastVersion = useRef(-1);
 
   useEffect(() => {
     if (!store) return;
+    lastVersion.current = -1;
+    trend.current = null;
+    lastPer.current = null;
     const recount = () => {
       if (store.version === lastVersion.current) return;
       lastVersion.current = store.version;
@@ -84,7 +88,8 @@ export default function Territory({ store, version, agents, palette, highlight, 
         }
       }
       const at = Date.now();
-      if (!trend.current || at - trend.current.at > TREND_MS) trend.current = { per: counts?.per ?? per, at };
+      if (!trend.current || at - trend.current.at > TREND_MS) trend.current = { per: lastPer.current ?? per, at };
+      lastPer.current = per;
       setCounts({ per, god, painted, at });
     };
     recount();
