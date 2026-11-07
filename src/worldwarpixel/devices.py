@@ -6,12 +6,16 @@ the society's unattributed murmur. With no tokens configured the endpoints are o
 society comes from ``?society=`` (local development only).
 """
 
+import array
 import asyncio
 import contextlib
 import hmac
 import json
 import logging
+import time
+import wave
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket
@@ -146,6 +150,30 @@ async def transcribe(request_app: Any, pcm: bytes, rate: int) -> str:
     return await transcriber(pcm, rate)
 
 
+def clip_stats(pcm: bytes, rate: int) -> str:
+    """One log line that tells silence, clipping and wrong sample formats apart."""
+    s = array.array("h", pcm[: len(pcm) // 2 * 2])
+    if not s:
+        return "empty clip"
+    mean = sum(s) / len(s)
+    rms = (sum((x - mean) ** 2 for x in s) / len(s)) ** 0.5
+    peak = max(abs(x) for x in s)
+    return f"{len(s) / rate:.1f}s @ {rate} Hz, rms {rms:.0f}, peak {peak}, dc {mean:.0f}"
+
+
+def dump_clip(device: Device, pcm: bytes, rate: int) -> None:
+    folder = get_settings().voice_dump_dir
+    if not folder:
+        return
+    path = Path(folder) / f"{device.id}-{time.strftime('%H%M%S')}.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+
+
 router = APIRouter(prefix="/devices", tags=["devices"])
 MAX_BODY = MAX_SECONDS * 48_000 * 2 * 2 + 4096
 """Largest upload worth reading: 20 s of 48 kHz stereo 16-bit WAV."""
@@ -259,6 +287,9 @@ async def device_socket(websocket: WebSocket) -> None:
 
     async def finish(pcm: bytes, run: Run | None) -> None:
         voice.update(status="transcribing", error=None)
+        log.info("voice clip from %s: %s", device.id, clip_stats(pcm, rate))
+        with contextlib.suppress(OSError):
+            dump_clip(device, pcm, rate)
         try:
             await push()
             if run is None:
@@ -268,6 +299,7 @@ async def device_socket(websocket: WebSocket) -> None:
             await speak(app, run, device.society, transcript)
             voice.update(status="done")
         except (TranscriptionUnavailable, ValueError) as e:
+            log.warning("voice clip from %s failed: %s", device.id, e)
             voice.update(status="error", error=str(e))
         except Exception as e:
             log.exception("voice clip failed")

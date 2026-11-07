@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     whisper_model: str = "base"
     murmur_condense: bool = False
+    voice_dump_dir: str = ""
+    """When set, every received voice clip is saved there as a WAV (for debugging devices)."""
     """Rephrase voice transcripts into a rumour with the narrator model (small models mangle it)."""
     """faster-whisper model size used to transcribe society-screen voice clips."""
     max_concurrency: int = 10
