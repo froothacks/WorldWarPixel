@@ -26,7 +26,8 @@ const MAX_SECONDS = 20;
 export default function Screen({ society }: { society: number }) {
   const params = new URLSearchParams(location.search);
   const token = params.get("token");
-  const auth = `society=${society}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+  const run = params.get("run");
+  const auth = `society=${society}${token ? `&token=${encodeURIComponent(token)}` : ""}${run ? `&run=${encodeURIComponent(run)}` : ""}`;
   const [state, setState] = useState<DeviceState | null>(null);
   const [palette, setPalette] = useState<string[]>([]);
   const [conn, setConn] = useState("connecting");

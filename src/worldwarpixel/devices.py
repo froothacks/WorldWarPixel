@@ -88,14 +88,14 @@ def require_device(
 DeviceDep = Annotated[Device, Depends(require_device)]
 
 
-def current_run(manager: RunManager) -> Run | None:
-    """The newest live run with societies (screens follow whatever is on show)."""
-    live = [r for r in manager.active() if r.societies is not None]
+def current_run(manager: RunManager, run_id: str | None = None) -> Run | None:
+    """The newest live run with societies (screens follow whatever is on show), or `run_id`."""
+    live = [r for r in manager.active() if r.societies is not None and run_id in (None, r.id)]
     return max(live, key=lambda r: r.started_at or 0.0, default=None)
 
 
 def _run_for(request: Request, device: Device) -> Run:
-    run = current_run(request.app.state.runs)
+    run = current_run(request.app.state.runs, request.query_params.get("run"))
     if run is None or run.societies is None:
         raise HTTPException(409, "no running world with societies")
     if device.society >= run.societies.count:
@@ -153,7 +153,7 @@ MAX_BODY = MAX_SECONDS * 48_000 * 2 * 2 + 4096
 
 @router.get("/me")
 async def device_me(request: Request, device: DeviceDep) -> dict[str, Any]:
-    run = current_run(request.app.state.runs)
+    run = current_run(request.app.state.runs, request.query_params.get("run"))
     out: dict[str, Any] = {"device": device.id, "society": device.society, "palette": PALETTE}
     if run is not None and run.societies is not None and device.society < run.societies.count:
         out["state"] = device_state(run, device, {"status": "idle"})
@@ -215,6 +215,7 @@ async def device_voice(request: Request, device: DeviceDep) -> dict[str, Any]:
 @router.websocket("/ws")
 async def device_socket(websocket: WebSocket) -> None:
     q = websocket.query_params
+    run_id = q.get("run")
     society = q.get("society")
     device = authenticate(
         _bearer(websocket.headers.get("authorization")) or q.get("token"),
@@ -237,7 +238,7 @@ async def device_socket(websocket: WebSocket) -> None:
 
     async def push() -> None:
         nonlocal seen
-        run = current_run(app.state.runs)
+        run = current_run(app.state.runs, run_id)
         if run is None or run.societies is None or device.society >= run.societies.count:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
             return
@@ -302,7 +303,7 @@ async def device_socket(websocket: WebSocket) -> None:
             elif kind == "voice.start":
                 rate = int(data.get("rate", RATE))
                 clip = bytearray()
-                clip_run = current_run(app.state.runs)
+                clip_run = current_run(app.state.runs, run_id)
                 voice.update(status="listening", error=None)
             elif kind == "voice.cancel":
                 clip = None

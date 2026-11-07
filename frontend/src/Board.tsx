@@ -219,7 +219,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
           ) : (
             <span className="muted">Nobody has spoken to this society yet.</span>
           )}
-          <a href={`?screen=${current.id}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
+          <a href={`?screen=${current.id}&run=${runId}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
             Screen ↗
           </a>
         </div>
