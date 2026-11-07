@@ -12,6 +12,7 @@ import {
 import { openRunStream, type ServerEvent } from "./ws";
 import { PixelStore } from "./pixelStore";
 import GodBar, { type GodTool } from "./GodBar";
+import { GOD_ID, GOD_NAME } from "./api";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
@@ -158,7 +159,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     [agents],
   );
   const agentName = useCallback(
-    (id: number) => agentMap.get(id)?.name ?? `agent ${id}`,
+    (id: number) => (id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`)),
     [agentMap],
   );
   const lastThought = useMemo(() => {

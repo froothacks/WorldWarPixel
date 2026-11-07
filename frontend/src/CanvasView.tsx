@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
-import type { Agent } from "./api";
+import { GOD_ID, GOD_NAME, type Agent } from "./api";
 import type { GodTool } from "./GodBar";
 import type { PixelStore } from "./pixelStore";
 
@@ -217,7 +217,8 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
         {vp && ` · zoom ${vp.zoom.toFixed(2)}×`}
         {hover && ` · (${hover.x}, ${hover.y})`}
         {ownerAgent && ` · ${ownerAgent.name} (${ownerAgent.country})`}
-        {hover && !ownerAgent && " · unclaimed"}
+        {hover && !ownerAgent && owner === GOD_ID && ` · ${GOD_NAME}`}
+        {hover && !ownerAgent && owner !== GOD_ID && " · unclaimed"}
       </div>
     </div>
   );
