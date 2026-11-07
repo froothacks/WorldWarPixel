@@ -213,7 +213,18 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
             close
           </button>
         </header>
-        <canvas ref={canvasRef} className="timelapse-canvas" />
+        <canvas
+          ref={canvasRef}
+          className="timelapse-canvas"
+          // Fit by height too so the controls below stay on screen for tall canvases.
+          style={
+            data && data.height > 0
+              ? {
+                  width: `min(80vw, 1024px, calc((92vh - 110px) * ${data.width / data.height}))`,
+                }
+              : undefined
+          }
+        />
         <div className="timelapse-controls">
           <button
             onClick={() => setPlaying(!playing)}
