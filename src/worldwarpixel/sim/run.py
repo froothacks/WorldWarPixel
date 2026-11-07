@@ -91,6 +91,7 @@ class Run:
         narrator_model: NarratorModel | None = None,
         speech: SpeechSynth | None = None,
         stage_model: NarratorModel | None = None,
+        agents: list[AgentSpec] | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -106,7 +107,7 @@ class Run:
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
-        self.agents = seed_agents(
+        self.agents = agents or seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
         self.world = World(self.agents, self.board)
@@ -263,7 +264,8 @@ class Run:
         if self.state != "created":
             raise RuntimeError(f"run is {self.state}")
         self.started_at = self._clock()
-        self._record("run.created", None, {"config": self.config.model_dump()})
+        roster = [a.to_dict() for a in self.agents]
+        self._record("run.created", None, {"config": self.config.model_dump(), "agents": roster})
         self._set_state("running")
         self._running.set()
         self.hub.start()
