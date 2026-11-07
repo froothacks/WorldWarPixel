@@ -23,7 +23,7 @@ PORT = os.environ.get("PORT", "8000")
 def copy_db(src: Path, dst: Path) -> None:
     """Online SQLite backup (includes un-checkpointed WAL pages), swapped in atomically."""
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".tmp")
+    tmp = dst.with_name(f"{dst.name}.{os.getpid()}.tmp")
     tmp.unlink(missing_ok=True)
     source, target = sqlite3.connect(src), sqlite3.connect(tmp)
     try:
