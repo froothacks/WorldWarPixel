@@ -331,7 +331,7 @@ class Run:
         )
         now = self._clock()
         obs.memory = [
-            f"{_ago(now - t['ts'])} ago: {t['thought'][:240]}"
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
             for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
         ]
         if self.societies is not None and society is not None:
@@ -561,3 +561,11 @@ class _SocietyAccess:
 
 def _ago(seconds: float) -> str:
     return f"{seconds:.0f} s" if seconds < 90 else f"{seconds / 60:.0f} min"
+
+
+def _recall(thought: str, limit: int = 200) -> str:
+    """Shorten a remembered thought but keep its trailing "[what I did]" summary."""
+    text, sep, actions = thought.rpartition(" [")
+    if not (sep and actions.endswith("]")):
+        return thought[:limit]
+    return f"{text[:limit]}{sep}{actions}"

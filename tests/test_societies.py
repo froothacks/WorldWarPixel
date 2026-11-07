@@ -299,3 +299,18 @@ def test_invites_contacts_moves_and_memory_reach_the_prompt() -> None:
     text = user_prompt(a, obs)
     assert "Your last turns:\n- 5 s ago: I peeked at Blue" in text
     assert "Invitations: " in text and "People you have talked with recently: " in text
+
+
+def test_memory_keeps_actions_and_mentions_keep_hyphens() -> None:
+    from worldwarpixel.sim.run import MENTION, _recall
+
+    assert _recall("x" * 500 + " [posted thread 3; upvoted thread 2]").endswith(
+        "x [posted thread 3; upvoted thread 2]"
+    )
+    assert MENTION.findall("hi @Min-jun and @O'Neil.") == ["Min-jun", "O'Neil"]
+    socs = Societies(3, switch_cooldown=0)
+    socs.assign([1, 2, 3])
+    socs.invite(2, 1, 0.0)
+    socs.invite(3, 1, 0.0)
+    socs.join(1, 1, 1.0)
+    assert [i.society for i in socs.pending(1, 2.0)] == [2]
