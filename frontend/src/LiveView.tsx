@@ -226,9 +226,20 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [tool, setTool] = useState<GodTool | null>(null);
+  const paintRejected = useRef(false);
   const paint = useCallback(
     (pixels: [number, number, number][], erase: boolean) => {
-      api.godPixels(initial.id, pixels, erase).catch(() => undefined);
+      api.godPixels(initial.id, pixels, erase).then(
+        () => {
+          paintRejected.current = false;
+        },
+        (e: Error) => {
+          // One alert per streak of failures, not one per brush segment.
+          if (paintRejected.current) return;
+          paintRejected.current = true;
+          alert(`God brush rejected: ${e.message}`);
+        },
+      );
     },
     [initial.id],
   );
