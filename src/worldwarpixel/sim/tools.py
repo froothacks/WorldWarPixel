@@ -117,6 +117,8 @@ class ToolSet:
         if allowed:
             self._write(allowed)
         out: dict[str, Any] = {"placed": len(allowed), "pixels_left": self.budget.pixels}
+        if allowed:
+            out["last"] = [allowed[-1].x, allowed[-1].y]
         notes: list[str] = []
         if blocked:
             out["blocked"] = len(blocked)

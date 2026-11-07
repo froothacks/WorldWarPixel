@@ -733,8 +733,12 @@ def _track_position(
     """Remember where the agent last painted so the next crop follows it."""
     placed = int(result.get("placed", 0))
     if name == "place_pixels" and args.get("pixels") and placed:
-        last = args["pixels"][min(placed, len(args["pixels"])) - 1]
-        agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
+        last = result.get("last")
+        if last is None:
+            last = args["pixels"][min(placed, len(args["pixels"])) - 1]
+            agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
+        else:
+            agent.home_x, agent.home_y = int(last[0]), int(last[1])
     elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 

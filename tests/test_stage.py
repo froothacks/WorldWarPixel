@@ -367,7 +367,7 @@ def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:
                 elif agent.id == 2:
                     self.results["blocked"] = tools.place_pixels([(11, 11, 6)])
                     self.results["stencil"] = tools.paint_stencil([(12, 12, 8)])
-                    self.results["outside"] = tools.place_pixels([(30, 20, 7)])
+                    self.results["outside"] = tools.place_pixels([(12, 12, 6), (30, 20, 7)])
                 return "painted"
 
         policy = FixedPolicy()
@@ -398,6 +398,8 @@ def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:
         assert policy.results["blocked"]["pixels_left"] == config.pixels_per_turn
         assert policy.results["stencil"]["remaining"] == 1
         assert not policy.results["stencil"]["done"]
+        assert policy.results["outside"]["blocked"] == 1
+        assert policy.results["outside"]["last"] == [30, 20]
         assert policy.results["holder"]["placed"] == 1
         assert "blocked" not in policy.results["holder"]
         assert run.canvas.owner(10, 10) == 1

@@ -27,7 +27,11 @@ def make(
 
 def test_pixel_budget_is_enforced_per_turn() -> None:
     tools, events = make(TurnBudget(pixels=3))
-    assert tools.place_pixels([(0, 0, 1), (1, 0, 1)]) == {"placed": 2, "pixels_left": 1}
+    assert tools.place_pixels([(0, 0, 1), (1, 0, 1)]) == {
+        "placed": 2,
+        "pixels_left": 1,
+        "last": [1, 0],
+    }
     res = tools.place_pixels([(2, 0, 1), (3, 0, 1)])
     assert res["placed"] == 1 and res["dropped"] == 1 and tools.budget.pixels == 0
     assert len(events) == 3
@@ -41,6 +45,7 @@ def test_blocked_pixels_do_not_spend_budget_and_join_dropped_note() -> None:
     assert out == {
         "placed": 2,
         "pixels_left": 0,
+        "last": [2, 0],
         "blocked": 1,
         "dropped": 1,
         "note": (
