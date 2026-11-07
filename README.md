@@ -144,7 +144,7 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 - `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
 - `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. Share this URL.
 
-The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); their event history (`/events`, timelapse) survives.
+The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); their events stay in the saved log, but the API only serves runs that are live in memory, so a replaced run's `/events` and timelapse return 404 until archived runs are served from the log.
 
 One-time setup, with the Modal CLI authenticated (`uv run --with modal modal token new`):
 
