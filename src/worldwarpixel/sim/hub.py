@@ -8,6 +8,8 @@ from worldwarpixel.sim.canvas import Canvas
 
 FRAME_SNAPSHOT = 1
 FRAME_PIXELS = 2
+RESYNC = b"\x00"
+"""Queued for a subscriber that fell behind: the socket must resend a full snapshot."""
 PIXEL_STRUCT = struct.Struct("<HHBH")  # x, y, color, agent_id
 
 
@@ -44,8 +46,17 @@ class Hub:
 
     def _send(self, msg: bytes | str) -> None:
         for q in self._subs:
-            with contextlib.suppress(asyncio.QueueFull):
+            try:
                 q.put_nowait(msg)
+            except asyncio.QueueFull:
+                self._mark_stale(q)
+
+    @staticmethod
+    def _mark_stale(q: asyncio.Queue[bytes | str]) -> None:
+        """Drop the backlog; dropped pixel frames can't be recovered, so force a resync."""
+        while not q.empty():
+            q.get_nowait()
+        q.put_nowait(RESYNC)
 
     def publish(self, type_: str, **data: Any) -> None:
         self._send(json.dumps({"type": type_, **data}, separators=(",", ":")))

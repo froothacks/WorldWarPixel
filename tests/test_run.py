@@ -2,7 +2,7 @@ import asyncio
 
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
-from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT
+from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT, RESYNC, Hub
 from worldwarpixel.sim.run import Run, RunConfig
 
 CONFIG = RunConfig(
@@ -65,3 +65,18 @@ def test_seeding_is_deterministic() -> None:
     b = Run("b", CONFIG, EventLog(), RandomWalkPolicy(0)).agents
     assert [x.to_dict() for x in a] == [x.to_dict() for x in b]
     assert {x.id for x in a} == {1, 2, 3, 4, 5}
+
+
+def test_slow_subscriber_gets_a_resync_marker_instead_of_a_hole() -> None:
+    async def main() -> None:
+        hub = Hub(queue_size=2)
+        q = hub.subscribe()
+        for _ in range(3):
+            hub.push_pixel(1, 1, 1, 1)
+            hub.flush()
+        hub.publish("agent.status", agent_id=1, status="idle")
+        assert q.get_nowait() == RESYNC
+        assert isinstance(q.get_nowait(), str)
+        assert q.empty()
+
+    asyncio.run(main())

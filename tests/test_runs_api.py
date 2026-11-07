@@ -82,3 +82,18 @@ def test_websocket_sends_snapshot_then_diffs(client: TestClient) -> None:
         else:
             pytest.fail("no pixel diff frame received")
     client.post(f"/runs/{run_id}/stop")
+
+
+def test_websocket_closes_when_client_disconnects_from_stopped_run(client: TestClient) -> None:
+    run_id = client.post("/runs", json=SMALL).json()["id"]
+    client.post(f"/runs/{run_id}/stop")
+    manager = client.app.state.runs  # type: ignore[attr-defined]
+    run = manager.get(run_id)
+    with client.websocket_connect(f"/runs/{run_id}/ws") as ws:
+        ws.receive_json()
+        ws.receive_bytes()
+        assert run.hub.client_count == 1
+    deadline = time.time() + 2
+    while run.hub.client_count and time.time() < deadline:
+        time.sleep(0.02)
+    assert run.hub.client_count == 0

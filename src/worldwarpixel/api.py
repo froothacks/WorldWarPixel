@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import secrets
 from typing import Annotated, Any
 
@@ -14,7 +15,7 @@ from fastapi import (
 
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
-from worldwarpixel.sim.hub import snapshot_frame
+from worldwarpixel.sim.hub import RESYNC, snapshot_frame
 from worldwarpixel.sim.run import Run, RunConfig
 
 
@@ -166,16 +167,34 @@ async def run_socket(websocket: WebSocket, run_id: str) -> None:
         return
     await websocket.accept()
     queue = run.hub.subscribe()
-    try:
+
+    async def send_snapshot() -> None:
         await websocket.send_json(run.snapshot())
         await websocket.send_bytes(snapshot_frame(run.canvas))
+
+    async def sender() -> None:
+        await send_snapshot()
         while True:
             msg = await queue.get()
-            if isinstance(msg, bytes):
+            if msg == RESYNC:
+                await send_snapshot()
+            elif isinstance(msg, bytes):
                 await websocket.send_bytes(msg)
             else:
                 await websocket.send_text(msg)
-    except WebSocketDisconnect:
-        pass
+
+    async def receiver() -> None:
+        # Client messages are ignored for now; this exists to notice disconnects promptly.
+        while True:
+            await websocket.receive_text()
+
+    tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        for t in done:
+            with contextlib.suppress(WebSocketDisconnect):
+                t.result()
     finally:
         run.hub.unsubscribe(queue)
