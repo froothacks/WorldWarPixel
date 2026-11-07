@@ -223,7 +223,7 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         f"Each turn you may paint up to {pixels} pixels and make up to {posts} post or reply. "
         f"Colours: {palette_legend()}. Your usual colour is {agent.color} "
         f"({COLOR_NAMES[agent.color]}). You started near ({agent.home_x}, {agent.home_y}).\n\n"
-        "Each turn you see the whole canvas as an image and the top threads on the board. "
+        "Each turn you see the canvas and the top threads on the board. "
         "Do whatever you want.\n\n"
         "Write one or two short sentences of thought in first person, then use the tools."
     )
@@ -320,12 +320,13 @@ def board_lines(threads: list[dict[str, Any]]) -> str:
     )
 
 
-def user_prompt(agent: AgentSpec, obs: Observation) -> str:
+def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
     board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
+    look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n\n"
-        f"Top threads on the board:\n{board}"
+        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
+        f"{look}\nTop threads on the board:\n{board}"
     )
 
 
@@ -424,7 +425,7 @@ class LLMPolicy:
                 self._project_note(agent),
             )
             if self._guided
-            else user_prompt(agent, obs)
+            else user_prompt(agent, obs, self._vision)
         )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:

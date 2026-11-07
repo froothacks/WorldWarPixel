@@ -155,6 +155,7 @@ def test_default_prompt_is_neutral_and_offers_only_basic_tools() -> None:
     for steer in ("r/place", "flag", "religio", "alliance", "free spot", "drawing"):
         assert steer not in system.lower() and steer not in user.lower()
     assert user.index("thread 7") < user.index("thread 3")
+    assert "view_canvas" in user
     names = {t["function"]["name"] for t in req["tools"]}
     assert names.isdisjoint({"draw_flag", "draw_text", "draw_shape"}) and "post_thread" in names
     guided = LLMPolicy(client, "m", guided=True)  # type: ignore[arg-type]
