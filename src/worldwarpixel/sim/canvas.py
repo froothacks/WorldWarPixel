@@ -1,4 +1,6 @@
+import struct
 import sys
+import zlib
 from array import array
 from dataclasses import dataclass
 
@@ -86,3 +88,30 @@ class Canvas:
         swapped = array("H", self.owners)
         swapped.byteswap()
         return swapped.tobytes()
+
+    def to_png(self, max_side: int = 640) -> tuple[bytes, int]:
+        """Palette PNG of the canvas, nearest-neighbour downsampled so no side exceeds max_side.
+
+        Returns (png_bytes, scale) where one PNG pixel covers scale x scale canvas pixels.
+        """
+        scale = max(1, -(-max(self.width, self.height) // max_side))
+        w, h = -(-self.width // scale), -(-self.height // scale)
+        raw = bytearray()
+        for yy in range(h):
+            raw.append(0)
+            row = (yy * scale) * self.width
+            raw.extend(self.pixels[row + xx * scale] for xx in range(w))
+        plte = b"".join(bytes.fromhex(c[1:]) for c in PALETTE)
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+            return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 3, 0, 0, 0))
+            + chunk(b"PLTE", plte)
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+            + chunk(b"IEND", b"")
+        )
+        return png, scale
