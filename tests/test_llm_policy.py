@@ -51,7 +51,7 @@ class FakeCompletions:
 
     async def create(self, **kw: Any) -> Any:
         self.requests.append(kw)
-        return self.responses.pop(0)
+        return self.responses.pop(0) if self.responses else _response(None, [])
 
 
 class FakeClient:
@@ -98,14 +98,14 @@ def test_tool_calls_are_executed_and_summarised() -> None:
     assert [k for k, _ in events] == ["pixel", "pixel", "post"]
     assert (agent.home_x, agent.home_y) == (2, 2)
     assert policy.stats == {
-        "calls": 1,
+        "calls": 2,
         "tool_calls": 2,
         "tool_errors": 0,
         "no_tools": 0,
         "failures": 0,
     }
     latency = policy.public_stats()["latency"]
-    assert latency["model"]["n"] == 1 and latency["turn"]["n"] == 1
+    assert latency["model"]["n"] == 2 and latency["turn"]["n"] == 1
     assert 0 <= latency["turn"]["p50"] <= latency["turn"]["max"]
     req = client.chat.completions.requests[0]
     assert req["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
@@ -159,7 +159,8 @@ def test_default_prompt_is_neutral_and_offers_only_basic_tools() -> None:
     assert user.index("thread 7") < user.index("thread 3")
     assert "view_canvas" in user
     names = {t["function"]["name"] for t in req["tools"]}
-    assert names.isdisjoint({"draw_flag", "draw_text", "draw_shape"}) and "post_thread" in names
+    assert names.isdisjoint({"draw_flag", "draw_text"}) and "post_thread" in names
+    assert {"draw_line", "draw_shape", "fill_rect"} <= names
     guided = LLMPolicy(client, "m", guided=True)  # type: ignore[arg-type]
     assert "r/place" in guided.describe(agent, 64, 40, 4, 1)
 
@@ -451,3 +452,68 @@ def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> 
     again = dict(flag)
     policy._dispatch(first, tools_for(first), "draw_flag", again)
     assert again["x"] == 10 and "moved" not in again
+
+
+def test_pixel_triples_string_is_accepted() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [_response("Row.", [("place_pixels", {"pixels": "1,1,2 2,1,2 (3, 1, 2)"})])]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px near (1, 1)" in thought
+    assert [(p["x"], p["y"], p["color"]) for _, p in events] == [(1, 1, 2), (2, 1, 2), (3, 1, 2)]
+
+
+def test_bare_pixel_arguments_are_accepted() -> None:
+    agent, tools, _, events = _setup()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    policy._dispatch(agent, tools, "place_pixels", {"x": 5, "y": 6, "color": 3})
+    assert [(p["x"], p["y"], p["color"]) for _, p in events] == [(5, 6, 3)]
+
+
+def test_draw_line_paints_in_free_mode() -> None:
+    agent, tools, _, events = _setup()
+    tools.budget.pixels = 10
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    res = policy._dispatch(
+        agent, tools, "draw_line", {"x1": 0, "y1": 0, "x2": 3, "y2": 3, "color": 4}
+    )
+    assert res["placed"] == 4 and res["done"]
+    assert [(p["x"], p["y"]) for _, p in events] == [(0, 0), (1, 1), (2, 2), (3, 3)]
+
+
+def test_agent_keeps_painting_while_pixels_are_left() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [
+            _response("Start.", [("place_pixels", {"pixels": "0,0,2"})]),
+            _response("More.", [("place_pixels", {"pixels": "1,0,2 2,0,2"})]),
+            _response("Last.", [("place_pixels", {"pixels": "3,0,2"})]),
+            _response("Never asked.", [("place_pixels", {"pixels": "9,9,2"})]),
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    reqs = client.chat.completions.requests
+    assert len(events) == 4 and tools.budget.pixels == 0 and len(reqs) == 3
+    nudges = [m["content"] for m in reqs[-1]["messages"] if m["role"] == "user"][1:]
+    assert nudges == ["3 pixels left this turn.", "1 pixels left this turn."]
+
+
+def test_turn_ends_when_agent_does_not_paint() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient(
+        [
+            _response("Talk.", [("post_thread", {"title": "Hi", "body": "hello"})]),
+            _response("Never asked.", [("place_pixels", {"pixels": "9,9,2"})]),
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert len(client.chat.completions.requests) == 1
+
+
+def test_budget_line_says_pixels_do_not_carry_over() -> None:
+    agent, _, obs, _ = _setup()
+    assert "Unused pixels don't carry over" in user_prompt(agent, obs, vision=False)

@@ -66,6 +66,11 @@ class RunConfig(BaseModel):
         default="llm",
         description="llm: free-for-all; llm-guided: adds r/place framing, stencils and hints",
     )
+    model: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Agent model id from GET /models (None = the server's default agent model)",
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )

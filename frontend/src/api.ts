@@ -10,9 +10,16 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "llm-guided" | "random";
+  /** Agent model id from GET /models; null = the server default. */
+  model: string | null;
   narrator_interval: number;
   narrator_canvas_image: boolean;
   societies: number;
+}
+
+export interface ModelOption {
+  id: string;
+  default: boolean;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -27,6 +34,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  model: null,
   narrator_interval: 60,
   narrator_canvas_image: true,
   societies: 3,
@@ -233,6 +241,7 @@ export const GOD_NAME = "The Hand of God";
 
 export const api = {
   listRuns: () => request<RunSummary[]>("/runs"),
+  models: () => request<ModelOption[]>("/models"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {
       method: "POST",

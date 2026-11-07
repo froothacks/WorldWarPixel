@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DEFAULT_CONFIG, type RunConfig, type RunSummary } from "./api";
+import { api, DEFAULT_CONFIG, type ModelOption, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
 
 interface Props {
@@ -43,9 +43,11 @@ export default function StartScreen({ onStarted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<RunSummary[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
+    api.models().then(setModels).catch(() => setModels([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
@@ -121,6 +123,25 @@ export default function StartScreen({ onStarted }: Props) {
             </div>
             <span className="hint">{brain.hint}</span>
           </div>
+
+          {cfg.policy !== "random" && models.length > 1 && (
+            <div className="field">
+              <span className="field-label">Model</span>
+              <div className="segmented">
+                {models.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={(cfg.model ?? models.find((o) => o.default)?.id) === m.id ? "on" : ""}
+                    onClick={() => set("model", m.default ? null : m.id)}
+                  >
+                    {m.id}
+                  </button>
+                ))}
+              </div>
+              <span className="hint">Which model endpoint the agents think with. The narrator keeps the default.</span>
+            </div>
+          )}
 
           <label className="field">
             <span className="field-label agent-label">
@@ -256,7 +277,7 @@ export default function StartScreen({ onStarted }: Props) {
                     <span className={`state state-${r.state}`}>{r.state}</span>
                     <span className="mono run-id">{r.id}</span>
                     <span className="run-meta">
-                      {r.agents} {r.config.policy === "random" ? "random" : "LLM"} agents · {r.config.width}×{r.config.height} ·{" "}
+                      {r.agents} {r.config.policy === "random" ? "random" : (r.config.model ?? "LLM")} agents · {r.config.width}×{r.config.height} ·{" "}
                       {r.stats.pixels.toLocaleString()} px
                     </span>
                     <span className="run-when">{ago(r.created_at)}</span>

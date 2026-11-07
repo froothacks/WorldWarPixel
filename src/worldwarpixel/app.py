@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -54,22 +54,35 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    async with AsyncOpenAI(
-        api_key=settings.api_key(),
-        base_url=settings.openai_base_url,
-        timeout=settings.request_timeout,
-        default_headers=settings.default_headers() or None,
-    ) as client:
+
+    def open_client(base_url: str | None) -> AsyncOpenAI:
+        return AsyncOpenAI(
+            api_key=settings.api_key(base_url),
+            base_url=base_url,
+            timeout=settings.request_timeout,
+            default_headers=settings.default_headers(base_url) or None,
+        )
+
+    async with AsyncExitStack() as stack:
+        client = await stack.enter_async_context(open_client(settings.openai_base_url))
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
         agent_model = settings.agent_model or settings.openai_model
+        agent_clients = {agent_model: client}
+        for model, url in settings.agent_endpoint_map().items():
+            if model not in agent_clients:
+                agent_clients[model] = await stack.enter_async_context(open_client(url))
+        app.state.agent_models = list(agent_clients)
 
         def make_policy(config: RunConfig) -> Policy:
             if config.policy in ("llm", "llm-guided"):
+                model = config.model or agent_model
+                if model not in agent_clients:
+                    raise HTTPException(422, f"unknown model {model!r}; see GET /models")
                 return LLMPolicy(
-                    client,
-                    agent_model,
+                    agent_clients[model],
+                    model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision,
                     guided=config.policy == "llm-guided",
@@ -114,6 +127,13 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/models")
+async def list_models(request: Request) -> list[dict[str, object]]:
+    """Agent models a run can pick at launch; the first one is the default."""
+    models: list[str] = request.app.state.agent_models
+    return [{"id": m, "default": i == 0} for i, m in enumerate(models)]
+
+
 @app.get("/health/config")
 async def health_config() -> dict[str, object]:
     """Deployment self-check: which env/config values the process sees (no secret values)."""
@@ -121,6 +141,7 @@ async def health_config() -> dict[str, object]:
     return {
         "openai_base_url": s.openai_base_url,
         "openai_model": s.openai_model,
+        "agent_models": [s.agent_model or s.openai_model, *s.agent_endpoint_map()],
         "is_modal_endpoint": s.is_modal_endpoint,
         "api_key": s.api_key() != "none",
         "modal_key": bool(s.modal_key.get_secret_value()),

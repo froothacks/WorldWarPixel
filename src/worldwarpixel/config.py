@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o-mini"
     agent_model: str | None = None
+    agent_endpoints: str = ""
+    """Extra agent models selectable per run: "model=base_url,model=base_url"."""
     narrator_model: str | None = None
     agent_vision: bool = True
     modal_key: SecretStr = SecretStr("")
@@ -34,23 +36,36 @@ class Settings(BaseSettings):
 
     @property
     def is_modal_endpoint(self) -> bool:
-        host = urlparse(self.openai_base_url or "").hostname or ""
-        return host == "modal.run" or host.endswith((".modal.run", ".modal.direct"))
+        return is_modal_url(self.openai_base_url)
 
-    def api_key(self) -> str:
-        """Bearer key for the model endpoint; 'none' (ignored) on Modal, which uses headers."""
-        return (
-            "none" if self.is_modal_endpoint else self.openai_api_key.get_secret_value() or "none"
-        )
+    def agent_endpoint_map(self) -> dict[str, str]:
+        """Parsed AGENT_ENDPOINTS: model id -> base URL, in the configured order."""
+        out: dict[str, str] = {}
+        for item in self.agent_endpoints.split(","):
+            model, sep, url = item.partition("=")
+            if sep and model.strip() and url.strip():
+                out[model.strip()] = url.strip()
+        return out
 
-    def default_headers(self) -> dict[str, str]:
+    def api_key(self, base_url: str | None = None) -> str:
+        """Bearer key for a model endpoint; 'none' (ignored) on Modal, which uses headers."""
+        url = base_url if base_url is not None else self.openai_base_url
+        return "none" if is_modal_url(url) else self.openai_api_key.get_secret_value() or "none"
+
+    def default_headers(self, base_url: str | None = None) -> dict[str, str]:
         """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""
+        url = base_url if base_url is not None else self.openai_base_url
         key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
         return (
             {"Modal-Key": key, "Modal-Secret": secret}
-            if key and secret and self.is_modal_endpoint
+            if key and secret and is_modal_url(url)
             else {}
         )
+
+
+def is_modal_url(url: str | None) -> bool:
+    host = urlparse(url or "").hostname or ""
+    return host == "modal.run" or host.endswith((".modal.run", ".modal.direct"))
 
 
 @lru_cache

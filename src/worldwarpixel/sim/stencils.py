@@ -162,6 +162,22 @@ FLAGS: dict[str, list[Layer]] = {
 }
 
 
+def line_cells(x1: int, y1: int, x2: int, y2: int, color: int) -> list[Cell]:
+    """Bresenham line from (x1, y1) to (x2, y2), both ends included."""
+    dx, dy = abs(x2 - x1), -abs(y2 - y1)
+    sx, sy = (1 if x2 > x1 else -1), (1 if y2 > y1 else -1)
+    err, cells = dx + dy, []
+    while True:
+        cells.append((x1, y1, color))
+        if (x1, y1) == (x2, y2):
+            return cells
+        e2 = 2 * err
+        if e2 >= dy:
+            err, x1 = err + dy, x1 + sx
+        if e2 <= dx:
+            err, y1 = err + dx, y1 + sy
+
+
 def text_cells(text: str, x: int, y: int, color: int, scale: int = 1) -> list[Cell]:
     cells: list[Cell] = []
     cx = x

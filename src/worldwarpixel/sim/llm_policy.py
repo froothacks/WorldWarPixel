@@ -16,7 +16,14 @@ from openai.types.chat import (
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
-from worldwarpixel.sim.stencils import FLAGS, SHAPES, flag_cells, shape_cells, text_cells
+from worldwarpixel.sim.stencils import (
+    FLAGS,
+    SHAPES,
+    flag_cells,
+    line_cells,
+    shape_cells,
+    text_cells,
+)
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
 log = logging.getLogger(__name__)
@@ -45,21 +52,18 @@ TOOLS: list[ChatCompletionToolParam] = [
         "type": "function",
         "function": {
             "name": "place_pixels",
-            "description": "Paint up to your remaining pixel budget. Coordinates are 0-based.",
+            "description": (
+                "Paint any number of pixels, up to your remaining pixel budget. "
+                "Coordinates are 0-based."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "pixels": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "x": {"type": "integer"},
-                                "y": {"type": "integer"},
-                                "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                            },
-                            "required": ["x", "y", "color"],
-                        },
+                        "type": "string",
+                        "description": (
+                            'Space-separated x,y,colour triples, e.g. "10,5,3 11,5,3 12,5,3 13,6,8"'
+                        ),
                     }
                 },
                 "required": ["pixels"],
@@ -81,6 +85,26 @@ TOOLS: list[ChatCompletionToolParam] = [
                     "color": {"type": "integer", "minimum": 0, "maximum": 15},
                 },
                 "required": ["x", "y", "w", "h", "color"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draw_line",
+            "description": (
+                "Paint a straight line from (x1, y1) to (x2, y2). Costs one pixel per cell."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x1": {"type": "integer"},
+                    "y1": {"type": "integer"},
+                    "x2": {"type": "integer"},
+                    "y2": {"type": "integer"},
+                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
+                },
+                "required": ["x1", "y1", "x2", "y2", "color"],
             },
         },
     },
@@ -132,7 +156,8 @@ TOOLS: list[ChatCompletionToolParam] = [
             "name": "draw_shape",
             "description": (
                 "Paint a pixel-art shape (about 7*scale pixels) with top-left at (x, y). "
-                "Progressive like draw_flag. Shapes: " + ", ".join(SHAPES) + "."
+                "Paints as much as your budget allows; call it again with the same arguments "
+                "to continue. Shapes: " + ", ".join(SHAPES) + "."
             ),
             "parameters": {
                 "type": "object",
@@ -248,8 +273,11 @@ SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
 
 READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 STENCIL_TOOLS = {"draw_flag", "draw_text", "draw_shape"}
-FREE_TOOLS = [t for t in TOOLS if t["function"]["name"] not in STENCIL_TOOLS]
+GUIDED_ONLY_TOOLS = {"draw_flag", "draw_text"}
+FREE_TOOLS = [t for t in TOOLS if t["function"]["name"] not in GUIDED_ONLY_TOOLS]
 MAX_ROUNDS = 2
+PAINT_ROUNDS = 2
+"""Extra model calls in a turn while the agent keeps painting and has pixels left."""
 BOARD_THREADS = 8
 
 
@@ -412,7 +440,10 @@ def memory_lines(obs: Observation) -> str:
 def budget_line(agent: AgentSpec, obs: Observation) -> str:
     b = obs.budget
     posts = "no posts this turn (you posted recently)" if b.posts == 0 else f"{b.posts} post"
-    return f"Turn for {agent.name}. Budget: {b.pixels} pixels, {posts}, {b.votes} vote.\n"
+    return (
+        f"Turn for {agent.name}. Budget: {b.pixels} pixels, {posts}, {b.votes} vote. "
+        "Unused pixels don't carry over to the next turn.\n"
+    )
 
 
 def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
@@ -550,7 +581,8 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
-        for round_no in range(MAX_ROUNDS):
+        read_rounds = paint_rounds = 0
+        for round_no in range(MAX_ROUNDS + PAINT_ROUNDS):
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
@@ -591,6 +623,7 @@ class LLMPolicy:
                 )
             )
             used_read = False
+            pixels_before = tools.budget.pixels
             for call in calls:
                 if call.type != "function":
                     continue
@@ -599,8 +632,14 @@ class LLMPolicy:
                 result = self._execute(agent, tools, name, call.function.arguments, actions)
                 used_read |= name in READ_TOOLS
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
-            if not used_read:
+            left = tools.budget.pixels
+            if left < pixels_before and left > 0 and paint_rounds < PAINT_ROUNDS:
+                paint_rounds += 1
+                messages.append({"role": "user", "content": f"{left} pixels left this turn."})
+                continue
+            if not used_read or read_rounds >= MAX_ROUNDS - 1:
                 break
+            read_rounds += 1
         thought = " ".join(t for t in thoughts if t)
         if actions:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
@@ -705,7 +744,7 @@ class LLMPolicy:
     ) -> dict[str, Any]:
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
-        if name in STENCIL_TOOLS and not self._guided:
+        if name in GUIDED_ONLY_TOOLS and not self._guided:
             raise ToolError(f"unknown tool {name}")
 
         def colour(v: Any) -> int:
@@ -717,6 +756,8 @@ class LLMPolicy:
 
         match name:
             case "place_pixels":
+                if "pixels" not in a and "x" in a and "y" in a:  # one bare pixel
+                    a["pixels"] = [{k: a[k] for k in ("x", "y", "color") if k in a}]
                 if isinstance(a["pixels"], str):  # the model often double-encodes the list
                     a["pixels"] = _parse_pixel_list(a["pixels"])
                 a["pixels"] = [
@@ -728,6 +769,13 @@ class LLMPolicy:
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["w"], a["h"] = min(int(a["w"]), w - a["x"]), min(int(a["h"]), h - a["y"])
                 return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], colour(a["color"]))
+            case "draw_line":
+                for k, size in (("x1", w), ("y1", h), ("x2", w), ("y2", h)):
+                    a[k] = _clamp(a[k], size)
+                a["color"] = colour(a.get("color"))
+                return tools.paint_stencil(
+                    line_cells(a["x1"], a["y1"], a["x2"], a["y2"], a["color"])
+                )
             case "draw_flag":
                 a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
@@ -777,21 +825,30 @@ class LLMPolicy:
 _FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
 
 
+_TRIPLE_RE = re.compile(r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)")
+
+
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
-    """Decode a stringified pixel list, salvaging truncated or sloppy JSON object by object."""
+    """Decode "x,y,c x,y,c" triples or a stringified (possibly truncated) JSON pixel list."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, list):
             return parsed
     except ValueError:
         pass
+    if "{" not in text:
+        triples = [
+            {"x": int(x), "y": int(y), "color": int(c)} for x, y, c in _TRIPLE_RE.findall(text)
+        ]
+        if triples:
+            return triples
     found: list[dict[str, int]] = []
     for obj in re.findall(r"\{[^{}]*\}", text):  # only complete {...} objects, any key order
         fields = {k: rx.search(obj) for k, rx in _FIELD_RE.items()}
         if all(fields.values()):
             found.append({k: int(m.group(1)) for k, m in fields.items() if m})
     if not found:
-        raise ToolError("pixels must be a list of {x, y, color}")
+        raise ToolError('pixels must be x,y,colour triples like "10,5,3 11,5,3"')
     return found
 
 
@@ -847,6 +904,7 @@ _TOOL_HINTS = (
     ("write", "draw_text"),
     ("shape", "draw_shape"),
     ("rect", "fill_rect"),
+    ("line", "draw_line"),
     ("pixel", "place_pixels"),
     ("paint", "place_pixels"),
     ("canvas", "view_canvas"),
@@ -896,6 +954,8 @@ def _track_position(
     if name == "place_pixels" and args.get("pixels") and placed:
         last = args["pixels"][min(placed, len(args["pixels"])) - 1]
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
+    elif name == "draw_line" and result.get("placed"):
+        agent.home_x, agent.home_y = int(args["x2"]), int(args["y2"])
     elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 
@@ -907,7 +967,7 @@ def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
     keep = (
         *("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape"),
-        *("society_id", "name", "up"),
+        *("x1", "y1", "x2", "y2", "society_id", "name", "up"),
     )
     out = {k: v for k, v in args.items() if k in keep}
     if name in ("post_thread", "reply", "vote_thread"):
@@ -922,6 +982,11 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             px = args.get("pixels") or []
             first = f" near ({px[0]['x']}, {px[0]['y']})" if px else ""
             return f"placed {result.get('placed', 0)} px{first}"
+        case "draw_line":
+            return (
+                f"drew a line ({args['x1']}, {args['y1']})-({args['x2']}, {args['y2']}): "
+                f"+{result.get('placed', 0)} px"
+            )
         case "fill_rect":
             return f"filled {args['w']}x{args['h']} at ({args['x']}, {args['y']})"
         case "draw_flag" | "draw_text" | "draw_shape":
