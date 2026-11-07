@@ -334,7 +334,7 @@ def user_prompt(
         + "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
         + "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
         + "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
-        + "new one. Anything marked 📢 from The Hand of God comes first: answer it and act on it."
+        + "new one."
     )
 
 
