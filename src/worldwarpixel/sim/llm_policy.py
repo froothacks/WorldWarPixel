@@ -403,8 +403,12 @@ class LLMPolicy:
         timeout: float = 45.0,
         vision: bool = True,
         guided: bool = False,
+        reasoning_effort: str = "",
     ) -> None:
         self._client = client
+        self._extra_body: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
+        if reasoning_effort:
+            self._extra_body["reasoning_effort"] = reasoning_effort
         self._guided = guided
         self._model = model
         self._timeout = timeout
@@ -479,10 +483,10 @@ class LLMPolicy:
                     messages=messages,
                     tools=self._tools_for(obs),
                     tool_choice="auto",
-                    max_tokens=700,
+                    max_tokens=1500,
                     temperature=1.0,
                     timeout=self._timeout,
-                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                    extra_body=self._extra_body,
                 )
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)

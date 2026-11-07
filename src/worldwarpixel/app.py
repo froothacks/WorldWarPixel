@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision,
                     guided=config.policy == "llm-guided",
+                    reasoning_effort=settings.agent_reasoning_effort,
                 )
             return random_policy(config)
 

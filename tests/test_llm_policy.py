@@ -439,3 +439,14 @@ def test_turn_ends_when_agent_does_not_paint() -> None:
 def test_budget_line_says_pixels_do_not_carry_over() -> None:
     agent, _, obs, _ = _setup()
     assert "Unused pixels don't carry over" in user_prompt(agent, obs, vision=False)
+
+
+def test_reasoning_effort_is_sent_only_when_configured() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([_response("Hm.", []), _response("Hm.", [])])
+    asyncio.run(LLMPolicy(client, "m", vision=False).act(agent, tools, obs))  # type: ignore[arg-type]
+    policy = LLMPolicy(client, "m", vision=False, reasoning_effort="low")  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    first, second = client.chat.completions.requests
+    assert "reasoning_effort" not in first["extra_body"]
+    assert second["extra_body"]["reasoning_effort"] == "low"
