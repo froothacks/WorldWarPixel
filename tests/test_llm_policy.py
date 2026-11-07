@@ -8,6 +8,7 @@ from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.llm_policy import (
     LLMPolicy,
+    _canonical_tool,
     _match_name,
     _parse_pixel_list,
     pick_threads,
@@ -287,3 +288,11 @@ def test_match_name_handles_sloppy_country_strings() -> None:
     assert _match_name("Flag of India", FLAGS, "usa") == "india"
     assert _match_name("United States", FLAGS, "india") == "usa"
     assert _match_name("Narnia", FLAGS, "japan") == "japan"
+
+
+def test_invented_tool_names_map_onto_real_tools() -> None:
+    assert _canonical_tool("put_pixels") == "place_pixels"
+    assert _canonical_tool("draw_image") == "view_canvas"
+    assert _canonical_tool("see_canvas") == "view_canvas"
+    assert _canonical_tool("reply") == "reply"
+    assert _canonical_tool("teleport") == "teleport"

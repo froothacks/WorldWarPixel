@@ -413,7 +413,7 @@ class LLMPolicy:
                 if call.type != "function":
                     continue
                 self.stats["tool_calls"] += 1
-                name = call.function.name
+                name = _canonical_tool(call.function.name)
                 result = self._execute(agent, tools, name, call.function.arguments, actions)
                 used_read |= name in READ_TOOLS
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
@@ -510,7 +510,7 @@ class LLMPolicy:
                 a["text"] = str(a["text"])[:24]
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"] = colour(a.get("color"))
-                a["scale"] = min(max(int(a.get("scale", 1)), 1), 4)
+                a["scale"] = _scale(a.get("scale", 1))
                 return tools.paint_stencil(
                     text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
                 )
@@ -518,7 +518,7 @@ class LLMPolicy:
                 a["shape"] = _match_name(str(a.get("shape", "")), SHAPES, "heart")
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
-                a["scale"] = min(max(int(a.get("scale", 1)), 1), 4)
+                a["scale"] = _scale(a.get("scale", 1))
                 return tools.paint_stencil(
                     shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
                 )
@@ -589,6 +589,45 @@ def _match_name(raw: str, options: Iterable[str], default: str) -> str:
         if f"_{o}_" in f"_{key}_" or (len(key) > 3 and key in o):
             return o
     return default if default in opts else opts[0]
+
+
+def _scale(v: Any) -> int:
+    try:
+        return min(max(int(float(v)), 1), 4)
+    except (TypeError, ValueError):
+        return 1
+
+
+_TOOL_HINTS = (
+    ("flag", "draw_flag"),
+    ("text", "draw_text"),
+    ("write", "draw_text"),
+    ("shape", "draw_shape"),
+    ("rect", "fill_rect"),
+    ("pixel", "place_pixels"),
+    ("paint", "place_pixels"),
+    ("reply", "reply"),
+    ("read", "read_thread"),
+    ("thread", "post_thread"),
+    ("post", "post_thread"),
+    ("canvas", "view_canvas"),
+    ("image", "view_canvas"),
+    ("see", "view_canvas"),
+    ("look", "view_canvas"),
+    ("view", "view_canvas"),
+)
+
+
+def _canonical_tool(name: str) -> str:
+    """Map invented tool names (put_pixels, draw_image, see_canvas) onto the real ones."""
+    known = {t["function"]["name"] for t in TOOLS}
+    if name in known:
+        return name
+    low = name.lower()
+    for hint, real in _TOOL_HINTS:
+        if hint in low:
+            return real
+    return name
 
 
 def _clamp(v: Any, size: int) -> int:
