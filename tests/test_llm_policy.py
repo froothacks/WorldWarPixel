@@ -192,3 +192,13 @@ def test_incomplete_pixel_objects_are_skipped() -> None:
     assert _parse_pixel_list(
         '[{"x": 1, "y": 2}, {"x": 9, "y": 9, "color": 3}, {"x": 4, "color'
     ) == [{"x": 9, "y": 9, "color": 3}]
+
+
+def test_pixel_shorthand_and_missing_colour() -> None:
+    agent, tools, obs, events = _setup()
+    pixels = [[1, 2, 3], {"x": 4, "y": 5}, {"x": 6, "y": 7, "color": "red"}]
+    client = FakeClient([_response("Mixed.", [("place_pixels", {"pixels": pixels})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert [e[1]["color"] for e in events] == [3, agent.color, agent.color]
+    assert policy.stats["tool_errors"] == 0

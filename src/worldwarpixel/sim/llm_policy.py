@@ -340,7 +340,10 @@ class LLMPolicy:
         w, h = tools.canvas_size
 
         def colour(v: Any) -> int:
-            c = int(v)
+            try:
+                c = int(v)
+            except (TypeError, ValueError):
+                return agent.color
             return c if 0 <= c < len(PALETTE) else agent.color
 
         match name:
@@ -349,7 +352,7 @@ class LLMPolicy:
                     a["pixels"] = _parse_pixel_list(a["pixels"])
                 a["pixels"] = [
                     {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
-                    for p in a["pixels"]
+                    for p in map(_pixel_fields, a["pixels"])
                 ]
                 return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
             case "fill_rect":
@@ -386,6 +389,13 @@ def _parse_pixel_list(text: str) -> list[dict[str, int]]:
     if not found:
         raise ToolError("pixels must be a list of {x, y, color}")
     return found
+
+
+def _pixel_fields(p: Any) -> dict[str, Any]:
+    """Accept {x, y, color}, {x, y} (colour filled in later) or the [x, y, color] shorthand."""
+    if isinstance(p, (list, tuple)) and len(p) in (2, 3):
+        p = dict(zip(("x", "y", "color"), p, strict=False))
+    return {"x": p["x"], "y": p["y"], "color": p.get("color", "default")}
 
 
 def _clamp(v: Any, size: int) -> int:
