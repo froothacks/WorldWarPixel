@@ -1,0 +1,80 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
+
+from fastapi import Depends, FastAPI, Request
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
+from pydantic import BaseModel, Field
+
+from worldwarpixel.config import get_settings
+from worldwarpixel.llm import ChatService
+
+
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[Message] = Field(min_length=1)
+    model: str | None = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+class BatchChatRequest(BaseModel):
+    conversations: list[list[Message]] = Field(min_length=1)
+    model: str | None = None
+
+
+class BatchChatResponse(BaseModel):
+    replies: list[str]
+
+
+def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
+    return [m.model_dump() for m in messages]  # type: ignore[misc]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    async with AsyncOpenAI(
+        api_key=settings.openai_api_key.get_secret_value() or None,
+        base_url=settings.openai_base_url,
+        timeout=settings.request_timeout,
+    ) as client:
+        app.state.chat_service = ChatService(
+            client, settings.openai_model, settings.max_concurrency
+        )
+        yield
+
+
+app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
+
+
+def get_chat_service(request: Request) -> ChatService:
+    service: ChatService = request.app.state.chat_service
+    return service
+
+
+ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/chat")
+async def chat(body: ChatRequest, service: ChatServiceDep) -> ChatResponse:
+    reply = await service.chat(_to_params(body.messages), body.model)
+    return ChatResponse(reply=reply)
+
+
+@app.post("/chat/batch")
+async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchChatResponse:
+    replies = await service.chat_many([_to_params(c) for c in body.conversations], body.model)
+    return BatchChatResponse(replies=replies)
