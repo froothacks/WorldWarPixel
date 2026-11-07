@@ -41,6 +41,8 @@ def test_run_lifecycle(client: TestClient) -> None:
     assert len(canvas["rows"]) == 16 and len(canvas["rows"][0]) == 32
     events = client.get(f"/runs/{run_id}/events", params={"limit": 5}).json()
     assert events[0]["kind"] == "run.created"
+    assert client.get(f"/runs/{run_id}/events", params={"limit": -1}).status_code == 422
+    assert client.get(f"/runs/{run_id}/events", params={"limit": 99999}).status_code == 422
     assert client.get(f"/runs/{run_id}/agents/1").json()["name"] == "Agent 1"
     assert client.get(f"/runs/{run_id}/agents/9").status_code == 404
     assert client.get("/runs/nope").status_code == 404

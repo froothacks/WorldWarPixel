@@ -2,7 +2,15 @@ import asyncio
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
@@ -119,10 +127,13 @@ async def get_canvas(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 
 @router.get("/{run_id}/events")
 async def get_events(
-    run_id: str, manager: ManagerDep, after: int = 0, limit: int = 1000
+    run_id: str,
+    manager: ManagerDep,
+    after: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
 ) -> list[dict[str, Any]]:
     manager.get(run_id)
-    events = manager.log.read(run_id, after_id=after, limit=min(limit, 10_000))
+    events = manager.log.read(run_id, after_id=after, limit=limit)
     return [
         {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
         for e in events
