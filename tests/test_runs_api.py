@@ -72,7 +72,9 @@ def test_websocket_sends_snapshot_then_diffs(client: TestClient) -> None:
         frame = ws.receive_bytes()
         assert frame[0] == FRAME_SNAPSHOT
         assert struct.unpack_from("<HH", frame, 1) == (32, 16)
-        assert len(frame) == 5 + 32 * 16
+        assert len(frame) == 5 + 32 * 16 * 3
+        owners = struct.unpack_from(f"<{32 * 16}H", frame, 5 + 32 * 16)
+        assert set(owners) <= {0, 1, 2, 3}
         deadline = time.time() + 3
         while time.time() < deadline:
             msg = ws.receive()

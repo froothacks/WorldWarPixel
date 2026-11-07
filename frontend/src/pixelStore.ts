@@ -34,8 +34,9 @@ export class PixelStore {
     this.image.data[o + 2] = b;
   }
 
-  loadSnapshot(pixels: Uint8Array) {
+  loadSnapshot(pixels: Uint8Array, owners: Uint16Array) {
     for (let i = 0; i < pixels.length; i++) this.paint(i, pixels[i]);
+    this.owners.set(owners);
     this.version++;
   }
 

@@ -53,7 +53,7 @@ Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so th
 - `GET /runs/{id}/events?after=&limit=`: the event log.
 - `WS /runs/{id}/ws`: realtime stream. On connect the server sends a JSON `snapshot` (run, palette, agents, threads) and a binary full-canvas frame; after that, JSON events (`run.state`, `agent.status`, `agent.thought`, `post.created`) and a binary pixel-diff frame every 250 ms.
 
-Binary frames: byte 0 is the frame type. `1` = snapshot: `u16 width, u16 height, width*height palette bytes`. `2` = diff: repeated `u16 x, u16 y, u8 color, u16 agent_id` (little-endian).
+Binary frames: byte 0 is the frame type. `1` = snapshot: `u16 width, u16 height, width*height palette bytes, width*height u16 owner agent ids`. `2` = diff: repeated `u16 x, u16 y, u8 color, u16 agent_id` (little-endian).
 
 ```sh
 curl -X POST localhost:8000/runs -H 'content-type: application/json' \

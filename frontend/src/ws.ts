@@ -20,7 +20,7 @@ export type ServerEvent =
 
 export interface StreamHandlers {
   onEvent: (event: ServerEvent) => void;
-  onCanvas: (width: number, height: number, pixels: Uint8Array) => void;
+  onCanvas: (width: number, height: number, pixels: Uint8Array, owners: Uint16Array) => void;
   onPixels: (writes: PixelWrite[]) => void;
   onClose: (reason: string) => void;
 }
@@ -54,7 +54,13 @@ export function openRunStream(runId: string, handlers: StreamHandlers): () => vo
       const view = new DataView(buf);
       const width = view.getUint16(1, true);
       const height = view.getUint16(3, true);
-      handlers.onCanvas(width, height, new Uint8Array(buf, 5, width * height));
+      const n = width * height;
+      const pixels = new Uint8Array(buf, 5, n);
+      // Owners are little-endian u16; copy them through a DataView so alignment and host
+      // byte order don't matter.
+      const owners = new Uint16Array(n);
+      for (let i = 0, off = 5 + n; i < n; i++, off += 2) owners[i] = view.getUint16(off, true);
+      handlers.onCanvas(width, height, pixels, owners);
     } else if (kind === FRAME_PIXELS) {
       handlers.onPixels(parsePixelFrame(buf));
     }

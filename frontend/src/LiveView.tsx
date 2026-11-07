@@ -71,9 +71,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     };
     const close = openRunStream(initial.id, {
       onEvent,
-      onCanvas: (w, h, pixels) => {
+      onCanvas: (w, h, pixels, owners) => {
         const s = new PixelStore(w, h, paletteRef.current);
-        s.loadSnapshot(pixels);
+        s.loadSnapshot(pixels, owners);
         storeRef.current = s;
         setStore(s);
         setVersion(s.version);

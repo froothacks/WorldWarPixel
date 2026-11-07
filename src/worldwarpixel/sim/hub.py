@@ -16,8 +16,9 @@ PIXEL_STRUCT = struct.Struct("<HHBH")  # x, y, color, agent_id
 
 
 def snapshot_frame(canvas: Canvas) -> bytes:
+    """type, u16 width, u16 height, width*height colour bytes, width*height u16 owner ids."""
     header = struct.pack("<HH", canvas.width, canvas.height)
-    return bytes([FRAME_SNAPSHOT]) + header + canvas.snapshot()
+    return bytes([FRAME_SNAPSHOT]) + header + canvas.snapshot() + canvas.owners_le()
 
 
 class Hub:

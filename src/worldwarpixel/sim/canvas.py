@@ -1,3 +1,4 @@
+import sys
 from array import array
 from dataclasses import dataclass
 
@@ -77,3 +78,11 @@ class Canvas:
 
     def snapshot(self) -> bytes:
         return bytes(self.pixels)
+
+    def owners_le(self) -> bytes:
+        """Owner ids as little-endian uint16, whatever the host byte order."""
+        if sys.byteorder == "little":
+            return self.owners.tobytes()
+        swapped = array("H", self.owners)
+        swapped.byteswap()
+        return swapped.tobytes()

@@ -10,6 +10,8 @@ def test_write_get_owner() -> None:
     assert c.owner(3, 2) == 7
     assert c.owner(0, 0) == 0
     assert len(c.snapshot()) == 32
+    owners = c.owners_le()
+    assert len(owners) == 64 and owners[2 * (2 * 8 + 3) : 2 * (2 * 8 + 3) + 2] == b"\x07\x00"
 
 
 def test_view_is_hex_rows_clipped_to_canvas() -> None:
