@@ -17,7 +17,9 @@ export type ServerEvent =
   | { type: "agent.status"; agent_id: number; status: AgentStatus }
   | ({ type: "agent.thought"; agent_id: number } & Thought)
   | { type: "post.created"; post: Post; author: string }
-  | ({ type: "narrator.update"; stats?: NarratorStats } & NarratorUpdate);
+  | ({ type: "narrator.update"; stats?: NarratorStats } & NarratorUpdate)
+  | { type: "canvas.cleared" }
+  | { type: "board.cleared" };
 
 export interface StreamHandlers {
   onEvent: (event: ServerEvent) => void;

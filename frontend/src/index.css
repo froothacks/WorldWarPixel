@@ -56,7 +56,8 @@ button.ghost { background: transparent; border-color: transparent; }
 .run-list button { width: 100%; display: flex; gap: 10px; align-items: center; text-align: left; }
 
 /* Live view */
-.live { height: 100%; display: grid; grid-template-rows: 44px 1fr 240px; }
+.live { height: 100%; display: grid; grid-template-rows: auto 1fr 240px; }
+.topbar { height: 44px; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .live-grid { display: grid; grid-template-columns: 260px minmax(200px, 1fr) 320px; min-height: 0; min-width: 780px; overflow: auto; }
 .agents, .board, .drawer { display: flex; flex-direction: column; min-height: 0; background: var(--panel); overflow: hidden; }
@@ -118,6 +119,17 @@ button.ghost { background: transparent; border-color: transparent; }
 .prompt { padding: 0 12px; }
 .prompt summary { cursor: pointer; }
 .prompt pre { white-space: pre-wrap; font-size: 11px; line-height: 1.4; background: #1a1d23; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+
+.godbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, #2a1f3d, #1b1f2a); flex-wrap: wrap; }
+.godbar .god-announce { display: flex; gap: 6px; align-items: center; flex: 1 1 100%; }
+.godbar .god-announce input { flex: 1; min-width: 120px; }
+.godbar .sep { width: 1px; height: 22px; background: var(--border); }
+.godbar label.small { display: flex; align-items: center; gap: 6px; }
+.godbar input[type="range"] { width: 120px; }
+.swatches { display: flex; gap: 3px; }
+.swatch { width: 18px; height: 18px; padding: 0; border: 2px solid transparent; border-radius: 3px; }
+.swatch.on { border-color: #fff; box-shadow: 0 0 0 1px #000 inset; }
+.canvas-brush { cursor: crosshair; }
 
 .narr-events { margin: 4px 0 2px; font-size: 12px; }
 .narr-events summary { cursor: pointer; color: var(--muted, #9aa); }

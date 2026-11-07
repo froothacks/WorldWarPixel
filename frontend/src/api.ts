@@ -120,7 +120,14 @@ export interface Post {
 export type NarratorHighlight =
   | { type: "agent"; id: number; label: string }
   | { type: "thread"; id: number; label: string }
-  | { type: "region"; x: number; y: number; w: number; h: number; label: string };
+  | {
+      type: "region";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      label: string;
+    };
 
 export interface NarratorUpdate {
   id: number;
@@ -154,7 +161,12 @@ export interface Snapshot {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
+  const token = sessionStorage.getItem("godToken");
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (token) headers["X-God-Token"] = token;
+  const res = await fetch(path, { headers, ...init });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -167,18 +179,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export const GOD_ID = 65535;
+export const GOD_NAME = "The Hand of God";
+
 export const api = {
   listRuns: () => request<RunSummary[]>("/runs"),
   createRun: (config: RunConfig) =>
-    request<RunSummary>("/runs", { method: "POST", body: JSON.stringify(config) }),
+    request<RunSummary>("/runs", {
+      method: "POST",
+      body: JSON.stringify(config),
+    }),
   getRun: (id: string) => request<RunSummary>(`/runs/${id}`),
-  pause: (id: string) => request<RunSummary>(`/runs/${id}/pause`, { method: "POST" }),
-  resume: (id: string) => request<RunSummary>(`/runs/${id}/resume`, { method: "POST" }),
-  stop: (id: string) => request<RunSummary>(`/runs/${id}/stop`, { method: "POST" }),
-  agent: (id: string, agentId: number) => request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
+  pause: (id: string) =>
+    request<RunSummary>(`/runs/${id}/pause`, { method: "POST" }),
+  resume: (id: string) =>
+    request<RunSummary>(`/runs/${id}/resume`, { method: "POST" }),
+  stop: (id: string) =>
+    request<RunSummary>(`/runs/${id}/stop`, { method: "POST" }),
+  agent: (id: string, agentId: number) =>
+    request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
-  thread: (id: string, threadId: number) => request<Post[]>(`/runs/${id}/threads/${threadId}`),
+  thread: (id: string, threadId: number) =>
+    request<Post[]>(`/runs/${id}/threads/${threadId}`),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>
-    request<NarratorUpdate>(`/runs/${id}/narrator/ask`, { method: "POST", body: JSON.stringify({ question }) }),
+    request<NarratorUpdate>(`/runs/${id}/narrator/ask`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+  godPixels: (id: string, pixels: [number, number, number][], erase = false) =>
+    request<{ placed: number }>(`/runs/${id}/god/pixels`, {
+      method: "POST",
+      body: JSON.stringify({ pixels, erase }),
+    }),
+  godClearCanvas: (id: string) =>
+    request<RunSummary>(`/runs/${id}/god/clear-canvas`, { method: "POST" }),
+  godClearBoard: (id: string) =>
+    request<RunSummary>(`/runs/${id}/god/clear-board`, { method: "POST" }),
+  godAnnounce: (id: string, title: string, body: string) =>
+    request<Post>(`/runs/${id}/god/announce`, {
+      method: "POST",
+      body: JSON.stringify({ title, body }),
+    }),
+  godPace: (
+    id: string,
+    pace: { cooldown?: number; pixels_per_turn?: number },
+  ) =>
+    request<RunSummary>(`/runs/${id}/god/pace`, {
+      method: "POST",
+      body: JSON.stringify(pace),
+    }),
 };

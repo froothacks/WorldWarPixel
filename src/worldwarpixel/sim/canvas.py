@@ -50,6 +50,11 @@ class Canvas:
         tiles = self._tiles_w * -(-height // TILE)
         self._tile_counts = [[0] * len(PALETTE) for _ in range(tiles)]
 
+    def clear(self) -> None:
+        """Blank every pixel and forget all owners."""
+        self.pixels = bytearray(self.width * self.height)
+        self.owners = array("H", bytes(2 * self.width * self.height))
+
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
 

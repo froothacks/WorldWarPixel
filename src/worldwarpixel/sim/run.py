@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import PALETTE, Canvas
+from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
@@ -38,6 +38,13 @@ class RunConfig(BaseModel):
     )
 
 
+GOD_ID = 65535
+"""Owner id for pixels and posts made by the human viewer in god mode."""
+GOD_NAME = "The Hand of God"
+ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
+MAX_GOD_PIXELS = 50_000
+
+
 class Run:
     """One simulation: a canvas, a board and a set of agents each on its own cooldown loop."""
 
@@ -62,6 +69,7 @@ class Run:
         self.started_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
+        self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
         self.agents = seed_agents(
@@ -90,8 +98,93 @@ class Run:
         return {a.id: a for a in self.agents}
 
     def agent_name(self, agent_id: int) -> str:
+        if agent_id == GOD_ID:
+            return GOD_NAME
         agent = self.by_id.get(agent_id)
         return agent.name if agent else f"agent {agent_id}"
+
+    # -- god mode (the human viewer intervening) ------------------------------------------
+
+    def god_paint(self, pixels: list[tuple[int, int, int]], erase: bool = False) -> int:
+        """Paint (or erase to blank, unowned) pixels as the human; returns how many landed."""
+        batch = pixels[:MAX_GOD_PIXELS]
+        bad = [c for _, _, c in batch if not 0 <= int(c) < len(PALETTE)]
+        if bad:
+            raise ValueError(f"colour {bad[0]} is not in 0..{len(PALETTE) - 1}")
+        n = 0
+        with self.log.batch():
+            for x, y, color in batch:
+                if not self.canvas.in_bounds(x, y):
+                    continue
+                prev = self.canvas.owner(x, y)
+                c, owner = (0, 0) if erase else (int(color), GOD_ID)
+                self.canvas.write(PixelWrite(x, y, c, owner))
+                payload = {"x": x, "y": y, "color": c, "prev_owner": prev, "owner": owner}
+                self._on_write(GOD_ID, "pixel", payload)
+                n += 1
+            if n:
+                self._record("god.paint", GOD_ID, {"pixels": n, "erase": erase})
+        return n
+
+    def god_clear_canvas(self) -> None:
+        self.canvas.clear()
+        self._record("god.clear_canvas", GOD_ID, {})
+        self.hub.resync()
+        self.hub.publish("canvas.cleared")
+
+    def god_clear_board(self) -> None:
+        self.board.clear()
+        self._announcements.clear()
+        self._record("god.clear_board", GOD_ID, {})
+        self.hub.publish("board.cleared")
+
+    def god_announce(self, title: str, body: str) -> dict[str, Any]:
+        """Post a thread as the human; agents see it on the board like any other thread."""
+        post = self.board.post_thread(GOD_ID, title, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        self._announcements.append(
+            {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
+        )
+        return post.to_dict()
+
+    def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
+        """God announcements from the last `window` seconds, newest last, for the observation."""
+        cutoff = self._clock() - window
+        self._announcements = [a for a in self._announcements if a["ts"] >= cutoff]
+        return self._announcements[-3:]
+
+    def _announcement_digest(self) -> list[dict[str, Any]]:
+        """Recent announcements as pinned board entries, so every prompt version shows them."""
+        out: list[dict[str, Any]] = []
+        for a in self.recent_announcements():
+            try:
+                replies = len(self.board.thread(a["thread_id"])) - 1
+            except (KeyError, IndexError):
+                continue
+            out.append(
+                {
+                    "thread_id": a["thread_id"],
+                    "title": (
+                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
+                        "(everyone sees this; react however your persona would)"
+                    ),
+                    "author": GOD_NAME,
+                    "replies": replies,
+                    "latest": None,
+                }
+            )
+        return out
+
+    def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
+        """Change how fast agents act; takes effect from each agent's next turn."""
+        if cooldown is not None:
+            for agent in self.agents:
+                agent.cooldown = cooldown
+            self.config.cooldown = cooldown
+        if pixels_per_turn is not None:
+            self.config.pixels_per_turn = pixels_per_turn
+        self._record("god.pace", GOD_ID, {"cooldown": cooldown, "pixels_per_turn": pixels_per_turn})
+        self.hub.publish("run.state", state=self.state, stats=self.stats)
 
     # -- lifecycle -------------------------------------------------------------------------
 
@@ -163,7 +256,7 @@ class Run:
             budget=budget,
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
-            board=self.board.digest(name_of=self.agent_name),
+            board=self._announcement_digest() + self.board.digest(name_of=self.agent_name),
         )
         self._set_status(agent.id, "thinking")
         async with self._sem:
@@ -189,7 +282,8 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
-            self.hub.push_pixel(payload["x"], payload["y"], payload["color"], agent_id)
+            owner = int(payload.get("owner", agent_id))
+            self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))

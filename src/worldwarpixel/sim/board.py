@@ -53,6 +53,11 @@ class Board:
         self._posts[pid] = post
         return post
 
+    def clear(self) -> None:
+        """Forget every post but keep issuing fresh ids, so old links never point at new threads."""
+        self._posts.clear()
+        self._replies.clear()
+
     def post_thread(self, author_id: int, title: str, body: str, now: float) -> Post:
         title = title.strip()
         if not title:

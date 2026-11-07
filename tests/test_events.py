@@ -14,3 +14,13 @@ def test_append_and_read_in_order() -> None:
     assert log.count("r1") == 2
     assert log.run_ids() == ["r1", "r2"]
     log.close()
+
+
+def test_batch_defers_the_commit_until_the_block_ends() -> None:
+    log = EventLog()
+    with log.batch():
+        for i in range(5):
+            log.append("b", float(i), "pixel", 1, {"x": i, "y": 0, "color": 1})
+    assert log.count("b") == 5
+    log.append("b", 9.0, "post", 1, {})
+    assert log.count("b") == 6

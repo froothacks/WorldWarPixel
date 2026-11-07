@@ -1,6 +1,7 @@
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,8 @@ class Event:
 class EventLog:
     """Append-only SQLite log of everything that happens in a run, for replay and audit."""
 
+    _batching = False
+
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
@@ -45,8 +48,19 @@ class EventLog:
             "INSERT INTO events (run_id, ts, kind, agent_id, payload) VALUES (?, ?, ?, ?, ?)",
             (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":"))),
         )
-        self._conn.commit()
+        if not self._batching:
+            self._conn.commit()
         return int(cur.lastrowid or 0)
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Defer the commit until the block ends, for bulk writes like a god-mode brush stroke."""
+        self._batching = True
+        try:
+            yield
+        finally:
+            self._batching = False
+            self._conn.commit()
 
     def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
         rows = self._conn.execute(

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
-import type { Agent } from "./api";
+import { GOD_ID, GOD_NAME, type Agent } from "./api";
+import type { GodTool } from "./GodBar";
 import type { PixelStore } from "./pixelStore";
 
 interface Props {
@@ -9,6 +10,9 @@ interface Props {
   highlightAgent: number | null;
   onPickAgent: (agentId: number) => void;
   focus: Region | null;
+  /** God-mode brush; when set, dragging paints/erases instead of panning. */
+  tool?: GodTool | null;
+  onPaint?: (pixels: [number, number, number][], erase: boolean) => void;
 }
 
 export interface Region {
@@ -26,7 +30,9 @@ interface Viewport {
   panY: number;
 }
 
-export default function CanvasView({ store, version, agents, highlightAgent, onPickAgent, focus }: Props) {
+export default function CanvasView({ store, version, agents, highlightAgent, onPickAgent, focus, tool = null, onPaint }: Props) {
+  const stroke = useRef<{ cells: Map<number, [number, number, number]>; sent: Set<number> } | null>(null);
+  const flushTimer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const [vp, setVp] = useState<Viewport | null>(null);
@@ -94,12 +100,18 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
         ctx.fillRect(vp.panX + x * vp.zoom, vp.panY + y * vp.zoom, vp.zoom, vp.zoom);
       }
     }
+    if (tool && hover) {
+      const half = Math.floor(tool.size / 2);
+      ctx.strokeStyle = tool.mode === "erase" ? "#ff5f5f" : "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(vp.panX + (hover.x - half) * vp.zoom, vp.panY + (hover.y - half) * vp.zoom, tool.size * vp.zoom, tool.size * vp.zoom);
+    }
     if (focus) {
       ctx.strokeStyle = "#4f8cff";
       ctx.lineWidth = 2;
       ctx.strokeRect(vp.panX + focus.x * vp.zoom, vp.panY + focus.y * vp.zoom, focus.w * vp.zoom, focus.h * vp.zoom);
     }
-  }, [store, version, vp, highlightAgent, size, focus]);
+  }, [store, version, vp, highlightAgent, size, focus, tool, hover]);
 
   const toPixel = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!store || !vp) return null;
@@ -120,10 +132,42 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     setVp({ zoom, panX: mx - (mx - vp.panX) * k, panY: my - (my - vp.panY) * k });
   };
 
+  // God-mode brush: stamp a size x size square at the pointer, batch and send every 80 ms.
+  const stamp = (p: { x: number; y: number } | null) => {
+    if (!p || !tool || !store || !stroke.current) return;
+    const half = Math.floor(tool.size / 2);
+    const color = tool.mode === "erase" ? 0 : tool.color;
+    for (let dy = -half; dy < tool.size - half; dy++) {
+      for (let dx = -half; dx < tool.size - half; dx++) {
+        const x = p.x + dx;
+        const y = p.y + dy;
+        if (x < 0 || y < 0 || x >= store.width || y >= store.height) continue;
+        const key = y * store.width + x;
+        if (!stroke.current.sent.has(key)) stroke.current.cells.set(key, [x, y, color]);
+      }
+    }
+    if (flushTimer.current === null) flushTimer.current = window.setTimeout(flushStroke, 80);
+  };
+  const flushStroke = () => {
+    flushTimer.current = null;
+    const s = stroke.current;
+    if (!s || !tool || s.cells.size === 0) return;
+    const batch = [...s.cells.values()];
+    s.cells.forEach((_, k) => s.sent.add(k));
+    s.cells.clear();
+    onPaint?.(batch, tool.mode === "erase");
+  };
+
   const onMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (tool && e.button === 0) {
+      stroke.current = { cells: new Map(), sent: new Set() };
+      stamp(toPixel(e));
+      return;
+    }
     if (vp) drag.current = { x: e.clientX, y: e.clientY, panX: vp.panX, panY: vp.panY };
   };
   const onMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (stroke.current) stamp(toPixel(e));
     if (drag.current && vp) {
       const d = drag.current;
       setVp({ ...vp, panX: d.panX + e.clientX - d.x, panY: d.panY + e.clientY - d.y });
@@ -131,6 +175,13 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     setHover(toPixel(e));
   };
   const onMouseUp = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (stroke.current) {
+      stamp(toPixel(e));
+      if (flushTimer.current !== null) window.clearTimeout(flushTimer.current);
+      flushStroke();
+      stroke.current = null;
+      return;
+    }
     const d = drag.current;
     drag.current = null;
     if (d && Math.abs(e.clientX - d.x) < 3 && Math.abs(e.clientY - d.y) < 3) {
@@ -147,13 +198,17 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     <div className="canvas-wrap">
       <canvas
         ref={canvasRef}
-        className="canvas"
+        className={`canvas ${tool ? "canvas-brush" : ""}`}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={() => {
           drag.current = null;
+          if (stroke.current) {
+            flushStroke();
+            stroke.current = null;
+          }
           setHover(null);
         }}
       />
@@ -162,7 +217,8 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
         {vp && ` · zoom ${vp.zoom.toFixed(2)}×`}
         {hover && ` · (${hover.x}, ${hover.y})`}
         {ownerAgent && ` · ${ownerAgent.name} (${ownerAgent.country})`}
-        {hover && !ownerAgent && " · unclaimed"}
+        {hover && !ownerAgent && owner === GOD_ID && ` · ${GOD_NAME}`}
+        {hover && !ownerAgent && owner !== GOD_ID && " · unclaimed"}
       </div>
     </div>
   );

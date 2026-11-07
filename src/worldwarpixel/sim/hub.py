@@ -61,6 +61,12 @@ class Hub:
             q.get_nowait()
         q.put_nowait(RESYNC)
 
+    def resync(self) -> None:
+        """Make every client reload the full snapshot (after a bulk canvas change)."""
+        self._pixels.clear()
+        for q in self._subs:
+            self._mark_stale(q)
+
     def publish(self, type_: str, **data: Any) -> None:
         self._send(json.dumps({"type": type_, **data}, separators=(",", ":")))
 
