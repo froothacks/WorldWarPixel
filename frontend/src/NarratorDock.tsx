@@ -15,6 +15,7 @@ const CHIP_ICON = { agent: "@", thread: "#", region: "⌖" } as const;
 export default function NarratorDock({ narrator, paused, stats, threads, onHighlight, onAsk }: Props) {
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
+  const [asked, setAsked] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now() / 1000);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -45,6 +46,7 @@ export default function NarratorDock({ narrator, paused, stats, threads, onHighl
     const q = question.trim();
     if (!q || pending) return;
     setPending(true);
+    setAsked(q);
     setError(null);
     try {
       await onAsk(q);
@@ -84,7 +86,12 @@ export default function NarratorDock({ narrator, paused, stats, threads, onHighl
         {updates.map((u) => (
           <UpdateItem key={u.id} update={u} onHighlight={onHighlight} />
         ))}
-        {pending && <p className="muted small">Narrator is thinking…</p>}
+        {pending && (
+          <>
+            <div className="narr-question">{asked}</div>
+            <p className="muted small">Narrator is thinking…</p>
+          </>
+        )}
       </div>
       <form className="narrator-ask" onSubmit={submit}>
         <input
