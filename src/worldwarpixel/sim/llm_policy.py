@@ -261,7 +261,8 @@ class LLMPolicy:
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 self.stats["failures"] += 1
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
-                return f"(model call failed: {type(e).__name__})"
+                thoughts.append(f"(model call failed: {type(e).__name__})")
+                break
             msg = response.choices[0].message
             if msg.content:
                 thoughts.append(msg.content.strip())
