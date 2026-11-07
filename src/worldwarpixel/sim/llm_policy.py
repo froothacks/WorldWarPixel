@@ -367,20 +367,22 @@ class LLMPolicy:
         raise ToolError(f"unknown tool {name}")
 
 
-_PIXEL_RE = re.compile(
-    r"x\\?\"?\s*:\s*(-?\d+).*?y\\?\"?\s*:\s*(-?\d+).*?color\\?\"?\s*:\s*(-?\d+)", re.S
-)
+_FIELD_RE = {k: re.compile(rf"{k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
-    """Decode a stringified pixel list, salvaging truncated or sloppy JSON by regex."""
+    """Decode a stringified pixel list, salvaging truncated or sloppy JSON object by object."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, list):
             return parsed
     except ValueError:
         pass
-    found = [{"x": int(x), "y": int(y), "color": int(c)} for x, y, c in _PIXEL_RE.findall(text)]
+    found: list[dict[str, int]] = []
+    for obj in re.findall(r"\{[^{}]*\}", text):  # only complete {...} objects, any key order
+        fields = {k: rx.search(obj) for k, rx in _FIELD_RE.items()}
+        if all(fields.values()):
+            found.append({k: int(m.group(1)) for k, m in fields.items() if m})
     if not found:
         raise ToolError("pixels must be a list of {x, y, color}")
     return found
