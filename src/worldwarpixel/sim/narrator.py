@@ -587,7 +587,7 @@ class Narrator:
             self._announced |= announce
             self._last_pos = last
         # board
-        roots = [p for p in w.new_posts if p.get("parent_id") is None]
+        roots = [p for p in w.new_posts if p.get("title")]
         for p in roots[-2:]:
             ev(
                 "thread",

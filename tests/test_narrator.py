@@ -347,3 +347,14 @@ def test_notable_events_cover_drawings_teams_raids_repairs_and_moves() -> None:
         assert f"{n(1)} left (4, 4)" in " ".join(e["text"] for e in digest["events"])
 
     asyncio.run(main())
+
+
+def test_plain_replies_are_not_announced_as_new_threads() -> None:
+    run = Run("t", CONFIG, EventLog(), RandomWalkPolicy(seed=1), narrator_model=None)
+    root_post = run.board.post_thread(1, "Blue corner", "Who is in?", 0.0)
+    root = root_post.to_dict()
+    reply = run.board.reply(2, root_post.thread_id, "me", 1.0).to_dict()
+    run._on_write(1, "post", root)
+    run._on_write(2, "post", reply)
+    events = [e for e in run.narrator.build_digest()["events"] if e["kind"] == "thread"]
+    assert [e["text"] for e in events] == [f'{run.agent_name(1)} opened "Blue corner".']
