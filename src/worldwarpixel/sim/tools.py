@@ -106,7 +106,8 @@ class ToolSet:
         wanted = [
             (x, y, c)
             for x, y, c in cells
-            if self._canvas.in_bounds(x, y) and self._canvas.get(x, y) != c
+            if self._canvas.in_bounds(x, y)
+            and (self._canvas.get(x, y) != c or self._canvas.owner(x, y) != self._agent_id)
         ]
         if not cells:
             raise ToolError("the stencil is empty")
