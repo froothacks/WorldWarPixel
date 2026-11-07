@@ -97,11 +97,11 @@ export interface Agent {
   cooldown: number;
   status: AgentStatus;
   last_thought: Thought | null;
-  persona: string;
-  persona_card: Record<string, string | number | string[] | null>;
 }
 
 export interface AgentDetail extends Agent {
+  persona: string;
+  persona_card: Record<string, string | number | string[] | null>;
   thoughts: Thought[];
   system_prompt: string | null;
 }
@@ -160,6 +160,29 @@ export interface NarratorState {
   next_update_at: number | null;
   stats: NarratorStats;
   updates: NarratorUpdate[];
+}
+
+export interface WorldNode {
+  country: string;
+  agents: number;
+  /** Pixels painted by this country over the whole run (not what it holds now). */
+  pixels: number;
+  posts: number;
+}
+
+export interface WorldEdge {
+  a: string;
+  b: string;
+  /** Replies and @mentions between the two countries. */
+  talk: number;
+  /** Pixels of b that a painted over, and vice versa. */
+  raids_ab: number;
+  raids_ba: number;
+}
+
+export interface WorldGraph {
+  nodes: WorldNode[];
+  edges: WorldEdge[];
 }
 
 export interface Snapshot {
@@ -259,6 +282,7 @@ export const api = {
   agent: (id: string, agentId: number) =>
     request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
+  world: (id: string) => request<WorldGraph>(`/runs/${id}/world`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),

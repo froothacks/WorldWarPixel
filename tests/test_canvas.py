@@ -1,6 +1,6 @@
 import pytest
 
-from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
+from worldwarpixel.sim.canvas import PALETTE, TILE, Canvas, PixelWrite
 
 
 def test_write_get_owner() -> None:
@@ -44,3 +44,15 @@ def test_png_export_downsamples() -> None:
     assert (w, h) == (434, 234)
     small, scale1 = Canvas(64, 32).to_png()
     assert scale1 == 1 and struct.unpack(">II", small[16:24]) == (64, 32)
+
+
+def test_clear_resets_region_counts() -> None:
+    c = Canvas(2 * TILE, 2 * TILE)
+    c.write(PixelWrite(3, 3, 5, agent_id=1))
+    c.write(PixelWrite(TILE + 3, TILE + 3, 7, agent_id=2))
+    assert len(c.regions()) == 2
+    c.clear()
+    assert c.regions() == []
+    assert all(r["painted"] == 0 for r in c.regions(limit=None))
+    c.write(PixelWrite(3, 3, 9, agent_id=1))
+    assert [(r["painted"], r["color"]) for r in c.regions()] == [(1, 9)]
