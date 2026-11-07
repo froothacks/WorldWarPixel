@@ -84,21 +84,26 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
 
   const shown = useMemo(() => {
     if (!graph) return { nodes: [] as string[], edges: [] as WorldEdge[] };
-    const activity = new Map<string, number>();
-    for (const e of graph.edges) {
-      activity.set(e.a, (activity.get(e.a) ?? 0) + weight(e));
-      activity.set(e.b, (activity.get(e.b) ?? 0) + weight(e));
-    }
     const pop = new Map(graph.nodes.map((n) => [n.country, n.agents]));
-    const top = [...activity.keys()].sort((a, b) => activity.get(b)! - activity.get(a)!).slice(0, MAX_NODES);
-    if (highlight && pop.has(highlight) && !top.includes(highlight)) top.splice(MAX_NODES - 1, 1, highlight);
-    const keep = new Set(top);
-    const edges = graph.edges
-      .filter((e) => keep.has(e.a) && keep.has(e.b))
-      .sort((a, b) => weight(b) - weight(a))
-      .slice(0, MAX_EDGES);
+    const hit = (e: WorldEdge) => !!highlight && (e.a === highlight || e.b === highlight);
+    // highlighted country's ties first, then strongest
+    const ranked = [...graph.edges].sort((a, b) => Number(hit(b)) - Number(hit(a)) || weight(b) - weight(a));
+    const keep = new Set<string>();
+    if (highlight && pop.has(highlight)) keep.add(highlight);
+    for (const e of ranked) {
+      if (keep.size >= MAX_NODES) break;
+      const add = [e.a, e.b].filter((n) => !keep.has(n));
+      if (keep.size + add.length > MAX_NODES) continue;
+      for (const n of add) keep.add(n);
+    }
+    // quiet runs: fill the ring with the most populous countries
+    for (const n of [...graph.nodes].sort((a, b) => b.agents - a.agents)) {
+      if (keep.size >= MAX_NODES) break;
+      keep.add(n.country);
+    }
+    const edges = ranked.filter((e) => keep.has(e.a) && keep.has(e.b)).slice(0, MAX_EDGES);
     // Seat by population so the ring order only changes when the cast does.
-    const nodes = top.sort((a, b) => (pop.get(b) ?? 0) - (pop.get(a) ?? 0) || a.localeCompare(b));
+    const nodes = [...keep].sort((a, b) => (pop.get(b) ?? 0) - (pop.get(a) ?? 0) || a.localeCompare(b));
     return { nodes, edges };
   }, [graph, highlight]);
 
@@ -153,7 +158,7 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
       </header>
       <div className="graph" ref={wrap}>
         {error && <p className="muted small pad">{error}</p>}
-        {graph && shown.edges.length === 0 && <p className="muted small pad empty">No cross-border replies or raids yet.</p>}
+        {graph && graph.edges.length === 0 && <p className="muted small pad empty">No cross-border replies or raids yet.</p>}
         <svg width={size.w} height={size.h}>
           {shown.edges.map((e) => {
             const a = layout.pos.get(e.a);
