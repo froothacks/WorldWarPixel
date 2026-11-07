@@ -38,6 +38,7 @@ LineKind = Literal["debate", "narrator", "verdict"]
 
 SAMPLE_RATE = 24_000
 """OpenAI `pcm` speech is 24 kHz signed 16-bit little-endian mono."""
+"""Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_ID = 65535
 NARRATOR_ID = 0
 NARRATOR_VOICE = "verse"

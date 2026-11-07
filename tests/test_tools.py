@@ -49,7 +49,7 @@ def test_blocked_pixels_do_not_spend_budget_and_join_dropped_note() -> None:
         "blocked": 1,
         "dropped": 1,
         "note": (
-            "1 pixels are inside a region held by the debate winner; they were not placed "
+            "1 pixels are inside a region held by the debate winner; they were not placed; "
             "only 2 fit the budget; 1 pixels were dropped"
         ),
     }

@@ -122,7 +122,7 @@ class ToolSet:
             out["dropped"] = dropped
             notes.append(f"only {len(allowed)} fit the budget; {dropped} pixels were dropped")
         if notes:
-            out["note"] = " ".join(notes)
+            out["note"] = "; ".join(notes)
         return out
 
     def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:

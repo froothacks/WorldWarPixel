@@ -81,7 +81,6 @@ class RunConfig(BaseModel):
     )
 
 
-"""Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 MAX_GOD_PIXELS = 50_000
