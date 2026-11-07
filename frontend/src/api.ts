@@ -37,12 +37,20 @@ export interface RunStats {
   errors: number;
 }
 
+export interface LatencySummary {
+  n: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  max: number;
+}
 export interface LLMStats {
   calls: number;
   tool_calls: number;
   tool_errors: number;
   no_tools: number;
   failures: number;
+  latency?: { model: LatencySummary | null; turn: LatencySummary | null };
 }
 
 export interface NarratorStats {

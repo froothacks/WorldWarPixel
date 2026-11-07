@@ -119,6 +119,8 @@ class ToolSet:
         ]
         if not cells:
             raise ToolError("the stencil is empty")
+        if not any(self._canvas.in_bounds(x, y) for x, y, _ in cells):
+            raise ToolError("the drawing would be entirely off the canvas")
         if not wanted:
             return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
         if self.budget.pixels <= 0:

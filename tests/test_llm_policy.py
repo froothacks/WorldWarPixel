@@ -3,6 +3,8 @@ import json
 import random
 from typing import Any
 
+import pytest
+
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
@@ -15,7 +17,7 @@ from worldwarpixel.sim.llm_policy import (
     system_prompt,
 )
 from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
-from worldwarpixel.sim.tools import ToolSet, TurnBudget
+from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
 class _Obj:
@@ -100,6 +102,9 @@ def test_tool_calls_are_executed_and_summarised() -> None:
         "no_tools": 0,
         "failures": 0,
     }
+    latency = policy.public_stats()["latency"]
+    assert latency["model"]["n"] == 1 and latency["turn"]["n"] == 1
+    assert 0 <= latency["turn"]["p50"] <= latency["turn"]["max"]
     req = client.chat.completions.requests[0]
     assert req["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
     parts = req["messages"][1]["content"]
@@ -321,3 +326,54 @@ def test_successful_tool_calls_emit_action_events() -> None:
     actions = [p for k, p in events if k == "action"]
     assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
     assert actions[0]["args"]["country"] == "india" and actions[0]["result"]["placed"] == 40
+
+
+def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> None:
+    canvas, board = Canvas(128, 64), Board()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    first = AgentSpec(1, "A", "India", 5, 0, 0, 1.0, "A.")
+    second = AgentSpec(2, "B", "Japan", 6, 0, 0, 1.0, "B.")
+    flag = {"country": "india", "x": 10, "y": 10, "width": 12}
+
+    def tools_for(agent: AgentSpec) -> ToolSet:
+        return ToolSet(
+            canvas, board, agent.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0
+        )
+
+    a1 = dict(flag)
+    policy._dispatch(first, tools_for(first), "draw_flag", a1)
+    policy._projects[first.id] = ("draw_flag", a1, 100)
+    a2 = dict(flag)
+    policy._dispatch(second, tools_for(second), "draw_flag", a2)
+    assert a2["x"] == 24 and a2["y"] == 10 and a2["moved"]
+    # a scaled text's footprint is respected, and a drawing that cannot fit to the right goes left
+    third = AgentSpec(3, "C", "Peru", 7, 0, 0, 1.0, "C.")
+    policy._projects[second.id] = ("draw_text", {"text": "HI", "x": 60, "y": 10, "scale": 3}, 5)
+    a3 = {"shape": "heart", "x": 60, "y": 10, "color": 5, "scale": 1}
+    policy._dispatch(third, tools_for(third), "draw_shape", a3)
+    assert a3["x"] == 60 + 2 * 4 * 3 + 2
+    policy._projects[second.id] = (
+        "draw_flag",
+        {"country": "japan", "x": 100, "y": 10, "width": 36},
+        5,
+    )
+    a4 = {"country": "peru", "x": 100, "y": 10, "width": 20}
+    policy._dispatch(third, tools_for(third), "draw_flag", a4)
+    assert a4["x"] == 100 - 20 - 2
+    # no room right, left or below: the drawing stays put instead of leaving the canvas
+    small = Canvas(40, 20)
+    tiny = ToolSet(small, board, third.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0)
+    policy._projects[second.id] = (
+        "draw_flag",
+        {"country": "japan", "x": 2, "y": 2, "width": 36},
+        5,
+    )
+    a5 = {"country": "peru", "x": 2, "y": 2, "width": 36}
+    policy._dispatch(third, tiny, "draw_flag", a5)
+    assert (a5["x"], a5["y"]) == (2, 2) and "moved" not in a5
+    with pytest.raises(ToolError):
+        tiny.paint_stencil([(100, 100, 5)])
+    # the first agent continuing its own flag is never moved
+    again = dict(flag)
+    policy._dispatch(first, tools_for(first), "draw_flag", again)
+    assert again["x"] == 10 and "moved" not in again

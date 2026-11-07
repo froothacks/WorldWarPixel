@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import time
 from collections.abc import Iterable
 from typing import Any, cast
 
@@ -273,6 +274,10 @@ def region_view(
         text += "\nStill mostly empty: " + "; ".join(
             f"x {r['x0']}-{r['x1']}, y {r['y0']}-{r['y1']}" for r in quiet
         )
+        q = quiet[0]
+        sx = rng.randint(q["x0"], max(q["x0"], q["x1"] - 24))
+        sy = rng.randint(q["y0"], max(q["y0"], q["y1"] - 16))
+        text += f"\nA free spot nobody is using yet: ({sx}, {sy})."
     return text
 
 
@@ -314,6 +319,30 @@ def user_prompt(
     )
 
 
+def _sample(samples: list[float], value: float, keep: int = 2000) -> None:
+    samples.append(value)
+    if len(samples) > keep:
+        del samples[: len(samples) - keep]
+
+
+def latency_summary(samples: list[float]) -> dict[str, float] | None:
+    """n / mean / p50 / p95 / max in seconds over the recent samples."""
+    if not samples:
+        return None
+    xs = sorted(samples)
+
+    def pick(q: float) -> float:
+        return xs[min(len(xs) - 1, int(q * len(xs)))]
+
+    return {
+        "n": len(xs),
+        "mean": round(sum(xs) / len(xs), 3),
+        "p50": round(pick(0.5), 3),
+        "p95": round(pick(0.95), 3),
+        "max": round(xs[-1], 3),
+    }
+
+
 class LLMPolicy:
     """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
 
@@ -333,9 +362,17 @@ class LLMPolicy:
             "no_tools": 0,
             "failures": 0,
         }
+        self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
         return system_prompt(agent, width, height, pixels, posts)
+
+    def public_stats(self) -> dict[str, Any]:
+        """Counters plus latency percentiles of the recent model calls and whole turns."""
+        return {
+            **self.stats,
+            "latency": {k: latency_summary(v) for k, v in self._latency.items()},
+        }
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         text = user_prompt(
@@ -372,8 +409,10 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
+        turn_t0 = time.monotonic()
         for round_no in range(MAX_ROUNDS):
             self.stats["calls"] += 1
+            call_t0 = time.monotonic()
             try:
                 response = await self._client.chat.completions.create(
                     model=self._model,
@@ -390,6 +429,7 @@ class LLMPolicy:
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
                 thoughts.append(f"(model call failed: {type(e).__name__})")
                 break
+            _sample(self._latency["model"], time.monotonic() - call_t0)
             msg = response.choices[0].message
             if msg.content:
                 thoughts.append(msg.content.strip())
@@ -422,6 +462,7 @@ class LLMPolicy:
         thought = " ".join(t for t in thoughts if t)
         if actions:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
+        _sample(self._latency["turn"], time.monotonic() - turn_t0)
         return thought or "(no response)"
 
     def _execute(
@@ -454,6 +495,39 @@ class LLMPolicy:
             tools.record_action(name, _public_args(name, args), result)
         return json.dumps(result)
 
+    def _avoid_collision(
+        self, agent: AgentSpec, a: dict[str, Any], size: tuple[int, int], canvas: tuple[int, int]
+    ) -> None:
+        """Starting a new drawing exactly where someone else is drawing? Shift it alongside.
+
+        Small models copy the coordinates they see; this turns a pile-up into a row of drawings.
+        Continuing one's own drawing (same args as the remembered project) is never moved.
+        """
+        mine = self._projects.get(agent.id)
+        if mine and mine[1].get("x") == a["x"] and mine[1].get("y") == a["y"]:
+            return
+        taken = {
+            (p[1].get("x"), p[1].get("y")): p
+            for aid, p in self._projects.items()
+            if aid != agent.id
+        }
+        width, height = size
+        w, h = canvas
+        for _ in range(8):
+            other = taken.get((a["x"], a["y"]))
+            if other is None:
+                return
+            ow, oh = _footprint(other[0], other[1])
+            if a["x"] + ow + 2 + width <= w:
+                a["x"] = a["x"] + ow + 2
+            elif a["x"] - width - 2 >= 0:
+                a["x"] = a["x"] - width - 2
+            elif a["y"] + oh + 2 + height <= h:
+                a["y"] = a["y"] + oh + 2
+            else:
+                return  # nowhere to go; paint where asked rather than off the canvas
+            a["moved"] = True
+
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
         """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
@@ -478,8 +552,9 @@ class LLMPolicy:
         recent.append(text[:200])
         del recent[:-8]
 
-    @staticmethod
-    def _dispatch(agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
+    def _dispatch(
+        self, agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]
+    ) -> dict[str, Any]:
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
 
@@ -507,12 +582,14 @@ class LLMPolicy:
                 a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["width"] = min(max(int(a.get("width", 24)), 9), 36)
+                self._avoid_collision(agent, a, _footprint("draw_flag", a), (w, h))
                 return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
             case "draw_text":
                 a["text"] = str(a["text"])[:24]
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"] = colour(a.get("color"))
                 a["scale"] = _scale(a.get("scale", 1))
+                self._avoid_collision(agent, a, _footprint("draw_text", a), (w, h))
                 return tools.paint_stencil(
                     text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
                 )
@@ -521,6 +598,7 @@ class LLMPolicy:
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
                 a["scale"] = _scale(a.get("scale", 1))
+                self._avoid_collision(agent, a, _footprint("draw_shape", a), (w, h))
                 return tools.paint_stencil(
                     shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
                 )
@@ -633,6 +711,17 @@ def _canonical_tool(name: str) -> str:
     return name
 
 
+def _footprint(tool: str, args: dict[str, Any]) -> tuple[int, int]:
+    """(width, height) in pixels of a draw_* call, from its arguments."""
+    scale = _scale(args.get("scale", 1))
+    if tool == "draw_flag":
+        fw = int(args.get("width") or 24)
+        return fw, max(3, round(fw * 2 / 3))
+    if tool == "draw_text":
+        return max(1, len(str(args.get("text") or "?"))) * 4 * scale, 5 * scale
+    return 9 * scale, 9 * scale
+
+
 def _clamp(v: Any, size: int) -> int:
     return min(max(int(v), 0), size - 1)
 
@@ -673,6 +762,8 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
         case "draw_flag" | "draw_text" | "draw_shape":
             what = args.get("country") or args.get("text") or args.get("shape")
             tail = "done" if result.get("done") else f"{result.get('remaining')} px to go"
+            if args.get("moved"):
+                tail += ", shifted sideways because someone is already drawing there"
             return (
                 f"{name.removeprefix('draw_')} {what!r} at ({args['x']}, {args['y']}): "
                 f"+{result.get('placed', 0)} px, {tail}"
