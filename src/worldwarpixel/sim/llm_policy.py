@@ -604,6 +604,7 @@ class LLMPolicy:
                 thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
                 break
             _sample(self._latency["model"], time.monotonic() - call_t0)
+            self.stats.pop("last_error", None)
             msg = response.choices[0].message
             if msg.content:
                 thoughts.append(msg.content.strip())
