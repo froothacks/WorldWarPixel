@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import AsyncOpenAI
@@ -92,11 +92,17 @@ async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchCh
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+API_PREFIXES = {"runs", "chat", "health", "docs", "redoc", "openapi.json"}
+
+
+async def frontend(path: str) -> FileResponse:
+    """SPA fallback: unknown non-API paths get index.html; unknown API paths stay 404."""
+    if path.split("/", 1)[0] in API_PREFIXES:
+        raise HTTPException(404, "not found")
+    return FileResponse(FRONTEND_DIST / "index.html")
+
 
 if FRONTEND_DIST.is_dir():
     # Serve the built React app from the same process. API routes above take precedence.
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
-
-    @app.get("/{path:path}", include_in_schema=False)
-    async def frontend(path: str) -> FileResponse:
-        return FileResponse(FRONTEND_DIST / "index.html")
+    app.add_api_route("/{path:path}", frontend, include_in_schema=False)

@@ -1,8 +1,11 @@
+import asyncio
 import struct
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
@@ -118,3 +121,16 @@ def test_deleting_a_run_closes_its_websockets(client: TestClient) -> None:
         else:
             pytest.fail("socket was not closed")
     assert run.hub.client_count == 0
+
+
+def test_spa_fallback_does_not_swallow_api_404s(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from worldwarpixel import app as app_module
+
+    (tmp_path / "index.html").write_text("<html>spa</html>")
+    monkeypatch.setattr(app_module, "FRONTEND_DIST", tmp_path)
+    assert asyncio.run(app_module.frontend("some/ui/route")).path == str(tmp_path / "index.html")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(app_module.frontend("runs/nope/unknown"))
+    assert exc.value.status_code == 404
