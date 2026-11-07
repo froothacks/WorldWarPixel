@@ -321,3 +321,27 @@ def test_successful_tool_calls_emit_action_events() -> None:
     actions = [p for k, p in events if k == "action"]
     assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
     assert actions[0]["args"]["country"] == "india" and actions[0]["result"]["placed"] == 40
+
+
+def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> None:
+    canvas, board = Canvas(128, 64), Board()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    first = AgentSpec(1, "A", "India", 5, 0, 0, 1.0, "A.")
+    second = AgentSpec(2, "B", "Japan", 6, 0, 0, 1.0, "B.")
+    flag = {"country": "india", "x": 10, "y": 10, "width": 12}
+
+    def tools_for(agent: AgentSpec) -> ToolSet:
+        return ToolSet(
+            canvas, board, agent.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0
+        )
+
+    a1 = dict(flag)
+    policy._dispatch(first, tools_for(first), "draw_flag", a1)
+    policy._projects[first.id] = ("draw_flag", a1, 100)
+    a2 = dict(flag)
+    policy._dispatch(second, tools_for(second), "draw_flag", a2)
+    assert a2["x"] == 24 and a2["y"] == 10 and a2["moved"]
+    # the first agent continuing its own flag is never moved
+    again = dict(flag)
+    policy._dispatch(first, tools_for(first), "draw_flag", again)
+    assert again["x"] == 10 and "moved" not in again

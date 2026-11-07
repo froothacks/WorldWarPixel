@@ -273,6 +273,10 @@ def region_view(
         text += "\nStill mostly empty: " + "; ".join(
             f"x {r['x0']}-{r['x1']}, y {r['y0']}-{r['y1']}" for r in quiet
         )
+        q = quiet[0]
+        sx = rng.randint(q["x0"], max(q["x0"], q["x1"] - 24))
+        sy = rng.randint(q["y0"], max(q["y0"], q["y1"] - 16))
+        text += f"\nA free spot nobody is using yet: ({sx}, {sy})."
     return text
 
 
@@ -454,6 +458,28 @@ class LLMPolicy:
             tools.record_action(name, _public_args(name, args), result)
         return json.dumps(result)
 
+    def _avoid_collision(self, agent: AgentSpec, a: dict[str, Any], width: int, w: int) -> None:
+        """Starting a new drawing exactly where someone else is drawing? Shift it alongside.
+
+        Small models copy the coordinates they see; this turns a pile-up into a row of drawings.
+        Continuing one's own drawing (same args as the remembered project) is never moved.
+        """
+        mine = self._projects.get(agent.id)
+        if mine and mine[1].get("x") == a["x"] and mine[1].get("y") == a["y"]:
+            return
+        taken = {
+            (p[1].get("x"), p[1].get("y")): p[1]
+            for aid, p in self._projects.items()
+            if aid != agent.id
+        }
+        for _ in range(8):
+            other = taken.get((a["x"], a["y"]))
+            if other is None:
+                return
+            step = int(other.get("width") or (len(str(other.get("text", ""))) * 4) or 10) + 2
+            a["x"] = a["x"] + step if a["x"] + step + width <= w else max(0, a["x"] - step)
+            a["moved"] = True
+
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
         """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
@@ -478,8 +504,9 @@ class LLMPolicy:
         recent.append(text[:200])
         del recent[:-8]
 
-    @staticmethod
-    def _dispatch(agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
+    def _dispatch(
+        self, agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]
+    ) -> dict[str, Any]:
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
 
@@ -507,12 +534,14 @@ class LLMPolicy:
                 a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["width"] = min(max(int(a.get("width", 24)), 9), 36)
+                self._avoid_collision(agent, a, a["width"], w)
                 return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
             case "draw_text":
                 a["text"] = str(a["text"])[:24]
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"] = colour(a.get("color"))
                 a["scale"] = _scale(a.get("scale", 1))
+                self._avoid_collision(agent, a, len(a["text"]) * 4 * a["scale"], w)
                 return tools.paint_stencil(
                     text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
                 )
@@ -521,6 +550,7 @@ class LLMPolicy:
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
                 a["scale"] = _scale(a.get("scale", 1))
+                self._avoid_collision(agent, a, 9 * a["scale"], w)
                 return tools.paint_stencil(
                     shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
                 )
@@ -673,6 +703,8 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
         case "draw_flag" | "draw_text" | "draw_shape":
             what = args.get("country") or args.get("text") or args.get("shape")
             tail = "done" if result.get("done") else f"{result.get('remaining')} px to go"
+            if args.get("moved"):
+                tail += ", shifted sideways because someone is already drawing there"
             return (
                 f"{name.removeprefix('draw_')} {what!r} at ({args['x']}, {args['y']}): "
                 f"+{result.get('placed', 0)} px, {tail}"
