@@ -147,3 +147,22 @@ def test_follow_up_failure_keeps_completed_actions() -> None:
     assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
     assert "model call failed: RuntimeError" in thought
     assert len(events) == 1 and policy.stats["failures"] == 1
+
+
+def test_out_of_range_arguments_are_clamped() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [
+            _response(
+                "Edge.",
+                [
+                    ("place_pixels", {"pixels": [{"x": 999, "y": -4, "color": 21}]}),
+                    ("post_thread", {"title": "t" * 300, "body": "b" * 5000}),
+                ],
+            )
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 1 px near (63, 0)" in thought and "posted thread 1" in thought
+    assert events[0][1]["color"] == 5 and policy.stats["tool_errors"] == 0

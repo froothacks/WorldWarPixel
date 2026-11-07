@@ -309,9 +309,11 @@ class LLMPolicy:
             result = self._dispatch(tools, name, args)
         except ToolError as e:
             self.stats["tool_errors"] += 1
+            log.info("agent tool %s rejected: %s", name, e)
             actions.append(f"{name} rejected: {e}")
             return f"error: {e}"
         except (TypeError, ValueError, KeyError) as e:
+            log.info("agent tool %s bad arguments %s: %r", name, raw_args[:200], e)
             self.stats["tool_errors"] += 1
             return f"error: bad arguments ({e})"
         actions.append(_summarise(name, args, result))
@@ -320,23 +322,32 @@ class LLMPolicy:
 
     @staticmethod
     def _dispatch(tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
+        # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
+        w, h = tools.canvas_size
         match name:
             case "place_pixels":
-                px = [(int(p["x"]), int(p["y"]), int(p["color"])) for p in a["pixels"]]
-                return tools.place_pixels(px)
+                a["pixels"] = [
+                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": int(p["color"]) % 16}
+                    for p in a["pixels"]
+                ]
+                return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
             case "fill_rect":
-                return tools.fill_rect(
-                    int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]), int(a["color"])
-                )
+                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
+                a["w"], a["h"] = min(int(a["w"]), w - a["x"]), min(int(a["h"]), h - a["y"])
+                return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], int(a["color"]) % 16)
             case "post_thread":
-                return tools.post_thread(str(a["title"]), str(a["body"]))
+                return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
-                return tools.reply(int(a["thread_id"]), str(a["body"]))
+                return tools.reply(int(a["thread_id"]), str(a["body"])[:600])
             case "view_canvas":
                 return tools.view_canvas(int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]))
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
         raise ToolError(f"unknown tool {name}")
+
+
+def _clamp(v: Any, size: int) -> int:
+    return min(max(int(v), 0), size - 1)
 
 
 def _track_position(
