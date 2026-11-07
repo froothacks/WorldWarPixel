@@ -54,6 +54,7 @@ class ToolSet:
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
         pending: Mapping[tuple[int, int], tuple[int, int]] | None = None,
+        blocked: Callable[[int, int], bool] | None = None,
     ) -> None:
         self._canvas = canvas
         self._board = board
@@ -64,6 +65,7 @@ class ToolSet:
         self._writer = writer
         self._pending = pending if pending is not None else {}
         """(x, y) -> (color, owner) of pixels handed to the writer but not yet on the canvas."""
+        self._blocked = blocked
 
     def _get(self, x: int, y: int) -> int:
         hit = self._pending.get((x, y))
@@ -93,11 +95,6 @@ class ToolSet:
     def place_pixels(self, pixels: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
         if not pixels:
             raise ToolError("no pixels given")
-        if self.budget.pixels <= 0:
-            raise ToolError("no pixel budget left this turn")
-        # Small models often miscount; keep the first N pixels instead of rejecting the turn.
-        dropped = max(0, len(pixels) - self.budget.pixels)
-        pixels = pixels[: self.budget.pixels]
         writes: list[PixelWrite] = []
         for x, y, color in pixels:
             if not self._canvas.in_bounds(x, y):
@@ -105,12 +102,33 @@ class ToolSet:
             if not 0 <= color < len(PALETTE):
                 raise ToolError(f"color {color} is not in 0..{len(PALETTE) - 1}")
             writes.append(PixelWrite(x, y, color, self._agent_id))
-        self._spend("pixels", len(writes))
-        self._write(writes)
-        out: dict[str, Any] = {"placed": len(writes), "pixels_left": self.budget.pixels}
+        blocked: list[PixelWrite] = []
+        allowed: list[PixelWrite] = []
+        for write in writes:
+            if self._blocked is not None and self._blocked(write.x, write.y):
+                blocked.append(write)
+            else:
+                allowed.append(write)
+        if self.budget.pixels <= 0 and allowed:
+            raise ToolError("no pixel budget left this turn")
+        dropped = max(0, len(allowed) - self.budget.pixels)
+        allowed = allowed[: self.budget.pixels]
+        self._spend("pixels", len(allowed))
+        if allowed:
+            self._write(allowed)
+        out: dict[str, Any] = {"placed": len(allowed), "pixels_left": self.budget.pixels}
+        notes: list[str] = []
+        if blocked:
+            out["blocked"] = len(blocked)
+            notes.append(
+                f"{len(blocked)} pixels are inside a region held by the debate winner; "
+                "they were not placed"
+            )
         if dropped:
             out["dropped"] = dropped
-            out["note"] = f"only {len(writes)} fit the budget; {dropped} pixels were dropped"
+            notes.append(f"only {len(allowed)} fit the budget; {dropped} pixels were dropped")
+        if notes:
+            out["note"] = " ".join(notes)
         return out
 
     def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> dict[str, Any]:
@@ -118,8 +136,9 @@ class ToolSet:
             raise ToolError("width and height must be positive")
         if not (self._canvas.in_bounds(x, y) and self._canvas.in_bounds(x + w - 1, y + h - 1)):
             raise ToolError("rectangle goes off the canvas")
-        self._check("pixels", w * h)
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
+        allowed = sum(1 for xx, yy, _ in cells if not self._blocked or not self._blocked(xx, yy))
+        self._check("pixels", allowed)
         return self.place_pixels(cells)
 
     def paint_stencil(self, cells: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
@@ -145,15 +164,23 @@ class ToolSet:
             raise ToolError("the drawing would be entirely off the canvas")
         if not wanted:
             return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
-        if self.budget.pixels <= 0:
-            raise ToolError("no pixel budget left this turn")
-        out = self.place_pixels(wanted[: self.budget.pixels])
+        candidates = wanted[: self.budget.pixels] if self.budget.pixels > 0 else wanted
+        out = self.place_pixels(candidates)
+        blocked = int(out.get("blocked", 0))
         out.pop("dropped", None)
         out.pop("note", None)
         remaining = len(wanted) - int(out["placed"])
         out.update({"remaining": remaining, "done": remaining == 0})
+        notes: list[str] = []
+        if blocked:
+            notes.append(
+                f"{blocked} pixels are inside a region held by the debate winner; "
+                "they were not placed"
+            )
         if remaining:
-            out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
+            notes.append(f"{remaining} px still to paint; call the same tool again next turn")
+        if notes:
+            out["note"] = " ".join(notes)
         return out
 
     def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:

@@ -376,7 +376,15 @@ class Run:
                     pending[(w.x, w.y)] = (w.color, w.agent_id)
 
         tools = ToolSet(
-            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
+            self.canvas,
+            self.board,
+            agent.id,
+            budget,
+            sink,
+            self._clock,
+            writer,
+            pending,
+            blocked=lambda x, y: self.stage.blocks(agent.id, x, y),
         )
         obs = Observation(
             elapsed=elapsed,

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -7,7 +8,10 @@ from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
-def make(budget: TurnBudget | None = None) -> tuple[ToolSet, list[tuple[str, dict[str, Any]]]]:
+def make(
+    budget: TurnBudget | None = None,
+    blocked: Callable[[int, int], bool] | None = None,
+) -> tuple[ToolSet, list[tuple[str, dict[str, Any]]]]:
     events: list[tuple[str, dict[str, Any]]] = []
     tools = ToolSet(
         Canvas(32, 32),
@@ -16,6 +20,7 @@ def make(budget: TurnBudget | None = None) -> tuple[ToolSet, list[tuple[str, dic
         budget=budget or TurnBudget(),
         sink=lambda k, p: events.append((k, p)),
         clock=lambda: 123.0,
+        blocked=blocked,
     )
     return tools, events
 
@@ -28,6 +33,27 @@ def test_pixel_budget_is_enforced_per_turn() -> None:
     assert len(events) == 3
     with pytest.raises(ToolError, match="no pixel budget"):
         tools.place_pixels([(4, 0, 1)])
+
+
+def test_blocked_pixels_do_not_spend_budget_and_join_dropped_note() -> None:
+    tools, events = make(TurnBudget(pixels=2), blocked=lambda x, _: x == 0)
+    out = tools.place_pixels([(0, 0, 1), (1, 0, 1), (2, 0, 1), (3, 0, 1)])
+    assert out == {
+        "placed": 2,
+        "pixels_left": 0,
+        "blocked": 1,
+        "dropped": 1,
+        "note": (
+            "1 pixels are inside a region held by the debate winner; they were not placed "
+            "only 2 fit the budget; 1 pixels were dropped"
+        ),
+    }
+    assert [event[1]["x"] for event in events] == [1, 2]
+
+    all_blocked, no_events = make(TurnBudget(pixels=2), blocked=lambda _x, _y: True)
+    blocked_out = all_blocked.place_pixels([(0, 0, 1), (1, 0, 1)])
+    assert blocked_out["placed"] == 0 and blocked_out["blocked"] == 2
+    assert blocked_out["pixels_left"] == 2 and no_events == []
 
 
 def test_fill_rect_charges_every_cell() -> None:
@@ -101,3 +127,14 @@ def test_stencil_skips_pixels_already_queued_for_painting() -> None:
     out = tools().paint_stencil(stencil)
     assert out["placed"] == 1 and out["done"]
     assert [(w.x, w.y) for w in queued] == [(0, 0), (1, 0), (2, 0)]
+
+
+def test_blocked_stencil_stays_incomplete_and_keeps_blocked_note() -> None:
+    tools, events = make(TurnBudget(pixels=4), blocked=lambda x, _: x < 2)
+    out = tools.paint_stencil([(0, 0, 3), (1, 0, 3), (2, 0, 3)])
+
+    assert out["placed"] == 1 and out["blocked"] == 2
+    assert out["remaining"] == 2 and not out["done"]
+    assert "2 pixels are inside a region held by the debate winner" in out["note"]
+    assert "2 px still to paint" in out["note"]
+    assert [event[1]["x"] for event in events] == [2]

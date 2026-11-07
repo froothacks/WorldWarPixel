@@ -314,15 +314,20 @@ def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:
         )
 
         class FixedPolicy:
+            def __init__(self) -> None:
+                self.results: dict[str, dict[str, Any]] = {}
+
             async def act(self, agent: Any, tools: Any, obs: Any) -> str:
-                pixels = {
-                    1: [(10, 10, 5)],
-                    2: [(11, 11, 6), (30, 20, 7)],
-                }.get(agent.id, [])
-                tools.place_pixels(pixels)
+                if agent.id == 1:
+                    self.results["holder"] = tools.place_pixels([(10, 10, 5)])
+                elif agent.id == 2:
+                    self.results["blocked"] = tools.place_pixels([(11, 11, 6)])
+                    self.results["stencil"] = tools.paint_stencil([(12, 12, 8)])
+                    self.results["outside"] = tools.place_pixels([(30, 20, 7)])
                 return "painted"
 
-        run.policy = FixedPolicy()
+        policy = FixedPolicy()
+        run.policy = policy
         run.stage.start_debate(1, 2)
         run.stage.region = {"x": 10, "y": 10, "w": 10, "h": 10}
         run.stage.phase = "voting"
@@ -344,6 +349,13 @@ def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:
 
         await run._turn(run.by_id[1], 0)
         await run._turn(run.by_id[2], 0)
+        assert policy.results["blocked"]["placed"] == 0
+        assert policy.results["blocked"]["blocked"] == 1
+        assert policy.results["blocked"]["pixels_left"] == config.pixels_per_turn
+        assert policy.results["stencil"]["remaining"] == 1
+        assert not policy.results["stencil"]["done"]
+        assert policy.results["holder"]["placed"] == 1
+        assert "blocked" not in policy.results["holder"]
         assert run.canvas.owner(10, 10) == 1
         assert run.canvas.owner(11, 11) == 0
         assert run.canvas.owner(30, 20) == 2
