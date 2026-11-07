@@ -130,7 +130,8 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
     const rows = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>(".thread-row") ?? []);
     if (rows.length === 0) return;
     e.preventDefault();
-    const i = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const current = document.activeElement?.closest(".thread-item")?.querySelector(".thread-row");
+    const i = rows.indexOf(current as HTMLButtonElement);
     const next = e.key === "ArrowDown" ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1);
     rows[next].focus();
   };
