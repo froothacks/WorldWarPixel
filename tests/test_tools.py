@@ -146,3 +146,13 @@ def test_blocked_stencil_stays_incomplete_and_keeps_blocked_note() -> None:
     assert "2 pixels are inside a region held by the debate winner" in out["note"]
     assert "2 px still to paint" in out["note"]
     assert [event[1]["x"] for event in events] == [2]
+
+
+def test_blocked_stencil_skips_held_cells_to_paint_open_cells() -> None:
+    tools, events = make(TurnBudget(pixels=2), blocked=lambda x, _: x < 2)
+    out = tools.paint_stencil([(0, 0, 3), (1, 0, 3), (2, 0, 3), (3, 0, 3)])
+
+    assert out["placed"] == 2 and out["blocked"] == 2
+    assert out["remaining"] == 2 and not out["done"]
+    assert [event[1]["x"] for event in events] == [2, 3]
+    assert tools._canvas.get(2, 0) == tools._canvas.get(3, 0) == 3

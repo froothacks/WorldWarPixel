@@ -163,9 +163,30 @@ class ToolSet:
             raise ToolError("the drawing would be entirely off the canvas")
         if not wanted:
             return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
-        candidates = wanted[: self.budget.pixels] if self.budget.pixels > 0 else wanted
-        out = self.place_pixels(candidates)
-        blocked = int(out.get("blocked", 0))
+        open_cells: list[tuple[int, int, int]] = []
+        held: list[tuple[int, int, int]] = []
+        for cell in wanted:
+            if self._blocked is not None and self._blocked(cell[0], cell[1]):
+                held.append(cell)
+            else:
+                open_cells.append(cell)
+        if not open_cells and held:
+            return {
+                "placed": 0,
+                "remaining": len(wanted),
+                "done": False,
+                "blocked": len(held),
+                "note": (
+                    f"{len(held)} pixels are inside a region held by the debate winner; "
+                    "they were not placed"
+                ),
+            }
+        if self.budget.pixels <= 0:
+            raise ToolError("no pixel budget left this turn")
+        out = self.place_pixels(open_cells[: self.budget.pixels])
+        blocked = len(held) + int(out.get("blocked", 0))
+        if blocked:
+            out["blocked"] = blocked
         out.pop("dropped", None)
         out.pop("note", None)
         remaining = len(wanted) - int(out["placed"])
