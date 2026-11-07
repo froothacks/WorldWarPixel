@@ -175,3 +175,12 @@ def test_double_encoded_pixel_list_is_accepted() -> None:
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
+
+
+def test_truncated_pixel_string_is_salvaged() -> None:
+    agent, tools, obs, events = _setup()
+    broken = '[{"x": 3, "y": 4, "color": 2}, {"x": 5, "y": 4, color: 2}, {"x": 6, "y'
+    client = FakeClient([_response("Line.", [("place_pixels", {"pixels": broken})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
