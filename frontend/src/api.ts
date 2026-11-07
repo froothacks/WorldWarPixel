@@ -17,7 +17,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   agents: 100,
   cooldown: 10,
   jitter: 0.3,
-  pixels_per_turn: 32,
+  pixels_per_turn: 40,
   posts_per_turn: 1,
   max_concurrency: 10,
   seed: null,

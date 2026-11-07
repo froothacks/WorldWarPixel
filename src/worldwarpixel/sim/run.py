@@ -24,7 +24,7 @@ class RunConfig(BaseModel):
     agents: int = Field(default=100, ge=1, le=5000)
     cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
-    pixels_per_turn: int = Field(default=32, ge=1, le=1024)
+    pixels_per_turn: int = Field(default=40, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
     max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
     seed: int | None = None

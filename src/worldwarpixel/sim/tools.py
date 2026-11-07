@@ -135,7 +135,7 @@ class ToolSet:
     def canvas_size(self) -> tuple[int, int]:
         return self._canvas.width, self._canvas.height
 
-    def regions(self, limit: int = 10) -> list[dict[str, int]]:
+    def regions(self, limit: int | None = 10) -> list[dict[str, int]]:
         """Cheap summary of the busiest canvas areas used to build the observation."""
         return self._canvas.regions(limit)
 

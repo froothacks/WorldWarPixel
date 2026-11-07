@@ -14,7 +14,7 @@ from openai.types.chat import (
 )
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
-from worldwarpixel.sim.canvas import PALETTE
+from worldwarpixel.sim.canvas import PALETTE, TILE
 from worldwarpixel.sim.stencils import FLAGS, SHAPES, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
@@ -98,7 +98,7 @@ TOOLS: list[ChatCompletionToolParam] = [
                     "country": {"type": "string"},
                     "x": {"type": "integer"},
                     "y": {"type": "integer"},
-                    "width": {"type": "integer", "minimum": 6, "maximum": 96},
+                    "width": {"type": "integer", "minimum": 9, "maximum": 36},
                 },
                 "required": ["country", "x", "y", "width"],
             },
@@ -240,25 +240,40 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
         "borders and backgrounds.\n"
         "- Give coordinates when you coordinate with others. Prefer replying in an existing "
-        "thread to starting a new one; address people by @Name.\n"
+        "thread to starting a new one; address people by @Name. Never reuse another thread's "
+        "title; say something of your own.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
         "intend; do not describe colour numbers, the image format or the tools."
     )
 
 
-def region_view(agent: AgentSpec, regions: list[dict[str, int]]) -> str:
-    if not regions:
-        return f"The canvas is still blank. You last painted near ({agent.home_x}, {agent.home_y})."
+def region_view(
+    agent: AgentSpec, tiles: list[dict[str, int]], rng: random.Random | None = None
+) -> str:
+    """Busiest areas plus a few quiet ones (randomised per agent so agents spread out)."""
+    rng = rng or random.Random(agent.id)
+    busy = [t for t in tiles if t["painted"]][:6]
+    quiet = [t for t in tiles if t["painted"] < (TILE * TILE) // 20]
+    quiet = rng.sample(quiet, min(3, len(quiet)))
+    if not busy:
+        return (
+            f"The canvas is still blank. You started near ({agent.home_x}, {agent.home_y}); "
+            "a good spot to begin is anywhere around there."
+        )
     lines = [
         f"- x {r['x0']}-{r['x1']}, y {r['y0']}-{r['y1']}: {r['painted']} px painted, "
         f"mostly {COLOR_NAMES[r['color']]}"
-        for r in regions
+        for r in busy
     ]
-    return (
+    text = (
         f"You last painted near ({agent.home_x}, {agent.home_y}). Busiest areas right now "
-        "(so you can aim precisely; the image shows what is actually drawn there):\n"
-        + "\n".join(lines)
+        "(the image shows what is actually drawn there):\n" + "\n".join(lines)
     )
+    if quiet:
+        text += "\nStill mostly empty: " + "; ".join(
+            f"x {r['x0']}-{r['x1']}, y {r['y0']}-{r['y1']}" for r in quiet
+        )
+    return text
 
 
 def pick_threads(
@@ -324,7 +339,11 @@ class LLMPolicy:
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         text = user_prompt(
-            agent, obs, region_view(agent, tools.regions()), self._rng, self._project_note(agent)
+            agent,
+            obs,
+            region_view(agent, tools.regions(limit=None), self._rng),
+            self._rng,
+            self._project_note(agent),
         )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
@@ -359,7 +378,7 @@ class LLMPolicy:
                 response = await self._client.chat.completions.create(
                     model=self._model,
                     messages=messages,
-                    tools=TOOLS,
+                    tools=self._tools_for(obs),
                     tool_choice="auto",
                     max_tokens=700,
                     temperature=1.0,
@@ -433,6 +452,12 @@ class LLMPolicy:
         _track_position(agent, name, args, result)
         return json.dumps(result)
 
+    def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
+        """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
+        if len(obs.board) >= 6 and self._rng.random() < 0.75:
+            return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
+        return TOOLS
+
     def _project_note(self, agent: AgentSpec) -> str:
         if agent.id not in self._projects:
             return ""
@@ -479,7 +504,7 @@ class LLMPolicy:
             case "draw_flag":
                 a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
-                a["width"] = min(max(int(a.get("width", 24)), 6), 96)
+                a["width"] = min(max(int(a.get("width", 24)), 9), 36)
                 return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
             case "draw_text":
                 a["text"] = str(a["text"])[:24]
