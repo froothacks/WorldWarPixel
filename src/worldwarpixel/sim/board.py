@@ -35,6 +35,7 @@ class Board:
         self._replies: dict[int, list[int]] = {}
         self._votes: dict[int, int] = {}
         self._ballots: dict[int, dict[str, int]] = {}
+        self._society: dict[int, int] = {}
         self._next_id = 1
 
     def _new_post(
@@ -63,8 +64,11 @@ class Board:
         self._replies.clear()
         self._votes.clear()
         self._ballots.clear()
+        self._society.clear()
 
-    def post_thread(self, author_id: int, title: str, body: str, now: float) -> Post:
+    def post_thread(
+        self, author_id: int, title: str, body: str, now: float, society: int | None = None
+    ) -> Post:
         title = title.strip()
         if not title:
             raise BoardError("title must not be empty")
@@ -72,6 +76,8 @@ class Board:
             raise BoardError(f"title longer than {self.max_title} characters")
         post = self._new_post(author_id, None, None, title, body, now)
         self._replies[post.id] = []
+        if society is not None:
+            self._society[post.id] = society
         return post
 
     def reply(
@@ -102,6 +108,10 @@ class Board:
     def reply_count(self, thread_id: int) -> int:
         return len(self._replies.get(thread_id, ()))
 
+    def society_of(self, thread_id: int) -> int | None:
+        """The society a thread was started in; None for run-wide threads (e.g. god mode)."""
+        return self._society.get(thread_id)
+
     def last_activity(self, thread_id: int) -> float:
         replies = self._replies[thread_id]
         last = replies[-1] if replies else thread_id
@@ -128,10 +138,21 @@ class Board:
         return self.last_activity(thread_id) + self.votes(thread_id) * VOTE_BOOST
 
     def digest(
-        self, limit: int = 10, name_of: Callable[[int], str] = lambda i: f"agent {i}"
+        self,
+        limit: int = 10,
+        name_of: Callable[[int], str] = lambda i: f"agent {i}",
+        society: int | None = None,
     ) -> list[dict[str, object]]:
-        """Threads in board order (recent activity, shifted by votes), summarised."""
-        ordered = sorted(self._replies, key=self.rank, reverse=True)[:limit]
+        """Threads in board order (recent activity, shifted by votes), summarised.
+
+        With ``society`` set, only that society's threads (plus run-wide ones) are included.
+        """
+        tids = (
+            [t for t in self._replies if self._society.get(t, society) == society]
+            if society is not None
+            else list(self._replies)
+        )
+        ordered = sorted(tids, key=self.rank, reverse=True)[:limit]
         out: list[dict[str, object]] = []
         for tid in ordered:
             root = self._posts[tid]
@@ -144,6 +165,7 @@ class Board:
                     "author": name_of(root.author_id),
                     "replies": len(replies),
                     "votes": self.votes(tid),
+                    "society": self._society.get(tid),
                     "latest": (
                         {"author": name_of(latest.author_id), "body": latest.body}
                         if latest

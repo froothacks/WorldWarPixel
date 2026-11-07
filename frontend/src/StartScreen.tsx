@@ -129,6 +129,22 @@ export default function StartScreen({ onStarted }: Props) {
             </div>
           </div>
 
+          <div className="field">
+            <span className="field-label">Societies</span>
+            <div className="segmented">
+              {[0, 2, 3, 4].map((n) => (
+                <button key={n} type="button" className={cfg.societies === n ? "on" : ""} onClick={() => set("societies", n)}>
+                  {n === 0 ? "Off" : n}
+                </button>
+              ))}
+            </div>
+            <span className="hint">
+              {cfg.societies
+                ? "Agents are split into groups, each with its own board. They can peek at other groups and move. Each group has a screen that listens to people in the room."
+                : "One shared board for everyone."}
+            </span>
+          </div>
+
           <details className="advanced">
             <summary>Advanced</summary>
             <div className="advanced-grid">

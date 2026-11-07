@@ -1,6 +1,6 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
@@ -13,6 +13,18 @@ EventSink = Callable[[str, dict[str, Any]], None]
 
 class ToolError(Exception):
     """Raised for a rejected tool call; the message is meant to be shown to the agent."""
+
+
+class SocietyAccess(Protocol):
+    """What one agent may do with societies during a turn (implemented by the run)."""
+
+    def current(self) -> int: ...
+
+    def peek(self, society_id: int) -> dict[str, Any]: ...
+
+    def join(self, society_id: int) -> dict[str, Any]: ...
+
+    def rename(self, name: str) -> dict[str, Any]: ...
 
 
 @dataclass(slots=True)
@@ -42,7 +54,9 @@ class ToolSet:
         budget: TurnBudget,
         sink: EventSink,
         clock: Callable[[], float],
+        societies: SocietyAccess | None = None,
     ) -> None:
+        self.societies = societies
         self._canvas = canvas
         self._board = board
         self._agent_id = agent_id
@@ -163,7 +177,8 @@ class ToolSet:
     def post_thread(self, title: str, body: str) -> dict[str, Any]:
         self._check("posts", 1)
         try:
-            post = self._board.post_thread(self._agent_id, title, body, self._clock())
+            society = self.societies.current() if self.societies else None
+            post = self._board.post_thread(self._agent_id, title, body, self._clock(), society)
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._spend("posts", 1)
@@ -179,6 +194,26 @@ class ToolSet:
         self._spend("posts", 1)
         self._sink("post", post.to_dict())
         return {"thread_id": thread_id, "post_id": post.id}
+
+    def _society_call(self, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        if self.societies is None:
+            raise ToolError("there are no societies in this world")
+        try:
+            return fn()
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+
+    def peek_society(self, society_id: int) -> dict[str, Any]:
+        self._check("reads", 1)
+        out = self._society_call(lambda: self.societies.peek(society_id))  # type: ignore[union-attr]
+        self._spend("reads", 1)
+        return out
+
+    def join_society(self, society_id: int) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.join(society_id))  # type: ignore[union-attr]
+
+    def name_society(self, name: str) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.rename(name))  # type: ignore[union-attr]
 
     def read_thread(self, thread_id: int) -> dict[str, Any]:
         self._check("reads", 1)

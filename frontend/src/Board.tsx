@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { api, GOD_ID, type Post, type ThreadDigest } from "./api";
+import { api, GOD_ID, type Agent, type Post, type Society, type ThreadDigest } from "./api";
 
 interface Props {
   runId: string;
@@ -13,6 +13,8 @@ interface Props {
   onOpen: (threadId: number | null) => void;
   onVoted: () => void;
   hidden?: boolean;
+  societies?: Society[];
+  agents?: Agent[];
 }
 
 type MyVotes = Record<number, 1 | -1>;
@@ -55,7 +57,18 @@ const sorters: Record<Sort, (a: ThreadDigest, b: ThreadDigest) => number> = {
   top: (a, b) => b.replies - a.replies || b.last_activity - a.last_activity,
 };
 
-export default function Board({ runId, threads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen, onVoted, hidden = false }: Props) {
+export default function Board({ runId, threads: allThreads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen, onVoted, hidden = false, societies = [], agents = [] }: Props) {
+  const [society, setSociety] = useState<number | null>(null);
+  const current = society !== null ? societies[society] : undefined;
+  const threads = useMemo(
+    () => (current ? allThreads.filter((t) => t.society === null || t.society === current.id) : allThreads),
+    [allThreads, current],
+  );
+  const members = useMemo(() => {
+    const n = new Map<number, number>();
+    for (const a of agents) if (a.society != null) n.set(a.society, (n.get(a.society) ?? 0) + 1);
+    return n;
+  }, [agents]);
   const now = useNow();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("active");
@@ -175,6 +188,42 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
           </button>
         )}
       </header>
+      {societies.length > 0 && (
+        <div className="society-tabs" role="tablist" aria-label="Society">
+          <button role="tab" aria-selected={society === null} className={society === null ? "on" : ""} onClick={() => setSociety(null)}>
+            All
+          </button>
+          {societies.map((s) => (
+            <button
+              key={s.id}
+              role="tab"
+              aria-selected={society === s.id}
+              className={society === s.id ? "on" : ""}
+              style={{ borderBottomColor: society === s.id ? s.color : undefined }}
+              onClick={() => setSociety(s.id)}
+              title={`${members.get(s.id) ?? s.members} members`}
+            >
+              <span className="dot" style={{ background: s.color }} />
+              {s.name}
+              <span className="society-n">{members.get(s.id) ?? s.members}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {current && (
+        <div className="society-info">
+          {current.murmur ? (
+            <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
+              “{current.murmur}”
+            </span>
+          ) : (
+            <span className="muted">Nobody has spoken to this society yet.</span>
+          )}
+          <a href={`?screen=${current.id}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
+            Screen ↗
+          </a>
+        </div>
+      )}
       <div className="board-tools">
         <input
           className="board-search"

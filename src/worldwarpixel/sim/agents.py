@@ -37,6 +37,10 @@ class Observation:
     canvas_width: int
     canvas_height: int
     board: list[dict[str, Any]]
+    society: dict[str, Any] | None = None
+    """The agent's own society: id, name, members and the current murmur (if any)."""
+    societies: list[dict[str, Any]] | None = None
+    """Every society's id, name and member count, when the run has societies."""
 
 
 class Policy(Protocol):

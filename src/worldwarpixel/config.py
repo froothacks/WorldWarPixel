@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     modal_secret: SecretStr = SecretStr("")
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
+    device_tokens: SecretStr = SecretStr("")
+    """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
+    whisper_model: str = "base"
+    """faster-whisper model size used to transcribe society-screen voice clips."""
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"

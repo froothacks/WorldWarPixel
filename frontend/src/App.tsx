@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type RunSummary } from "./api";
 import StartScreen from "./StartScreen";
 import LiveView from "./LiveView";
+import Screen from "./Screen";
 
 function runFromUrl(): string | null {
   return new URLSearchParams(location.search).get("run");
@@ -13,6 +14,12 @@ function setUrl(runId: string | null) {
 }
 
 export default function App() {
+  const screen = new URLSearchParams(location.search).get("screen");
+  if (screen !== null) return <Screen society={+screen || 0} />;
+  return <Main />;
+}
+
+function Main() {
   const [run, setRun] = useState<RunSummary | null>(null);
   const [loading, setLoading] = useState(() => runFromUrl() !== null);
 

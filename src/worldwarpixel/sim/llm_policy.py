@@ -203,7 +203,33 @@ TOOLS: list[ChatCompletionToolParam] = [
     },
 ]
 
-READ_TOOLS = {"view_canvas", "read_thread"}
+
+def _fn(name: str, description: str, props: dict[str, Any]) -> ChatCompletionToolParam:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": props, "required": list(props)},
+        },
+    }
+
+
+SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
+    _fn(
+        "peek_society",
+        "Look at another society: its name, size and top threads.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn(
+        "join_society",
+        "Leave your society and join another one.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn("name_society", "Rename the society you are in.", {"name": {"type": "string"}}),
+]
+
+READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 STENCIL_TOOLS = {"draw_flag", "draw_text", "draw_shape"}
 FREE_TOOLS = [t for t in TOOLS if t["function"]["name"] not in STENCIL_TOOLS]
 MAX_ROUNDS = 2
@@ -320,13 +346,34 @@ def board_lines(threads: list[dict[str, Any]]) -> str:
     )
 
 
+def society_lines(obs: Observation) -> str:
+    """Facts only: where the agent is, what else exists, and any murmur in its society."""
+    if obs.society is None:
+        return ""
+    me = obs.society
+    others = ", ".join(
+        f'{s["id"]} "{s["name"]}" ({s["members"]} people)'
+        for s in obs.societies or []
+        if s["id"] != me["id"]
+    )
+    text = (
+        f"The people here are split into societies; each has its own threads. You are in society "
+        f'{me["id"]} "{me["name"]}" ({me["members"]} people). Other societies: {others}. '
+        "You can peek_society, join_society or name_society.\n"
+    )
+    if me.get("murmur"):
+        text += f"People in your society have been saying: {me['murmur']}\n"
+    return text
+
+
 def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
     board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
     look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
+    where = "your society's threads" if obs.society else "the board"
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
-        f"{look}\nTop threads on the board:\n{board}"
+        f"{look}{society_lines(obs)}\nTop threads on {where}:\n{board}"
     )
 
 
@@ -577,7 +624,7 @@ class LLMPolicy:
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
         """Guided only: once the board is busy, usually hide post_thread so agents reply."""
         if not self._guided:
-            return FREE_TOOLS
+            return FREE_TOOLS + SOCIETY_TOOLS if obs.society else FREE_TOOLS
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
             return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
         return TOOLS
@@ -660,6 +707,12 @@ class LLMPolicy:
                 return tools.view_canvas(int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]))
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
+            case "peek_society":
+                return tools.peek_society(int(a["society_id"]))
+            case "join_society":
+                return tools.join_society(int(a["society_id"]))
+            case "name_society":
+                return tools.name_society(str(a["name"]))
         raise ToolError(f"unknown tool {name}")
 
 
@@ -826,4 +879,10 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             return "looked at the canvas"
         case "read_thread":
             return f"read thread {args.get('thread_id')}"
+        case "peek_society":
+            return f"peeked at society {args.get('society_id')}"
+        case "join_society":
+            return f'joined society {result.get("society")} "{result.get("name")}"'
+        case "name_society":
+            return f'renamed my society to "{result.get("name")}"'
     return name

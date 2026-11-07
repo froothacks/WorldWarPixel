@@ -13,12 +13,14 @@ from pydantic import BaseModel, Field
 from worldwarpixel.api import RunManager, random_policy
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
+from worldwarpixel.devices import router as devices_router
 from worldwarpixel.llm import ChatService
 from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.voice import Murmurer, WhisperTranscriber
 
 
 class Message(BaseModel):
@@ -73,6 +75,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             return random_policy(config)
 
+        app.state.transcriber = WhisperTranscriber(settings.whisper_model)
+        app.state.murmurer = Murmurer(
+            client, settings.narrator_model or settings.openai_model, settings.request_timeout
+        )
         app.state.runs = RunManager(
             EventLog(settings.event_log_path),
             settings.max_active_runs,
@@ -89,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
 app.include_router(runs_router)
+app.include_router(devices_router)
 
 
 def get_chat_service(request: Request) -> ChatService:
@@ -117,7 +124,7 @@ async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchCh
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-API_PREFIXES = {"runs", "chat", "health", "docs", "redoc", "openapi.json"}
+API_PREFIXES = {"runs", "devices", "chat", "health", "docs", "redoc", "openapi.json"}
 
 
 async def frontend(path: str) -> FileResponse:

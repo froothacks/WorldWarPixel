@@ -11,6 +11,7 @@ export interface RunConfig {
   policy: "llm" | "llm-guided" | "random";
   narrator_interval: number;
   narrator_canvas_image: boolean;
+  societies: number;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -26,7 +27,19 @@ export const DEFAULT_CONFIG: RunConfig = {
   policy: "llm",
   narrator_interval: 60,
   narrator_canvas_image: true,
+  societies: 3,
 };
+
+export interface Society {
+  id: number;
+  name: string;
+  color: string;
+  members: number;
+  joined: number;
+  left: number;
+  murmur: string | null;
+  transcript: string | null;
+}
 
 export type RunState = "created" | "running" | "paused" | "stopped";
 
@@ -71,6 +84,7 @@ export interface RunSummary {
   clients: number;
   llm: LLMStats | null;
   narrator: NarratorStats;
+  societies?: Society[];
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -92,6 +106,7 @@ export interface Agent {
   last_thought: Thought | null;
   persona: string;
   persona_card: Record<string, string | number | string[] | null>;
+  society?: number | null;
 }
 
 export interface AgentDetail extends Agent {
@@ -109,6 +124,7 @@ export interface ThreadDigest {
   participants: number;
   replies: number;
   votes: number;
+  society: number | null;
   latest: { author: string; author_id: number; body: string } | null;
 }
 

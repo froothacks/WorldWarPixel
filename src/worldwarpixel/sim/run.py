@@ -14,6 +14,7 @@ from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
+from worldwarpixel.sim.societies import Societies
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 RunState = Literal["created", "running", "paused", "stopped"]
@@ -35,6 +36,12 @@ class RunConfig(BaseModel):
     )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
+    )
+    societies: int = Field(
+        default=0,
+        ge=0,
+        le=6,
+        description="Split agents into this many societies, each with its own board (0 = off)",
     )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
@@ -78,6 +85,10 @@ class Run:
         self.agents = seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
+        self.societies: Societies | None = None
+        if config.societies:
+            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            self.societies.assign([a.id for a in self.agents])
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
@@ -257,14 +268,29 @@ class Run:
             budget,
             lambda kind, payload: self._on_write(agent.id, kind, payload),
             self._clock,
+            _SocietyAccess(self, agent.id) if self.societies else None,
         )
+        society = self.societies.of(agent.id) if self.societies else None
         obs = Observation(
             elapsed=elapsed,
             budget=budget,
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
-            board=self._announcement_digest() + self.board.digest(name_of=self.agent_name),
+            board=self._announcement_digest()
+            + self.board.digest(name_of=self.agent_name, society=society),
         )
+        if self.societies is not None and society is not None:
+            now = self._clock()
+            mine = self.societies.get(society)
+            obs.society = {
+                **mine.to_dict(),
+                "members": self.societies.size(society),
+                "murmur": self.societies.murmur(society, now),
+            }
+            obs.societies = [
+                {**s.to_dict(), "members": self.societies.size(s.id)}
+                for s in self.societies.societies
+            ]
         self._set_status(agent.id, "thinking")
         async with self._sem:
             try:
@@ -279,6 +305,24 @@ class Run:
         self._record("agent.thought", agent.id, entry)
         self.hub.publish("agent.thought", agent_id=agent.id, **entry)
         self._set_status(agent.id, "idle")
+
+    # -- societies -------------------------------------------------------------------------
+
+    def society_summary(self) -> list[dict[str, Any]]:
+        return self.societies.summary(self._clock()) if self.societies else []
+
+    def society_threads(self, society_id: int, limit: int = 10) -> list[dict[str, object]]:
+        return self.board.digest(limit=limit, name_of=self.agent_name, society=society_id)
+
+    def set_murmur(self, society_id: int, murmur: str, transcript: str) -> dict[str, Any]:
+        """A human voice reached this society; members notice `murmur` in their next turns."""
+        if self.societies is None:
+            raise ValueError("this run has no societies")
+        s = self.societies.set_murmur(society_id, murmur, transcript, self._clock())
+        payload = {"society": s.id, "murmur": murmur, "transcript": transcript}
+        self._record("society.murmur", None, payload)
+        self.hub.publish("society.murmur", **payload)
+        return payload
 
     def _set_status(self, agent_id: int, status: str) -> None:
         self.status[agent_id] = status
@@ -320,12 +364,14 @@ class Run:
             "clients": self.hub.client_count,
             "llm": public_stats() if public_stats else None,
             "narrator": dict(self.narrator.stats),
+            "societies": self.society_summary(),
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
         return [
             {
                 **a.to_dict(),
+                "society": self.societies.of(a.id) if self.societies else None,
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }
@@ -365,3 +411,43 @@ class Run:
             "threads": self.board.listing(limit=50, name_of=self.agent_name),
             "narrator": self.narrator.state(),
         }
+
+
+class _SocietyAccess:
+    """`SocietyAccess` for one agent's turn, backed by the run."""
+
+    def __init__(self, run: Run, agent_id: int) -> None:
+        self._run = run
+        self._agent_id = agent_id
+        assert run.societies is not None
+        self._societies = run.societies
+
+    def current(self) -> int:
+        return self._societies.of(self._agent_id)
+
+    def peek(self, society_id: int) -> dict[str, Any]:
+        s = self._societies.get(society_id)
+        return {
+            **s.to_dict(),
+            "members": self._societies.size(society_id),
+            "threads": [
+                {k: d[k] for k in ("thread_id", "title", "author", "replies", "latest")}
+                for d in self._run.society_threads(society_id, limit=6)
+            ],
+        }
+
+    def join(self, society_id: int) -> dict[str, Any]:
+        run = self._run
+        m = self._societies.join(self._agent_id, society_id, run._clock())
+        payload = {"agent": run.agent_name(m.agent_id), "from": m.src, "to": m.dst}
+        run._record("society.join", m.agent_id, payload)
+        run.hub.publish("society.joined", agent_id=m.agent_id, **payload)
+        return {"society": m.dst, "name": self._societies.get(m.dst).name}
+
+    def rename(self, name: str) -> dict[str, Any]:
+        run = self._run
+        s = self._societies.rename(self.current(), name)
+        payload = {"society": s.id, "name": s.name}
+        run._record("society.renamed", self._agent_id, payload)
+        run.hub.publish("society.renamed", agent_id=self._agent_id, **payload)
+        return payload
