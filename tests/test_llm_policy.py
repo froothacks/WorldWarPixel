@@ -1,11 +1,20 @@
 import asyncio
 import json
+import random
 from typing import Any
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import Canvas
-from worldwarpixel.sim.llm_policy import LLMPolicy, system_prompt
+from worldwarpixel.sim.canvas import Canvas, PixelWrite
+from worldwarpixel.sim.llm_policy import (
+    LLMPolicy,
+    _canonical_tool,
+    _match_name,
+    _parse_pixel_list,
+    pick_threads,
+    system_prompt,
+)
+from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolSet, TurnBudget
 
 
@@ -51,7 +60,12 @@ def _setup() -> tuple[AgentSpec, ToolSet, Observation, list[tuple[str, dict[str,
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentSpec(1, "Priya Raman", "India", 5, 10, 10, 1.0, "Priya Raman, 34, from India.")
     tools = ToolSet(
-        canvas, board, 1, TurnBudget(pixels=4), lambda k, p: events.append((k, p)), lambda: 0.0
+        canvas,
+        board,
+        1,
+        TurnBudget(pixels=4),
+        lambda k, p: events.append((k, p)) if k != "action" else None,  # writes only
+        lambda: 0.0,
     )
     obs = Observation(1.0, tools.budget, 64, 40, [])
     return agent, tools, obs, events
@@ -147,3 +161,163 @@ def test_follow_up_failure_keeps_completed_actions() -> None:
     assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
     assert "model call failed: RuntimeError" in thought
     assert len(events) == 1 and policy.stats["failures"] == 1
+
+
+def test_out_of_range_arguments_are_clamped() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [
+            _response(
+                "Edge.",
+                [
+                    ("place_pixels", {"pixels": [{"x": 999, "y": -4, "color": 21}]}),
+                    ("post_thread", {"title": "t" * 300, "body": "b" * 5000}),
+                ],
+            )
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 1 px near (63, 0)" in thought and "posted thread 1" in thought
+    assert events[0][1]["color"] == agent.color and policy.stats["tool_errors"] == 0
+
+
+def test_double_encoded_pixel_list_is_accepted() -> None:
+    agent, tools, obs, events = _setup()
+    encoded = json.dumps([{"x": 3, "y": 4, "color": 2}, {"x": 4, "y": 4, "color": 2}])
+    client = FakeClient([_response("Line.", [("place_pixels", {"pixels": encoded})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
+
+
+def test_truncated_pixel_string_is_salvaged() -> None:
+    agent, tools, obs, events = _setup()
+    broken = (
+        '[{"x": 3, "y": 4, "color": 2}, {color: 2, "x": 5, "y": 4}, {"x": 6, "y": 9}, {"x": 7, "y'
+    )
+    client = FakeClient([_response("Line.", [("place_pixels", {"pixels": broken})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
+
+
+def test_incomplete_pixel_objects_are_skipped() -> None:
+    assert _parse_pixel_list(
+        '[{"x": 1, "y": 2}, {"x": 9, "y": 9, "color": 3}, {"x": 4, "color'
+    ) == [{"x": 9, "y": 9, "color": 3}]
+
+
+def test_pixel_shorthand_and_missing_colour() -> None:
+    agent, tools, obs, events = _setup()
+    pixels = [[1, 2, 3], {"x": 4, "y": 5}, {"x": 6, "y": 7, "color": "red"}]
+    client = FakeClient([_response("Mixed.", [("place_pixels", {"pixels": pixels})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert [e[1]["color"] for e in events] == [3, agent.color, agent.color]
+    assert policy.stats["tool_errors"] == 0
+
+
+def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
+    canvas = Canvas(128, 64)
+    for x in range(10):
+        canvas.write(PixelWrite(x=x, y=0, color=5, agent_id=0))
+    canvas.write(PixelWrite(x=70, y=10, color=2, agent_id=0))
+    canvas.write(PixelWrite(x=0, y=0, color=0, agent_id=0))
+    regions = canvas.regions()
+    assert [r["x0"] for r in regions] == [0, 64]
+    assert regions[0]["painted"] == 9 and regions[0]["color"] == 5
+    assert regions[0]["x1"] == 63 and regions[0]["y1"] == 63
+    every = canvas.regions(limit=None)
+    assert len(every) == 2 and every[-1]["size"] == 64 * 64
+    narrow = Canvas(70, 64)
+    for x in range(64, 70):
+        for y in range(64):
+            narrow.write(PixelWrite(x=x, y=y, color=5, agent_id=0))
+    edge = next(t for t in narrow.regions(limit=None) if t["x0"] == 64)
+    assert edge["size"] == 6 * 64 and edge["painted"] == edge["size"]
+    assert not any(t["x0"] == 64 for t in Canvas(70, 64).regions(limit=None) if t["color"] != 0)
+
+
+def test_pick_threads_mixes_top_and_random_sample() -> None:
+    board = [{"thread_id": i} for i in range(10)]
+    picked = pick_threads(board, random.Random(1), k=6)
+    assert [d["thread_id"] for d in picked[:3]] == [0, 1, 2]
+    assert len(picked) == 6 and len({d["thread_id"] for d in picked}) == 6
+
+
+def test_flag_cells_have_expected_layout() -> None:
+    cells = {(x, y): c for x, y, c in flag_cells("india", 10, 20, 30)}
+    assert cells[(10, 20)] == 6 and cells[(10, 39)] == 10  # orange top, green bottom
+    assert cells[(25, 30)] == 13  # dark blue disc in the centre
+    assert len(cells) == 30 * 20
+
+
+def test_text_cells_render_letters() -> None:
+    cells = text_cells("HI", 0, 0, 5)
+    assert all(c == 5 for _, _, c in cells)
+    assert (0, 0, 5) in cells and (1, 0, 5) not in cells  # H has a gap in the top row
+    assert max(x for x, _, _ in cells) == 6  # second glyph starts at x=4
+
+
+def test_paint_stencil_is_progressive_and_skips_matching_pixels() -> None:
+    canvas, board = Canvas(32, 32), Board()
+    cells = shape_cells("heart", 0, 0, 5, 3)
+
+    def fresh() -> ToolSet:
+        return ToolSet(canvas, board, 1, TurnBudget(pixels=10), lambda k, p: None, lambda: 0.0)
+
+    tools = fresh()
+    first = tools.paint_stencil(cells)
+    assert first["placed"] == 10 and first["remaining"] == len(cells) - 10 and not first["done"]
+    for _ in range(10):
+        out = fresh().paint_stencil(cells)
+        if out["done"]:
+            break
+    assert all(canvas.get(x, y) == c for x, y, c in cells)
+    assert fresh().paint_stencil(cells)["placed"] == 0
+    # Another agent's same-coloured pixel is reclaimed rather than skipped.
+    canvas.write(PixelWrite(cells[0][0], cells[0][1], cells[0][2], agent_id=2))
+    assert fresh().paint_stencil(cells)["placed"] == 1 and canvas.owner(*cells[0][:2]) == 1
+
+
+def test_paint_stencil_paints_colour_changes_before_claiming_blank_cells() -> None:
+    canvas, board = Canvas(64, 64), Board()
+    cells = flag_cells("japan", 0, 0, 24)  # mostly white on a white canvas
+    tools = ToolSet(canvas, board, 1, TurnBudget(pixels=8), lambda k, p: None, lambda: 0.0)
+    tools.paint_stencil(cells)
+    assert sum(1 for x, y, c in cells if c == 5 and canvas.get(x, y) == 5) == 8
+
+
+def test_match_name_handles_sloppy_country_strings() -> None:
+    assert _match_name("Flag of India", FLAGS, "usa") == "india"
+    assert _match_name("United States", FLAGS, "india") == "usa"
+    assert _match_name("Narnia", FLAGS, "japan") == "japan"
+
+
+def test_invented_tool_names_map_onto_real_tools() -> None:
+    assert _canonical_tool("put_pixels") == "place_pixels"
+    assert _canonical_tool("draw_image") == "view_canvas"
+    assert _canonical_tool("see_canvas") == "view_canvas"
+    assert _canonical_tool("reply") == "reply"
+    assert _canonical_tool("view_thread") == "read_thread"
+    assert _canonical_tool("draw_flag_on_canvas") == "draw_flag"
+    assert _canonical_tool("teleport") == "teleport"
+
+
+def test_successful_tool_calls_emit_action_events() -> None:
+    canvas, board = Canvas(64, 40), Board()
+    events: list[tuple[str, dict[str, Any]]] = []
+    agent = AgentSpec(1, "Priya Raman", "India", 5, 10, 10, 1.0, "Priya.")
+    tools = ToolSet(
+        canvas, board, 1, TurnBudget(pixels=40), lambda k, p: events.append((k, p)), lambda: 0.0
+    )
+    obs = Observation(1.0, tools.budget, 64, 40, [])
+    client = FakeClient(
+        [_response("Flag.", [("draw_flag", {"country": "india", "x": 2, "y": 2, "width": 9})])]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    actions = [p for k, p in events if k == "action"]
+    assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
+    assert actions[0]["args"]["country"] == "india" and actions[0]["result"]["placed"] == 40
