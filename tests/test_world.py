@@ -10,7 +10,7 @@ def _agent(i: int, name: str, country: str) -> AgentSpec:
 AGENTS = [
     _agent(1, "Priya Sharma", "India"),
     _agent(2, "Arjun Patel", "India"),
-    _agent(3, "Wei_Jun Zhang", "China"),
+    _agent(3, "Wei Jun Zhang", "China"),
     _agent(4, "Emily Miller", "United States"),
     _agent(5, "Emily Garcia", "United States"),
 ]
