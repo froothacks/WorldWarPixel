@@ -295,9 +295,10 @@ class Run:
                 del pending[(w.x, w.y)]
             if queue.empty() and self.status.get(agent.id) == "painting":
                 self._set_status(agent.id, "idle")
-            interval = self.config.pixel_interval
-            if interval > 0:
-                await self._sleep(interval)
+            # Sleep in short slices so a god-mode change to pixel_interval applies within 250 ms.
+            t0 = time.monotonic()
+            while (left := self.config.pixel_interval - (time.monotonic() - t0)) > 0:
+                await self._sleep(min(left, 0.25))
 
     async def _turn(
         self,
