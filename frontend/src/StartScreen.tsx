@@ -57,15 +57,18 @@ export default function StartScreen({ onStarted }: Props) {
     }
   };
 
-  const turnsPerMin = Math.round((cfg.agents * 60) / cfg.cooldown);
+  // With premoving an agent's next turn starts when ~1 s of its queued pixels remain, so the
+  // real period is the longer of the cooldown and the time its batch takes to drain.
+  const period = Math.max(cfg.cooldown, cfg.pixels_per_turn * cfg.pixel_interval - 1);
+  const turnsPerMin = Math.round((cfg.agents * 60) / period);
   const pxPerMin = turnsPerMin * cfg.pixels_per_turn;
   const brain = BRAINS.find((b) => b.value === cfg.policy) ?? BRAINS[0];
-  const turnsPerSec = cfg.agents / cfg.cooldown;
+  const turnsPerSec = cfg.agents / period;
   const warning =
     cfg.policy === "random" && turnsPerSec > RANDOM_TURNS_PER_SEC
       ? `${Math.round(turnsPerSec)} random turns a second will saturate one CPU core; raise the cooldown or use fewer agents.`
       : cfg.policy !== "random" && turnsPerSec > cfg.max_concurrency
-        ? `Turns are capped by "Turns in flight" (${cfg.max_concurrency}); with ${cfg.agents.toLocaleString()} agents each one will wait longer than its ${cfg.cooldown}s cooldown.`
+        ? `Turns are capped by "Turns in flight" (${cfg.max_concurrency}); with ${cfg.agents.toLocaleString()} agents each one will wait longer than its ${cfg.cooldown}s cooldown between model calls.`
         : null;
   const runs = [...existing].sort((a, b) => b.created_at - a.created_at);
 

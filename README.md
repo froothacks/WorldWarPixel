@@ -44,7 +44,7 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (3 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (40), `pixel_interval` (0.1 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (10), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds` (see below).
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.03 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (16), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds` (see below).
 - `GET /runs`, `GET /runs/{id}`: run state and stats.
 - `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it and drops it from memory (the event log is kept). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
