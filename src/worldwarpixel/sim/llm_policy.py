@@ -367,7 +367,7 @@ class LLMPolicy:
         raise ToolError(f"unknown tool {name}")
 
 
-_FIELD_RE = {k: re.compile(rf"{k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
+_FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
