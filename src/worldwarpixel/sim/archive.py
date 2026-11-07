@@ -35,11 +35,13 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
             if run.canvas.in_bounds(x, y):
                 owner = int(p.get("owner", e.agent_id or 0))
                 run.canvas.write(PixelWrite(x, y, int(p["color"]), owner))
+            run.world.observe_pixel(e.agent_id or 0, int(p.get("prev_owner", 0)))
             stats["pixels"] += 1
         elif e.kind == "god.clear_canvas":
             run.canvas.clear()
         elif e.kind == "post":
             run.board.restore(Post(**p))
+            run.world.observe_post(p)
             stats["posts"] += 1
         elif e.kind == "god.clear_board":
             run.board.clear()
@@ -58,6 +60,8 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
                     agent.cooldown = config.cooldown
             if p.get("pixels_per_turn") is not None:
                 config.pixels_per_turn = int(p["pixels_per_turn"])
+            if p.get("pixel_interval") is not None:
+                config.pixel_interval = float(p["pixel_interval"])
         elif e.kind == "run.deleted":
             return None
     return run

@@ -187,6 +187,7 @@ class GodAnnouncement(BaseModel):
 class GodPace(BaseModel):
     cooldown: float | None = Field(default=None, ge=0.5, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
+    pixel_interval: float | None = Field(default=None, ge=0, le=5)
 
 
 @router.post("/{run_id}/god/pixels")
@@ -228,7 +229,7 @@ async def god_announce(
 @router.post("/{run_id}/god/pace")
 async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
-    run.god_set_pace(body.cooldown, body.pixels_per_turn)
+    run.god_set_pace(body.cooldown, body.pixels_per_turn, body.pixel_interval)
     return run.summary()
 
 
@@ -263,6 +264,12 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
+
+
+@router.get("/{run_id}/world")
+async def get_world(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Country nodes plus talk (replies, @mentions) and raid (overpainting) edges."""
+    return (await manager.fetch(run_id)).world.snapshot()
 
 
 @router.get("/{run_id}/canvas")

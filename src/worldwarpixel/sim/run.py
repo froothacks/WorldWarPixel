@@ -14,7 +14,8 @@ from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
-from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
+from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
@@ -30,7 +31,17 @@ class RunConfig(BaseModel):
     width: int = Field(default=512, ge=16, le=4096)
     height: int = Field(default=320, ge=16, le=4096)
     agents: int = Field(default=100, ge=1, le=MAX_AGENTS)
-    cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
+    cooldown: float = Field(
+        default=3.0,
+        gt=0,
+        description="Seconds between the starts of an agent's turns (randomised by jitter)",
+    )
+    pixel_interval: float = Field(
+        default=0.1,
+        ge=0,
+        le=5,
+        description="Seconds between an agent's successive pixels; 0 paints a whole turn at once",
+    )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=40, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
@@ -50,6 +61,9 @@ GOD_ID = 65535
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 MAX_GOD_PIXELS = 50_000
+PREFETCH_LEAD = 1.0
+"""Start an agent's next model call when this many seconds of queued pixels remain, so the
+next batch lands as the current one finishes draining ("premoving")."""
 
 
 class Run:
@@ -83,6 +97,7 @@ class Run:
         self.agents = agents or seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
+        self.world = World(self.agents, self.board)
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
@@ -183,15 +198,31 @@ class Run:
             )
         return out
 
-    def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
-        """Change how fast agents act; takes effect from each agent's next turn."""
+    def god_set_pace(
+        self,
+        cooldown: float | None,
+        pixels_per_turn: int | None,
+        pixel_interval: float | None = None,
+    ) -> None:
+        """Change how fast agents act. Cooldown and px/turn apply from each agent's next turn;
+        the pixel interval applies to the very next pixel of every queue."""
         if cooldown is not None:
             for agent in self.agents:
                 agent.cooldown = cooldown
             self.config.cooldown = cooldown
         if pixels_per_turn is not None:
             self.config.pixels_per_turn = pixels_per_turn
-        self._record("god.pace", GOD_ID, {"cooldown": cooldown, "pixels_per_turn": pixels_per_turn})
+        if pixel_interval is not None:
+            self.config.pixel_interval = pixel_interval
+        self._record(
+            "god.pace",
+            GOD_ID,
+            {
+                "cooldown": cooldown,
+                "pixels_per_turn": pixels_per_turn,
+                "pixel_interval": pixel_interval,
+            },
+        )
         self.hub.publish("run.state", state=self.state, stats=self.stats)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -240,25 +271,67 @@ class Run:
     # -- agent loop ------------------------------------------------------------------------
 
     async def _agent_loop(self, agent: AgentSpec) -> None:
-        await self._sleep(self.rng.random() * agent.cooldown)
-        last_turn = self.started_at or self._clock()
-        while True:
-            await self._running.wait()
-            now = self._clock()
-            await self._turn(agent, now - last_turn)
-            last_turn = now
-            j = self.config.jitter
-            await self._sleep(agent.cooldown * (1 + self.rng.uniform(-j, j)))
+        queue: asyncio.Queue[PixelWrite] = asyncio.Queue()
+        pending: dict[tuple[int, int], tuple[int, int]] = {}
+        painter = asyncio.create_task(self._painter(agent, queue, pending))
+        try:
+            await self._sleep(self.rng.random() * agent.cooldown)
+            last_turn = self.started_at or self._clock()
+            while True:
+                await self._running.wait()
+                now = self._clock()
+                await self._turn(agent, now - last_turn, queue, pending)
+                last_turn = now
+                j = self.config.jitter
+                await self._sleep(agent.cooldown * (1 + self.rng.uniform(-j, j)))
+                while queue.qsize() * self.config.pixel_interval > PREFETCH_LEAD:
+                    await self._sleep(self.config.pixel_interval)
+        finally:
+            painter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await painter
 
-    async def _turn(self, agent: AgentSpec, elapsed: float) -> None:
+    async def _painter(
+        self,
+        agent: AgentSpec,
+        queue: asyncio.Queue[PixelWrite],
+        pending: dict[tuple[int, int], tuple[int, int]],
+    ) -> None:
+        """Drip an agent's queued pixels onto the canvas one every `pixel_interval` seconds."""
+        while True:
+            w = await queue.get()
+            await self._running.wait()
+            apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
+            if pending.get((w.x, w.y)) == (w.color, w.agent_id):
+                del pending[(w.x, w.y)]
+            if queue.empty() and self.status.get(agent.id) == "painting":
+                self._set_status(agent.id, "idle")
+            # Sleep in short slices so a god-mode change to pixel_interval applies within 250 ms.
+            t0 = time.monotonic()
+            while (left := self.config.pixel_interval - (time.monotonic() - t0)) > 0:
+                await self._sleep(min(left, 0.25))
+
+    async def _turn(
+        self,
+        agent: AgentSpec,
+        elapsed: float,
+        queue: asyncio.Queue[PixelWrite] | None = None,
+        pending: dict[tuple[int, int], tuple[int, int]] | None = None,
+    ) -> None:
         budget = TurnBudget(self.config.pixels_per_turn, self.config.posts_per_turn)
+        sink = lambda kind, payload: self._on_write(agent.id, kind, payload)  # noqa: E731
+
+        def writer(writes: list[PixelWrite]) -> None:
+            if queue is None or (self.config.pixel_interval <= 0 and queue.empty()):
+                apply_writes(self.canvas, writes, sink)
+                return
+            for w in writes:
+                queue.put_nowait(w)
+                if pending is not None:
+                    pending[(w.x, w.y)] = (w.color, w.agent_id)
+
         tools = ToolSet(
-            self.canvas,
-            self.board,
-            agent.id,
-            budget,
-            lambda kind, payload: self._on_write(agent.id, kind, payload),
-            self._clock,
+            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
         )
         obs = Observation(
             elapsed=elapsed,
@@ -280,7 +353,7 @@ class Run:
         self.thoughts[agent.id].append(entry)
         self._record("agent.thought", agent.id, entry)
         self.hub.publish("agent.thought", agent_id=agent.id, **entry)
-        self._set_status(agent.id, "idle")
+        self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
 
     def _set_status(self, agent_id: int, status: str) -> None:
         self.status[agent_id] = status
@@ -291,10 +364,12 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
+            self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
             owner = int(payload.get("owner", agent_id))
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
+            self.world.observe_post(payload)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
             self.hub.publish("agent.action", agent_id=agent_id, **payload)

@@ -44,7 +44,7 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (10 s), `jitter` (0.3), `pixels_per_turn` (8), `posts_per_turn` (1), `max_concurrency` (10), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (3 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (40), `pixel_interval` (0.1 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (10), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
 - `GET /runs`, `GET /runs/{id}`: run state and stats. Runs from an earlier server process (a restart or redeploy) are listed too, as `stopped`; opening one rebuilds its canvas, board, thoughts and narrator history from the event log, so every read endpoint, the WebSocket snapshot and the timelapse keep working.
 - `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it, drops it from memory and hides it from the list (its events are kept, tagged `run.deleted`). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
@@ -78,7 +78,7 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates.
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates. God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
 
 ## Persona data
 

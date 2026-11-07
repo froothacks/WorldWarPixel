@@ -5,6 +5,7 @@ export interface RunConfig {
   cooldown: number;
   jitter: number;
   pixels_per_turn: number;
+  pixel_interval: number;
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
@@ -17,9 +18,10 @@ export const DEFAULT_CONFIG: RunConfig = {
   width: 512,
   height: 320,
   agents: 100,
-  cooldown: 10,
+  cooldown: 3,
   jitter: 0.3,
   pixels_per_turn: 40,
+  pixel_interval: 0.1,
   posts_per_turn: 1,
   max_concurrency: 10,
   seed: null,
@@ -155,6 +157,29 @@ export interface NarratorState {
   updates: NarratorUpdate[];
 }
 
+export interface WorldNode {
+  country: string;
+  agents: number;
+  /** Pixels painted by this country over the whole run (not what it holds now). */
+  pixels: number;
+  posts: number;
+}
+
+export interface WorldEdge {
+  a: string;
+  b: string;
+  /** Replies and @mentions between the two countries. */
+  talk: number;
+  /** Pixels of b that a painted over, and vice versa. */
+  raids_ab: number;
+  raids_ba: number;
+}
+
+export interface WorldGraph {
+  nodes: WorldNode[];
+  edges: WorldEdge[];
+}
+
 export interface Snapshot {
   type: "snapshot";
   run: RunSummary;
@@ -203,6 +228,7 @@ export const api = {
   agent: (id: string, agentId: number) =>
     request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
+  world: (id: string) => request<WorldGraph>(`/runs/${id}/world`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
@@ -227,7 +253,7 @@ export const api = {
     }),
   godPace: (
     id: string,
-    pace: { cooldown?: number; pixels_per_turn?: number },
+    pace: { cooldown?: number; pixels_per_turn?: number; pixel_interval?: number },
   ) =>
     request<RunSummary>(`/runs/${id}/god/pace`, {
       method: "POST",

@@ -38,6 +38,7 @@ def test_runs_survive_a_restart_as_stopped_runs(server: None) -> None:
         canvas = client.get(f"/runs/{rid}/canvas").json()
         agents = client.get(f"/runs/{rid}/agents").json()
         threads = client.get(f"/runs/{rid}/threads").json()
+        world = client.get(f"/runs/{rid}/world").json()
         thoughts = client.get(f"/runs/{rid}/agents/1").json()["thoughts"]
 
     with TestClient(app) as client:
@@ -51,6 +52,7 @@ def test_runs_survive_a_restart_as_stopped_runs(server: None) -> None:
         restored_agents = client.get(f"/runs/{rid}/agents").json()
         assert [a["name"] for a in restored_agents] == [a["name"] for a in agents]
         assert client.get(f"/runs/{rid}/threads").json() == threads
+        assert client.get(f"/runs/{rid}/world").json() == world
         assert client.get(f"/runs/{rid}/agents/1").json()["thoughts"] == thoughts
         assert client.get(f"/runs/{rid}/events", params={"limit": 1}).json()[0]["kind"] == (
             "run.created"
@@ -103,8 +105,14 @@ def test_restored_runs_keep_god_pace_changes() -> None:
     config = RunConfig(width=16, height=16, agents=2, seed=3, cooldown=10, policy="random")
     log.append("p", 1.0, "run.created", None, {"config": config.model_dump()})
     log.append("p", 2.0, "god.pace", 65535, {"cooldown": 2.5, "pixels_per_turn": None})
-    log.append("p", 3.0, "god.pace", 65535, {"cooldown": None, "pixels_per_turn": 7})
+    log.append(
+        "p", 3.0, "god.pace", 65535, {"cooldown": None, "pixels_per_turn": 7, "pixel_interval": 0.5}
+    )
     run = restore_run(log, "p")
     assert run is not None
-    assert (run.config.cooldown, run.config.pixels_per_turn) == (2.5, 7)
+    assert (run.config.cooldown, run.config.pixels_per_turn, run.config.pixel_interval) == (
+        2.5,
+        7,
+        0.5,
+    )
     assert {a.cooldown for a in run.agents} == {2.5}
