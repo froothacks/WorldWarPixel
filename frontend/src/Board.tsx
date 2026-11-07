@@ -65,6 +65,8 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
   }, []);
 
   const openThread = (id: number) => {
+    // The list unmounts under the pointer, so onMouseLeave never fires.
+    setFrozen(null);
     listScroll.current = listRef.current?.scrollTop ?? 0;
     onOpen(id);
   };

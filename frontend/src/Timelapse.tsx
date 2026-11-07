@@ -184,7 +184,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
     streamRef.current = stream;
     recRef.current = rec;
     setRecording(true);
-    builtRef.current = -1;
+    bufRef.current = null;
     setPos(0);
     rec.start();
     setPlaying(true);
