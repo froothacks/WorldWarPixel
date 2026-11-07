@@ -19,7 +19,7 @@ from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
-MIN_PIXEL_INTERVAL = 0.05
+MIN_PIXEL_INTERVAL = 0.01
 MAX_AGENTS = 10_000
 """Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
@@ -38,17 +38,17 @@ class RunConfig(BaseModel):
         description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
-        default=0.05,
+        default=0.01,
         ge=MIN_PIXEL_INTERVAL,
         le=5,
         description=(
-            "Seconds between an agent's successive pixels (at least 50 ms so batches animate in)"
+            "Seconds between an agent's successive pixels (at least 10 ms so batches animate in)"
         ),
     )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=16, ge=1, le=1000, description="Turns in flight at once")
+    max_concurrency: int = Field(default=1000, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
     narrator_interval: float = Field(
