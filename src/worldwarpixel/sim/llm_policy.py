@@ -375,6 +375,7 @@ class LLMPolicy:
         }
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
+        turn_t0 = time.monotonic()
         text = user_prompt(
             agent,
             obs,
@@ -409,7 +410,6 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
-        turn_t0 = time.monotonic()
         for round_no in range(MAX_ROUNDS):
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
