@@ -25,7 +25,10 @@ function loadVotes(runId: string): MyVotes {
 function voterId(): string {
   let id = localStorage.getItem("wwp-voter");
   if (!id) {
-    id = crypto.randomUUID();
+    id =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     localStorage.setItem("wwp-voter", id);
   }
   return id;
@@ -35,21 +38,29 @@ export default function Board({ runId, threads, agentName, version, totalThreads
   const [posts, setPosts] = useState<Post[]>([]);
   const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
 
+  const voteQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const saveVote = (threadId: number, value: 0 | 1 | -1) => {
+    const v = loadVotes(runId);
+    if (value === 0) delete v[threadId];
+    else v[threadId] = value;
+    localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(v));
+    setMyVotes(v);
+  };
+
   const vote = (threadId: number, dir: 1 | -1) => {
-    const prev = myVotes[threadId] ?? 0;
+    const prev = loadVotes(runId)[threadId] ?? 0;
     const next = prev === dir ? 0 : dir;
-    const updated = { ...myVotes };
-    if (next === 0) delete updated[threadId];
-    else updated[threadId] = next;
-    const save = (v: MyVotes) => {
-      setMyVotes(v);
-      localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(v));
-    };
-    save(updated);
-    api
-      .vote(runId, threadId, voterId(), next)
-      .then(onVoted)
-      .catch(() => save(myVotes));
+    saveVote(threadId, next);
+    // Send votes one at a time so the server ends up with the last click.
+    voteQueue.current = voteQueue.current.then(() =>
+      api
+        .vote(runId, threadId, voterId(), next)
+        .then(onVoted)
+        .catch(() => {
+          if ((loadVotes(runId)[threadId] ?? 0) === next) saveVote(threadId, prev);
+        }),
+    );
   };
 
   const voter = (threadId: number, votes: number) => (
