@@ -171,6 +171,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         <span className="muted small">
           run {run.id} · {run.agents} agents · {run.stats.turns.toLocaleString()} turns · {run.stats.pixels.toLocaleString()} px · {run.stats.posts.toLocaleString()} posts
           {run.llm && ` · ${run.llm.tool_calls.toLocaleString()} tool calls / ${run.llm.calls.toLocaleString()} model calls${run.llm.failures ? ` · ${run.llm.failures} failed` : ""}`}
+          {run.llm?.latency?.turn && ` · turn p50 ${run.llm.latency.turn.p50.toFixed(2)} s / p95 ${run.llm.latency.turn.p95.toFixed(2)} s`}
           {" · "}{connection}
         </span>
         <span className="spacer" />

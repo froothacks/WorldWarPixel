@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { NarratorHighlight, NarratorState, NarratorUpdate, RunStats } from "./api";
 
+const EVENT_ICON: Record<string, string> = {
+  finished: "✔",
+  team: "⚑",
+  raid: "⚔",
+  repair: "⛨",
+  overwrite: "✎",
+  started: "✦",
+  move: "➜",
+  thread: "✉",
+  hot_thread: "🔥",
+};
+
 interface Props {
   narrator: NarratorState | null;
   paused: boolean;
@@ -135,6 +147,18 @@ function UpdateItem({ update: u, onHighlight }: { update: NarratorUpdate; onHigh
               <li key={i}>{b}</li>
             ))}
           </ul>
+        )}
+        {u.kind === "update" && (u.events?.length ?? 0) > 0 && (
+          <details className="narr-events">
+            <summary>{u.events!.length} notable events</summary>
+            <ul>
+              {u.events!.map((e, i) => (
+                <li key={i} className={`ev ev-${e.kind}`}>
+                  <span className="ev-kind">{EVENT_ICON[e.kind] ?? "•"}</span> {e.text}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         {u.highlights.length > 0 && (
           <div className="chips">

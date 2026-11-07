@@ -19,7 +19,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   agents: 100,
   cooldown: 10,
   jitter: 0.3,
-  pixels_per_turn: 8,
+  pixels_per_turn: 40,
   posts_per_turn: 1,
   max_concurrency: 10,
   seed: null,
@@ -37,12 +37,20 @@ export interface RunStats {
   errors: number;
 }
 
+export interface LatencySummary {
+  n: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  max: number;
+}
 export interface LLMStats {
   calls: number;
   tool_calls: number;
   tool_errors: number;
   no_tools: number;
   failures: number;
+  latency?: { model: LatencySummary | null; turn: LatencySummary | null };
 }
 
 export interface NarratorStats {
@@ -122,6 +130,7 @@ export interface NarratorUpdate {
   headline: string;
   bullets: string[];
   highlights: NarratorHighlight[];
+  events?: { kind: string; text: string }[];
   source: "model" | "fallback";
   error: string | null;
   window: { seconds: number; turns: number; pixels: number; posts: number };
