@@ -156,7 +156,9 @@ uv run --with modal python deploy/modal_app.py launch   # build + publish the im
 uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
 ```
 
-Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
+Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox.
+
+**Continuous deploy.** `.github/workflows/deploy.yml` runs `launch` and `modal deploy` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the sandbox, so a running simulation stops. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
 
 ## Development
 
