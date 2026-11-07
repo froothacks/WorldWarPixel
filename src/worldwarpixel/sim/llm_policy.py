@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import random
 import re
 from typing import Any, cast
 
@@ -137,7 +138,6 @@ TOOLS: list[ChatCompletionToolParam] = [
 
 READ_TOOLS = {"view_canvas", "read_thread"}
 MAX_ROUNDS = 2
-VIEW = 32
 
 
 def palette_legend() -> str:
@@ -166,8 +166,8 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "simply repaired damage, kept a corner tidy, or wandered the board making friends and "
         "enemies.\n\n"
         "Do whatever your persona would genuinely do here: pick what matters to you, decide who "
-        "you side with or against, and pursue it over many turns. You see the whole canvas as an "
-        "image plus a zoomed text crop around where you last painted.\n\n"
+        "you side with or against, and pursue it over many turns. Each turn you see the whole "
+        "canvas as an image plus a short list of the busiest areas with their coordinates.\n\n"
         "Practical notes:\n"
         f"- Use your whole pixel budget every turn ({pixels} pixels), usually one place_pixels "
         "call with adjacent pixels or one fill_rect, so your work grows into something "
@@ -175,37 +175,52 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "- Give coordinates when you coordinate with others. Prefer replying in an existing "
         "thread to starting a new one; address people by @Name.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
-        "intend; do not describe the hex grid or the tools."
+        "intend; do not describe colour numbers, the image format or the tools."
     )
 
 
-def crop_origin(obs: Observation, agent: AgentSpec) -> tuple[int, int]:
-    x0 = max(0, min(agent.home_x - VIEW // 2, obs.canvas_width - VIEW))
-    y0 = max(0, min(agent.home_y - VIEW // 2, obs.canvas_height - VIEW))
-    return x0, y0
-
-
-def local_view(obs: Observation, agent: AgentSpec, rows: list[str]) -> str:
-    x0, y0 = crop_origin(obs, agent)
-    header = (
-        f"Zoomed {VIEW}x{VIEW} crop around where you last painted, top-left ({x0}, {y0}), "
-        "one hex digit per pixel (row = y, column = x):"
+def region_view(agent: AgentSpec, regions: list[dict[str, int]]) -> str:
+    if not regions:
+        return f"The canvas is still blank. You last painted near ({agent.home_x}, {agent.home_y})."
+    lines = [
+        f"- x {r['x0']}-{r['x1']}, y {r['y0']}-{r['y1']}: {r['painted']} px painted, "
+        f"mostly {COLOR_NAMES[r['color']]}"
+        for r in regions
+    ]
+    return (
+        f"You last painted near ({agent.home_x}, {agent.home_y}). Busiest areas right now "
+        "(so you can aim precisely; the image shows what is actually drawn there):\n"
+        + "\n".join(lines)
     )
-    return header + "\n" + "\n".join(rows)
 
 
-def user_prompt(agent: AgentSpec, obs: Observation, view: str) -> str:
+def pick_threads(
+    board: list[dict[str, Any]], rng: random.Random, k: int = 6
+) -> list[dict[str, Any]]:
+    """A few of the most active threads plus a random sample, so agents don't all pile onto one."""
+    head, rest = board[:3], board[3:]
+    return head + rng.sample(rest, min(len(rest), k - len(head)))
+
+
+def user_prompt(
+    agent: AgentSpec, obs: Observation, view: str, rng: random.Random | None = None
+) -> str:
+    threads = pick_threads(obs.board, rng or random.Random(agent.id))
     board = (
         "\n".join(
             f'- thread {d["thread_id"]} "{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
-            + (f"; latest {d['latest']['author']}: {d['latest']['body']}" if d["latest"] else "")
-            for d in obs.board
+            + (
+                f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
+                if d["latest"]
+                else ""
+            )
+            for d in threads
         )
         or "- (no threads yet; you could start one)"
     )
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
-        f"{view}\n\nMost active threads:\n{board}\n\n"
+        f"{view}\n\nSome current threads:\n{board}\n\n"
         "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
         "budget on whatever you are pursuing. If a thread above matters to you, answer it with "
         "reply(thread_id=..., body=...) rather than starting a new one."
@@ -222,6 +237,7 @@ class LLMPolicy:
         self._model = model
         self._timeout = timeout
         self._vision = vision
+        self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
             "tool_calls": 0,
@@ -234,9 +250,7 @@ class LLMPolicy:
         return system_prompt(agent, width, height, pixels, posts)
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
-        x0, y0 = crop_origin(obs, agent)
-        rows = tools.peek(x0, y0, VIEW, VIEW)
-        text = user_prompt(agent, obs, local_view(obs, agent, rows))
+        text = user_prompt(agent, obs, region_view(agent, tools.regions()), self._rng)
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
             png, scale = tools.png()
@@ -273,7 +287,7 @@ class LLMPolicy:
                     tools=TOOLS,
                     tool_choice="auto",
                     max_tokens=700,
-                    temperature=0.8,
+                    temperature=1.0,
                     timeout=self._timeout,
                     extra_body={"chat_template_kwargs": {"enable_thinking": False}},
                 )
