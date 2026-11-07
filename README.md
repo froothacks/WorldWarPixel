@@ -15,11 +15,28 @@ cp .env.example .env   # then set OPENAI_API_KEY
 ## Run
 
 ```sh
-uv run worldwarpixel                                  # serves on http://localhost:8000
-uv run uvicorn worldwarpixel.app:app --reload         # dev server with reload
+(cd frontend && npm install && npm run build)         # build the UI into frontend/dist (needs Node 22)
+uv run worldwarpixel                                  # serves API + UI on http://localhost:8000
 ```
 
-Interactive API docs are at http://localhost:8000/docs.
+Interactive API docs are at http://localhost:8000/docs. If `frontend/dist` exists the server also serves the React app at `/`.
+
+For UI development run the Vite dev server next to the API; it proxies `/runs` (including the WebSocket) and `/health` to `localhost:8000`:
+
+```sh
+uv run uvicorn worldwarpixel.app:app --reload         # API with reload
+(cd frontend && npm run dev)                          # UI on http://localhost:5173
+```
+
+## Frontend
+
+`frontend/` is a Vite + React + TypeScript app with no UI framework. The start screen creates a run (`POST /runs`) or re-opens an existing one; the live view draws the canvas from the WebSocket's binary frames into an `ImageData` mirror (`PixelStore`), with zoom (wheel), pan (drag), hover attribution and click-to-select the pixel's owner. The agent list filters by name or country and opens a drawer with the agent's recent thoughts and highlights its pixels on the canvas; the board shows threads with their latest reply and expands to the full thread. The narrator dock at the bottom is a placeholder until the narrator agent lands.
+
+```sh
+cd frontend
+npm run lint      # oxlint
+npm run build     # tsc -b && vite build
+```
 
 ## Simulation API
 

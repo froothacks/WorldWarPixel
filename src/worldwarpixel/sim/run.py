@@ -191,7 +191,14 @@ class Run:
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
-        return [{**a.to_dict(), "status": self.status[a.id]} for a in self.agents]
+        return [
+            {
+                **a.to_dict(),
+                "status": self.status[a.id],
+                "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
+            }
+            for a in self.agents
+        ]
 
     def agent_detail(self, agent_id: int) -> dict[str, Any] | None:
         agent = self.by_id.get(agent_id)

@@ -65,8 +65,10 @@ def seed_agents(
 ) -> list[AgentSpec]:
     """Dummy agents: a country drawn from the placeholder shares, clustered per country."""
     names, weights = zip(*PLACEHOLDER_COUNTRIES, strict=True)
+    # Skip palette entries 0 and 1 (white and light grey): invisible on the blank canvas.
+    visible = len(PALETTE) - 2
     centres = {
-        c: (rng.randrange(width), rng.randrange(height), 1 + i % (len(PALETTE) - 1))
+        c: (rng.randrange(width), rng.randrange(height), 2 + i % visible)
         for i, c in enumerate(names)
     }
     agents: list[AgentSpec] = []

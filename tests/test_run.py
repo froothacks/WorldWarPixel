@@ -48,6 +48,9 @@ def test_agents_act_on_their_own_cooldowns() -> None:
         assert run.summary()["state"] == "stopped"
         detail = run.agent_detail(1)
         assert detail is not None and detail["thoughts"]
+        listed = run.agent_list()[0]
+        assert listed["last_thought"] == detail["thoughts"][-1]
+        assert all(a.color >= 2 for a in run.agents)
         assert run.agent_detail(99) is None
 
     asyncio.run(main())
