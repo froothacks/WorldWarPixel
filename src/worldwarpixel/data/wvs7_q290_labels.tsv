@@ -1,0 +1,431 @@
+code	label
+20001	AD: Caucasian white
+20002	AD: Negro black
+20003	AD: South Asian (Indian, Pakistani..)
+20004	AD: East Asian (Chinese, Japanese...)
+20005	AD: Arabic, Central Asian
+20999	AD: Other
+32001	AR: White
+32002	AR: Light brown
+32003	AR: Dark brown
+32004	AR: Black
+32005	AR: Indigenous
+32999	AR: Other
+36001	AU: Australian (English speaking)
+36002	AU: European
+36003	AU: South Asian (Indian, Pakistani, etc)
+36004	AU: East Asian (Chinese, Japanese, etc)
+36005	AU: Arabic, Central Asian
+36006	AU: Southeast Asian: Thai, Vietnamese, Malaysian, etc
+36007	AU: Aboriginal or Torres Strait Islander
+36999	AU: Other
+50006	BD: Bengali
+50007	BD: Chakma
+50008	BD: Murong
+51001	AM: Armenian
+51005	AM: Russian
+51006	AM: Yazidis
+51007	AM: Other
+68001	BO: Not pertaining to Indigenous groups
+68002	BO: Quechua
+68003	BO: Aymara
+68004	BO: Guaraní
+68005	BO: Chiquitano
+68006	BO: Mojeño
+68007	BO: Afroboliviano
+68008	BO: Indigenous with no further detail
+68999	BO: Other
+76001	BR: White
+76002	BR: Black
+76003	BR: Brown - Moreno ou pardo
+76004	BR: Oriental: Chines, Japanese,...
+76005	BR: Indigenous
+104001	MM: Bamar
+104002	MM: Kayin
+104003	MM: Rakhine
+104004	MM: Shan
+104005	MM: Mon
+104999	MM: Other
+124001	CA: Caucasian (White)
+124002	CA: Black (African, African -American, etc.)
+124003	CA: West Asian (Iranian, Afghan, etc.)
+124004	CA: Southeast Asian (Vietnamese, Cambodian, Malaysian, etc.)
+124005	CA: Arabic (Central Asia)
+124006	CA: South Asian (Indian, Bangladeshi, Pakistani, Sri Lankan,
+124007	CA: Latin American / Hispanic
+124008	CA: Aboriginal / First Nations
+124009	CA: Chinese
+124010	CA: Filipino
+124011	CA: Korean
+124012	CA: Japanese
+124999	CA: Other
+152001	CL: White, Caucasian
+152002	CL: Black
+152008	CL: Indigenous
+152009	CL: Asiatic
+152012	CL: Mestizo(a)
+152013	CL: Mulatto(a)
+152999	CL: Other
+156001	CN: Chinese
+158001	TW: Hakka from Taiwan
+158002	TW: Minnanese from Taiwan
+158003	TW: Mainlander/China
+158004	TW: Aboriginal
+158999	TW: Other
+170008	CO: Afro-colombian
+170009	CO: Gypsie
+170010	CO: Indigenous
+170011	CO: White
+170999	CO: Other
+196001	CY: Caucasian white
+196003	CY: South Asian Indian, Pakistani, etc.
+196005	CY: Arabic, Central Asian
+203004	CZ: Slovak
+203005	CZ: Poland
+203006	CZ: Ukrainian
+203010	CZ: Other
+218011	EC: Blanco
+218012	EC: Mestizo
+218013	EC: Negro
+218014	EC: Indígena
+218017	EC: Montubio
+218018	EC: Mulato
+231001	ET: Amhara
+231002	ET: Tigre
+231003	ET: Oromo
+231004	ET: Somali
+231005	ET: Afar
+231006	ET: Sidama
+231007	ET: Wolayta
+231998	ET: Other Africans/Negro Black
+231999	ET: Other
+300001	GR: Caucasian white
+300002	GR: Negro Black
+300004	GR: East Asian Chinese, Japanese, etc.
+300005	GR: Arabic, Central Asian
+320001	GT: Ladino
+320002	GT: Cross breed
+320003	GT: Brown
+320004	GT: Indigenous
+320005	GT: White
+320006	GT: Hispanic
+344001	HK: Chinese
+344002	HK: Filipino
+344003	HK: Indonesian
+344004	HK: White
+344005	HK: Indian
+344006	HK: Nepalese
+344007	HK: Pakistani
+344008	HK: Thai
+344998	HK: Other Asian
+344999	HK: Other
+356017	IN: Hindu (Scheduled Castes)
+356018	IN: Hindu (Scheduled Tribes)
+356019	IN: Hindu (Other Backward Castes)
+356024	IN: General
+360002	ID: Chinese
+360004	ID: Javanese
+360005	ID: Sundanese
+360007	ID: Aceh
+360008	ID: Batak
+360009	ID: Banjar
+360010	ID: Betawi
+360011	ID: Bengkulu
+360012	ID: Bugis
+360013	ID: Dani
+360014	ID: Dayak
+360015	ID: Flores
+360017	ID: Lampung
+360018	ID: Maduranese
+360019	ID: Makassar
+360020	ID: Mandar
+360021	ID: Manggarai
+360022	ID: Melayu
+360023	ID: Minangkabau
+360024	ID: Palembang
+360026	ID: Toraja
+360999	ID: Other
+364001	IR: Persian
+364002	IR: Turk/Azeri
+364003	IR: Kurd
+364004	IR: Lor
+364005	IR: Gilak/Mazani/Shomali
+364006	IR: Baluch
+364007	IR: Arab
+364999	IR: Other
+368001	IQ: Arab
+368002	IQ: Kurdish
+368003	IQ: Turk
+368004	IQ: Ashur
+398001	KZ: Korean
+398002	KZ: Uigur
+398003	KZ: Bashkir
+398004	KZ: Lezgin
+398005	KZ: Belorus
+398021	KZ: Azeri
+398022	KZ: Iranian and Central Asian
+398023	KZ: Georgian
+398024	KZ: German
+398025	KZ: Kazakh
+398026	KZ: Kurdish
+398027	KZ: Kyrgyz
+398028	KZ: Moldovan
+398029	KZ: Russian
+398030	KZ: Tajik
+398031	KZ: Tatar
+398032	KZ: Ukrainian
+398033	KZ: Uzbek
+398040	KZ: Turkish
+404001	KE: Kalenjin
+404002	KE: Kamba
+404003	KE: Kikuyu
+404004	KE: Kisii
+404005	KE: Luhya
+404006	KE: Luo
+404007	KE: Maasai
+404008	KE: Meru
+404009	KE: Mijikenda
+404010	KE: Somalis
+404011	KE: Turkana
+404014	KE: Arabs in Kenya (Arabic, Central Asian)
+404016	KE: Other
+410004	KR: East Asian (Chinese, Japanese, etc)
+417001	KG: Kirguís
+417002	KG: European
+417003	KG: Tayiko
+417004	KG: Ruso
+417005	KG: Kazakh
+417999	KG: Other
+434005	LY: Arabic
+434006	LY: Amazigh
+434007	LY: Tuareg
+434008	LY: Toubou
+434999	LY: Other
+446001	MO: Caucasian white
+446003	MO: South Asian Indian, Pakistani, etc.
+446004	MO: East Asian Chinese, Japanese, etc.
+446006	MO: Chinese
+446007	MO: Portuguese/Macaense
+446008	MO: Southeast Asians (Indonesia, Philippines, Thailand)
+446999	MO: Other
+458004	MY: Malay
+458012	MY: Chinese
+458014	MY: Indian
+462001	MV: Caucasian white
+462003	MV: South Asian India, Pakistani, etc
+462004	MV: East Asian Chinese, Japanese, etc
+484001	MX: White
+484002	MX: Light brown
+484003	MX: Dark brown
+484004	MX: Black
+484005	MX: Indigenous
+496001	MN: Khalkh
+496002	MN: Dorvod
+496003	MN: Bayad
+496004	MN: Buriad
+496005	MN: Zakhchin
+496006	MN: Myangad
+496007	MN: Uuld
+496008	MN: Kazakh
+496009	MN: Tuva
+496011	MN: Dariganga
+496012	MN: Uzemchin
+496014	MN: Uriankhai
+496015	MN: Khoton
+496016	MN: Darkhad
+496017	MN: Torguud
+504005	MA: Arabe
+528001	NL: Caucasian white
+528002	NL: Negro Black
+528003	NL: South Asian Indian, Pakistani, etc.
+528004	NL: East Asian Chinese, Japanese, etc.
+528005	NL: Arabic, Central Asian
+528999	NL: Other
+558001	NI: Half Blood
+558002	NI: Indigenous
+558003	NI: Afrocaribeño
+558999	NI: Other
+566001	NG: Yoruba
+566002	NG: Hausa
+566003	NG: Igbo
+566004	NG: Fulani
+566005	NG: Tiv
+566006	NG: Ibibio
+566998	NG: Other Africans
+566999	NG: Others
+586001	PK: Punjabi
+586003	PK: Baluchi
+586004	PK: Sindhi
+586005	PK: Urdu speaking
+586006	PK: Pashto
+586007	PK: Hindko
+586008	PK: Seraiki
+586009	PK: Hindko
+586999	PK: Others
+604001	PE: White
+604012	PE: Indigenous / Native
+604013	PE: Indigenous half -breed
+604014	PE: Afro half-breed
+604015	PE: Asian half-breed
+604016	PE: European half-breed
+604998	PE: Migrant of other origin
+604999	PE: Other
+608001	PH: Tagalog
+608002	PH: Bisaya
+608003	PH: Ilonggo
+608004	PH: Bicolano
+608005	PH: Ilocano
+608006	PH: Waray
+608007	PH: Chabacano
+608010	PH: Kapampangan
+608015	PH: Aklanon
+608017	PH: Sama
+608018	PH: Matanao
+608020	PH: Bilaan
+608024	PH: Cebuano
+608026	PH: Antiqueno
+608027	PH: Masbateno
+608028	PH: Pangasinense
+608031	PH: Tausog
+608032	PH: Suriganon
+608039	PH: Maguindanao
+608047	PH: Igorot
+608048	PH: Yakan
+608049	PH: Marinduque
+608050	PH: Ayangan (Kankanaey)
+608051	PH: Tinguian Tribe
+608052	PH: Belwang tribe
+608053	PH: Matinguian Tribe
+608054	PH: Sambal
+608055	PH: Mangyan
+608056	PH: Romblomanon
+608057	PH: Subanin
+608058	PH: Cantilangnon
+608059	PH: Kamayo
+608060	PH: Boholano
+608061	PH: Taga Kaulo
+608062	PH: Sinamah
+630001	PR: White
+630002	PR: Black
+630007	PR: Indigenous
+630012	PR: Light brown
+630013	PR: Dark brown
+630999	PR: Other
+642005	RO: Caucasian white
+642999	RO: Other
+643001	RU: Russian
+643002	RU: Tatar
+643003	RU: Ukrainian
+643005	RU: Jew
+643007	RU: German
+643015	RU: Georgian
+643016	RU: Armenian
+643020	RU: Moldovan
+643023	RU: Italian
+643035	RU: Kazakh
+643036	RU: Azeri
+643037	RU: North-East Asian
+643040	RU: Tajik
+643053	RU: Kyrgyz
+643080	RU: Uzbek
+643097	RU: Iranian and Central Asian
+643999	RU: Other
+688001	RS: Caucasian white
+688999	RS: Other
+702001	SG: Caucasian white
+702003	SG: South Asian Indian, Pakistan, etc.
+702004	SG: Chinese
+702006	SG: Malay
+702008	SG: Eurasian
+702999	SG: Others
+703001	SK: Gypsy
+703005	SK: Slovak
+703006	SK: Hungarian
+703008	SK: Ruthenian
+703009	SK: Bohemia/Czech Republic
+703999	SK: Other
+704001	VN: Kinh
+704002	VN: Muong
+704007	VN: Thai
+704009	VN: China
+716001	ZW: Africans/Negro Black
+716002	ZW: Caucasian White
+716006	ZW: Shona
+716007	ZW: Ndebele
+716008	ZW: Arabic, Central Asian
+716999	ZW: Other
+762001	TJ: Tajik
+762002	TJ: Uzbek
+762004	TJ: Russian
+764001	TH: Thai
+764002	TH: China
+764003	TH: Malayu
+764004	TH: Tribe
+764999	TH: Other
+788002	TN: Negro Black
+788003	TN: Tamazight (Berber)
+788005	TN: Arabic
+788999	TN: Other
+804001	UA: Ukrainians
+804002	UA: Russians
+804003	UA: Belarusians
+804004	UA: Tatars
+804005	UA: Jews
+804999	UA: Other
+818001	EG: Arab
+818004	EG: Noba
+818006	EG: Coptic
+818999	EG: Other
+826002	GB: Black-Caribbean
+826003	GB: Black-African
+826004	GB: Black-Other
+826005	GB: Indian
+826006	GB: Pakistani
+826007	GB: Bangladeshi
+826008	GB: Chinese
+826015	GB: Arabic, Central Asian
+826016	GB: Mixed race
+826100	GB: English / Welsh / Scottish / Northern Irish / British
+826101	GB: Irish
+826102	GB: Gypsy or Irish Traveller
+826103	GB: Any other White background, please describe
+826104	GB: White and Black Caribbean
+826105	GB: White and Black African
+826106	GB: White and Asian
+826107	GB: Any other Asian background, please describe
+826999	GB: Other ethnic group
+840001	US: White, non-Hispanic
+840002	US: Black, Non-Hispanic
+840003	US: Other, Non-Hispanic
+840004	US: Hispanic
+840005	US: Two plus, non-Hispanic
+858100	UY: White
+858101	UY: Afro or black
+858102	UY: Indigenous
+858103	UY: Half Blood
+858104	UY: Mulatto
+858105	UY: Asian
+858999	UY: Other
+860001	UZ: Uzbek
+860002	UZ: Russian
+860003	UZ: Tatarin
+860004	UZ: Kazakhs
+860005	UZ: Karakalpak
+860006	UZ: Tajik
+860007	UZ: Kyrgyz
+860008	UZ: Turkmen
+862001	VE: White
+862002	VE: Mestizo / Light brown
+862003	VE: Dark-skinned / Dark -brown
+862004	VE: Black
+862005	VE: Indigenous
+909002	NIR: English / Welsh / Scottish / Northern Irish / British
+909003	NIR: Irish
+909005	NIR: Any other White background, please describe
+909007	NIR: White and Black African
+909010	NIR: Indian
+909013	NIR: Chinese
+909014	NIR: Any other Asian background, please describe
+909015	NIR: African
+909016	NIR: Caribbean
+909017	NIR: Any other Black / African / Caribbean background, please describe

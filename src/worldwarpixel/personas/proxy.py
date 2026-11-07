@@ -1,0 +1,182 @@
+"""Which WVS Wave 7 country file stands in for a country the survey did not cover.
+
+WVS7 fielded 66 surveys. For everyone else we borrow respondents from the nearest surveyed
+country in the same Inglehart-Welzel cultural zone (and, where possible, a neighbour): an
+explicit override first, then a default per UN M49 subregion. The persona card records both the
+agent's country and the survey country it was sampled from so the borrowing is always visible.
+"""
+
+from __future__ import annotations
+
+WVS7_COUNTRIES: frozenset[str] = frozenset(
+    [
+        "AND",
+        "ARG",
+        "ARM",
+        "AUS",
+        "BGD",
+        "BOL",
+        "BRA",
+        "CAN",
+        "CHL",
+        "CHN",
+        "COL",
+        "CYP",
+        "CZE",
+        "ECU",
+        "EGY",
+        "ETH",
+        "DEU",
+        "GBR",
+        "GRC",
+        "GTM",
+        "HKG",
+        "IND",
+        "IDN",
+        "IRN",
+        "IRQ",
+        "JPN",
+        "JOR",
+        "KAZ",
+        "KEN",
+        "KGZ",
+        "LBN",
+        "LBY",
+        "MAC",
+        "MYS",
+        "MDV",
+        "MEX",
+        "MNG",
+        "MAR",
+        "MMR",
+        "NLD",
+        "NZL",
+        "NIC",
+        "NGA",
+        "PAK",
+        "PER",
+        "PHL",
+        "PRI",
+        "ROU",
+        "RUS",
+        "SRB",
+        "SGP",
+        "SVK",
+        "KOR",
+        "TWN",
+        "TJK",
+        "THA",
+        "TUN",
+        "TUR",
+        "UKR",
+        "URY",
+        "USA",
+        "UZB",
+        "VEN",
+        "VNM",
+        "ZWE",
+    ]
+)
+
+PROXY_OVERRIDES: dict[str, str] = {
+    # Southern / Eastern / South-Eastern Asia
+    "AFG": "PAK",
+    "NPL": "IND",
+    "LKA": "IND",
+    "BTN": "IND",
+    "PRK": "CHN",
+    "KHM": "THA",
+    "LAO": "VNM",
+    "TLS": "IDN",
+    "BRN": "MYS",
+    # Western and Central Asia
+    "SAU": "JOR",
+    "ARE": "JOR",
+    "QAT": "JOR",
+    "KWT": "JOR",
+    "BHR": "JOR",
+    "OMN": "JOR",
+    "PSE": "JOR",
+    "YEM": "IRQ",
+    "SYR": "IRQ",
+    "ISR": "CYP",
+    "AZE": "TUR",
+    "GEO": "ARM",
+    "TKM": "UZB",
+    # Africa
+    "DZA": "MAR",
+    "MRT": "MAR",
+    "SDN": "EGY",
+    "CMR": "NGA",
+    "TCD": "NGA",
+    "AGO": "ZWE",
+    "ZMB": "ZWE",
+    "MWI": "ZWE",
+    "MOZ": "ZWE",
+    "SOM": "ETH",
+    "ERI": "ETH",
+    "DJI": "ETH",
+    # Europe
+    "IRL": "GBR",
+    "SWE": "NLD",
+    "NOR": "NLD",
+    "DNK": "NLD",
+    "FIN": "NLD",
+    "ISL": "NLD",
+    "EST": "NLD",
+    "LVA": "NLD",
+    "LTU": "SVK",
+    "POL": "SVK",
+    "HUN": "SVK",
+    "BLR": "RUS",
+    "BGR": "ROU",
+    "MDA": "ROU",
+    "ESP": "AND",
+    "PRT": "AND",
+    "ITA": "GRC",
+    "MLT": "AND",
+    # Americas
+    "HTI": "NIC",
+    "CRI": "URY",
+    "PAN": "COL",
+    "PRY": "ARG",
+    "GUY": "VEN",
+    "SUR": "VEN",
+    # Oceania
+    "FJI": "NZL",
+    "NCL": "NZL",
+}
+
+SUBREGION_DEFAULTS: dict[str, str] = {
+    "Southern Asia": "IND",
+    "Eastern Asia": "CHN",
+    "South-Eastern Asia": "IDN",
+    "Western Asia": "TUR",
+    "Central Asia": "KAZ",
+    "Northern Africa": "EGY",
+    "Western Africa": "NGA",
+    "Middle Africa": "KEN",
+    "Eastern Africa": "KEN",
+    "Southern Africa": "ZWE",
+    "Western Europe": "DEU",
+    "Northern Europe": "NLD",
+    "Southern Europe": "SRB",
+    "Eastern Europe": "ROU",
+    "Northern America": "CAN",
+    "Caribbean": "PRI",
+    "Central America": "GTM",
+    "South America": "COL",
+    "Australia/New Zealand": "AUS",
+    "Melanesia": "PHL",
+    "Micronesia": "NZL",
+    "Polynesia": "NZL",
+}
+
+
+def survey_country(iso3: str, subregion: str) -> str:
+    """ISO3 of the WVS7 survey whose respondents represent ``iso3``."""
+    if iso3 in WVS7_COUNTRIES:
+        return iso3
+    if iso3 in PROXY_OVERRIDES:
+        return PROXY_OVERRIDES[iso3]
+    return SUBREGION_DEFAULTS.get(subregion, "USA")
