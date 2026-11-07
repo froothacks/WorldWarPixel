@@ -54,8 +54,12 @@ def parse_tokens(raw: str) -> dict[str, int]:
 
 
 def authenticate(token: str | None, society: int | None) -> Device | None:
-    tokens = parse_tokens(get_settings().device_tokens.get_secret_value())
+    raw = get_settings().device_tokens.get_secret_value()
+    tokens = parse_tokens(raw)
     if not tokens:
+        if raw.strip():
+            log.error("DEVICE_TOKENS is set but has no valid token:society entries")
+            return None
         s = society or 0
         return Device(f"dev-{s}", s)
     for i, (known, s) in enumerate(tokens.items()):
