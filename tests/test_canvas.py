@@ -44,3 +44,15 @@ def test_png_export_downsamples() -> None:
     assert (w, h) == (434, 234)
     small, scale1 = Canvas(64, 32).to_png()
     assert scale1 == 1 and struct.unpack(">II", small[16:24]) == (64, 32)
+
+
+def test_clear_resets_region_counts() -> None:
+    c = Canvas(64, 64)
+    c.write(PixelWrite(3, 3, 5, agent_id=1))
+    c.write(PixelWrite(40, 40, 7, agent_id=2))
+    assert len(c.regions()) == 2
+    c.clear()
+    assert c.regions() == []
+    assert all(r["painted"] == 0 and r["color"] == 0 for r in c.regions(limit=None))
+    c.write(PixelWrite(3, 3, 9, agent_id=1))
+    assert c.regions() == [{**c.regions(limit=None)[0], "painted": 1, "color": 9}]
