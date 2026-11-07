@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from worldwarpixel.config import Settings
 
@@ -12,3 +13,10 @@ def test_modal_headers_only_for_modal_hosts(monkeypatch: pytest.MonkeyPatch) -> 
     assert Settings().default_headers() == {}
     monkeypatch.delenv("OPENAI_BASE_URL")
     assert Settings().default_headers() == {}
+
+
+@pytest.mark.parametrize("var", ["AGENT_MAX_TOKENS", "NARRATOR_MAX_TOKENS"])
+def test_max_tokens_must_be_positive(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
+    monkeypatch.setenv(var, "0")
+    with pytest.raises(ValidationError):
+        Settings()

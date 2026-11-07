@@ -137,6 +137,14 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     )
 
 
+def test_agent_max_tokens_is_passed_to_the_model() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([_response(None, [])])
+    policy = LLMPolicy(client, "m", vision=False, max_tokens=4000)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert client.chat.completions.requests[0]["max_tokens"] == 4000
+
+
 def test_system_prompt_does_not_assign_a_usual_colour() -> None:
     agent, *_ = _setup()
     prompt = system_prompt(agent, 64, 40, 4, 1)

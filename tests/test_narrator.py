@@ -2,6 +2,7 @@ import asyncio
 import json
 import struct
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,11 +16,30 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.narrator import (
     GRID,
     NarratorUnavailable,
+    OpenAINarratorModel,
     bucket_span,
     canvas_png,
     parse_reply,
 )
 from worldwarpixel.sim.run import Run, RunConfig
+
+
+class _FakeCompletions:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+
+    async def create(self, **kw: Any) -> Any:
+        self.requests.append(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+
+def test_narrator_max_tokens_is_passed_to_the_model() -> None:
+    completions = _FakeCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    model = OpenAINarratorModel(client, "m", max_tokens=3000)  # type: ignore[arg-type]
+    asyncio.run(model.complete([{"role": "user", "content": "hi"}]))
+    assert completions.requests[0]["max_tokens"] == 3000
+
 
 CONFIG = RunConfig(
     width=64, height=32, agents=5, cooldown=0.01, jitter=0, pixels_per_turn=4, seed=1
