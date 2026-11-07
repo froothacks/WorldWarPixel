@@ -52,7 +52,7 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value() or "none",
+        api_key=settings.api_key(),
         base_url=settings.openai_base_url,
         timeout=settings.request_timeout,
         default_headers=settings.default_headers() or None,
