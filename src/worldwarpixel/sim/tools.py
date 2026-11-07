@@ -68,7 +68,11 @@ class ToolSet:
     def place_pixels(self, pixels: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
         if not pixels:
             raise ToolError("no pixels given")
-        self._check("pixels", len(pixels))
+        if self.budget.pixels <= 0:
+            raise ToolError("no pixel budget left this turn")
+        # Small models often miscount; keep the first N pixels instead of rejecting the turn.
+        dropped = max(0, len(pixels) - self.budget.pixels)
+        pixels = pixels[: self.budget.pixels]
         writes: list[PixelWrite] = []
         for x, y, color in pixels:
             if not self._canvas.in_bounds(x, y):
@@ -78,7 +82,11 @@ class ToolSet:
             writes.append(PixelWrite(x, y, color, self._agent_id))
         self._spend("pixels", len(writes))
         self._write(writes)
-        return {"placed": len(writes), "pixels_left": self.budget.pixels}
+        out: dict[str, Any] = {"placed": len(writes), "pixels_left": self.budget.pixels}
+        if dropped:
+            out["dropped"] = dropped
+            out["note"] = f"only {len(writes)} fit the budget; {dropped} pixels were dropped"
+        return out
 
     def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> dict[str, Any]:
         if w <= 0 or h <= 0:

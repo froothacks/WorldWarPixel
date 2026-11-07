@@ -194,7 +194,8 @@ def user_prompt(agent: AgentSpec, obs: Observation, view: str) -> str:
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
         f"{view}\n\nMost active threads:\n{board}\n\n"
         "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
-        "budget and, if you have something to say, reply or post_thread."
+        "budget. If a thread above interests you, answer it with reply(thread_id=..., body=...) "
+        "rather than starting a new one."
     )
 
 
