@@ -208,6 +208,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export const DISPATCH_ID = 65534;
+export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
