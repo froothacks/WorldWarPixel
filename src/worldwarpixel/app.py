@@ -10,11 +10,14 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
-from worldwarpixel.api import RunManager
+from worldwarpixel.api import RunManager, random_policy
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
 from worldwarpixel.llm import ChatService
+from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.llm_policy import LLMPolicy
+from worldwarpixel.sim.run import RunConfig
 
 
 class Message(BaseModel):
@@ -48,14 +51,24 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value() or None,
+        api_key=settings.openai_api_key.get_secret_value() or "none",
         base_url=settings.openai_base_url,
         timeout=settings.request_timeout,
+        default_headers=settings.default_headers() or None,
     ) as client:
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
-        app.state.runs = RunManager(EventLog(settings.event_log_path), settings.max_active_runs)
+        agent_model = settings.agent_model or settings.openai_model
+
+        def make_policy(config: RunConfig) -> Policy:
+            if config.policy == "llm":
+                return LLMPolicy(client, agent_model, timeout=settings.request_timeout)
+            return random_policy(config)
+
+        app.state.runs = RunManager(
+            EventLog(settings.event_log_path), settings.max_active_runs, make_policy
+        )
         try:
             yield
         finally:

@@ -89,6 +89,10 @@ class ToolSet:
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 
+    def peek(self, x: int, y: int, w: int, h: int) -> list[str]:
+        """Free read used to build the observation; does not touch the view budget."""
+        return self._canvas.view(x, y, w, h)
+
     def view_canvas(self, x: int, y: int, w: int, h: int) -> dict[str, Any]:
         if w <= 0 or h <= 0 or w > MAX_VIEW_SIDE or h > MAX_VIEW_SIDE:
             raise ToolError(f"view size must be 1..{MAX_VIEW_SIDE} on each side")

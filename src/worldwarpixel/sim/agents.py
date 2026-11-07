@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from worldwarpixel.sim.canvas import PALETTE
+from worldwarpixel.sim.names import random_name
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 # Placeholder population until the WPP + WVS seeding lands: (country, share of world population).
@@ -40,6 +41,7 @@ class AgentSpec:
     home_x: int
     home_y: int
     cooldown: float
+    persona: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,22 +74,43 @@ def seed_agents(
         for i, c in enumerate(names)
     }
     agents: list[AgentSpec] = []
+    used: set[str] = set()
     for i in range(1, count + 1):
         country = rng.choices(names, weights)[0]
         cx, cy, color = centres[country]
         spread = max(8, min(width, height) // 12)
+        name = random_name(country, rng, used)
         agents.append(
             AgentSpec(
                 id=i,
-                name=f"Agent {i}",
+                name=name,
                 country=country,
                 color=color,
                 home_x=min(max(cx + rng.randint(-spread, spread), 0), width - 1),
                 home_y=min(max(cy + rng.randint(-spread, spread), 0), height - 1),
                 cooldown=cooldown,
+                persona=random_persona(name, country, rng),
             )
         )
     return agents
+
+
+TEMPERAMENTS = (
+    "playful and competitive",
+    "diplomatic and keen on alliances",
+    "stubborn about defending your patch",
+    "artistic and obsessed with symmetry",
+    "chatty and always recruiting helpers",
+    "quiet, methodical and territorial",
+    "mischievous and fond of sabotage",
+    "proud of your home country and its symbols",
+)
+
+
+def random_persona(name: str, country: str, rng: random.Random) -> str:
+    """Placeholder persona; WPP + WVS seeding will replace this with survey-grounded traits."""
+    age = rng.randint(18, 72)
+    return f"{name}, {age}, from {country}. You are {rng.choice(TEMPERAMENTS)}."
 
 
 class RandomWalkPolicy:

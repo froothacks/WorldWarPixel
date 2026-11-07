@@ -50,7 +50,14 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
         <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
         <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
       </dl>
-      <p className="muted small">Its pixels are highlighted on the canvas. Persona and system prompt arrive with the LLM agents.</p>
+      <p className="small persona">{agent.persona}</p>
+      <p className="muted small">Its pixels are highlighted on the canvas.</p>
+      {fresh?.system_prompt && (
+        <details className="prompt">
+          <summary className="muted small">System prompt</summary>
+          <pre>{fresh.system_prompt}</pre>
+        </details>
+      )}
       <h3>Thoughts</h3>
       <div className="thoughts">
         {thoughts.length === 0 && <p className="muted small">No turns yet.</p>}
