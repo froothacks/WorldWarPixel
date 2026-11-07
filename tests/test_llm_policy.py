@@ -321,6 +321,8 @@ def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
     assert "[WORLD NEWS] - thread 7" in prompt
     assert "[WORLD NEWS] - thread 7" in user_prompt(agent, obs)
     assert "Budget: 4 pixels, no posts this turn (you posted recently)," in prompt
+    assert "Hand of God" not in prompt
+    assert "Hand of God" not in system_prompt(agent, 64, 40, 4, 1)
     policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
     names = [tool["function"]["name"] for tool in policy._tools_for(obs)]
     assert "post_thread" not in names and "reply" not in names
