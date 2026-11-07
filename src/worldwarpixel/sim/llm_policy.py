@@ -11,6 +11,7 @@ from openai.types.chat import (
 )
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
+from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
 log = logging.getLogger(__name__)
@@ -306,7 +307,7 @@ class LLMPolicy:
             self.stats["tool_errors"] += 1
             return "error: arguments were not valid JSON"
         try:
-            result = self._dispatch(tools, name, args)
+            result = self._dispatch(agent, tools, name, args)
         except ToolError as e:
             self.stats["tool_errors"] += 1
             log.info("agent tool %s rejected: %s", name, e)
@@ -321,20 +322,25 @@ class LLMPolicy:
         return json.dumps(result)
 
     @staticmethod
-    def _dispatch(tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
+    def _dispatch(agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
+
+        def colour(v: Any) -> int:
+            c = int(v)
+            return c if 0 <= c < len(PALETTE) else agent.color
+
         match name:
             case "place_pixels":
                 a["pixels"] = [
-                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": int(p["color"]) % 16}
+                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
                     for p in a["pixels"]
                 ]
                 return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
             case "fill_rect":
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["w"], a["h"] = min(int(a["w"]), w - a["x"]), min(int(a["h"]), h - a["y"])
-                return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], int(a["color"]) % 16)
+                return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], colour(a["color"]))
             case "post_thread":
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":

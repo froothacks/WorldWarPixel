@@ -165,4 +165,4 @@ def test_out_of_range_arguments_are_clamped() -> None:
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "placed 1 px near (63, 0)" in thought and "posted thread 1" in thought
-    assert events[0][1]["color"] == 5 and policy.stats["tool_errors"] == 0
+    assert events[0][1]["color"] == agent.color and policy.stats["tool_errors"] == 0
