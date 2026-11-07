@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 from typing import Any, cast
 
 from openai import AsyncOpenAI
@@ -345,7 +346,7 @@ class LLMPolicy:
         match name:
             case "place_pixels":
                 if isinstance(a["pixels"], str):  # the model often double-encodes the list
-                    a["pixels"] = json.loads(a["pixels"])
+                    a["pixels"] = _parse_pixel_list(a["pixels"])
                 a["pixels"] = [
                     {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
                     for p in a["pixels"]
@@ -364,6 +365,25 @@ class LLMPolicy:
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
         raise ToolError(f"unknown tool {name}")
+
+
+_PIXEL_RE = re.compile(
+    r"x\\?\"?\s*:\s*(-?\d+).*?y\\?\"?\s*:\s*(-?\d+).*?color\\?\"?\s*:\s*(-?\d+)", re.S
+)
+
+
+def _parse_pixel_list(text: str) -> list[dict[str, int]]:
+    """Decode a stringified pixel list, salvaging truncated or sloppy JSON by regex."""
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return parsed
+    except ValueError:
+        pass
+    found = [{"x": int(x), "y": int(y), "color": int(c)} for x, y, c in _PIXEL_RE.findall(text)]
+    if not found:
+        raise ToolError("pixels must be a list of {x, y, color}")
+    return found
 
 
 def _clamp(v: Any, size: int) -> int:
