@@ -9,16 +9,17 @@ interface Props {
   onSelect: (id: number | null) => void;
 }
 
-/** Rows rendered at once; with thousands of agents the DOM gets heavy, so filter to reach the rest. */
+/** Rows rendered at once; with thousands of agents the DOM gets heavy, so the rest load on demand. */
 const MAX_ROWS = 400;
 
 export default function AgentList({ agents, palette, selected, lastThought, onSelect }: Props) {
   const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(MAX_ROWS);
   const matching = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q)) : agents;
   }, [agents, query]);
-  const shown = matching.length > MAX_ROWS ? matching.slice(0, MAX_ROWS) : matching;
+  const shown = matching.length > limit ? matching.slice(0, limit) : matching;
   const active = agents.filter((a) => a.status !== "idle").length;
 
   return (
@@ -30,7 +31,15 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
           {active > 0 && ` · ${active} active`}
         </span>
       </header>
-      <input className="search" placeholder="Filter by name or country" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <input
+        className="search"
+        placeholder="Filter by name or country"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setLimit(MAX_ROWS);
+        }}
+      />
       <div className="agent-rows">
         {shown.map((a) => (
           <button
@@ -51,9 +60,9 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
         ))}
         {shown.length === 0 && <p className="muted small pad">No agents match.</p>}
         {matching.length > shown.length && (
-          <p className="muted small pad">
-            Showing {shown.length} of {matching.length.toLocaleString()}. Filter by name or country to find the rest.
-          </p>
+          <button className="show-more" onClick={() => setLimit((n) => n + MAX_ROWS)}>
+            Show more ({shown.length} of {matching.length.toLocaleString()})
+          </button>
         )}
       </div>
     </aside>
