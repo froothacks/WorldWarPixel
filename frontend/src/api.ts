@@ -60,6 +60,7 @@ export interface LLMStats {
   tool_errors: number;
   no_tools: number;
   failures: number;
+  last_error?: string;
   latency?: { model: LatencySummary | null; turn: LatencySummary | null };
 }
 

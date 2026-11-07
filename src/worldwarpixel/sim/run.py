@@ -471,7 +471,6 @@ class Run:
             sink,
             self._clock,
             writer,
-            pending,
             blocked=lambda x, y: self.stage.blocks(agent.id, x, y),
         )
         obs = Observation(
@@ -520,7 +519,6 @@ class Run:
             self.world.observe_post(payload)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
-            self.dispatcher.observe_action(agent_id, payload)
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:

@@ -38,8 +38,6 @@ class Dispatcher:
         self._previous_talk = Counter(world.talk)
         self._previous_leader = self._territory_leader()
         self._last_tick: float | None = None
-        self._art: list[tuple[int, str, str, int, int]] = []
-        self._seen_art: set[tuple[int, str, str, int, int]] = set()
 
     def _territory_leader(self) -> int | None:
         owned: Counter[int] = Counter()
@@ -104,7 +102,7 @@ class Dispatcher:
         self._previous_talk = talk
         self._last_tick = now
 
-        events: list[tuple[tuple[Any, ...], str, str, str, list[str], Any | None]] = []
+        events: list[tuple[tuple[Any, ...], str, str, str, list[str]]] = []
         pairs = {
             (min(a, b), max(a, b))
             for a, b in self._previous_raids.keys() | delta_raids.keys()
@@ -132,7 +130,6 @@ class Dispatcher:
                     f"{country_a} in the last {secs} s{location}.",
                     "war",
                     [country_a, country_b],
-                    None,
                 )
             )
 
@@ -152,7 +149,6 @@ class Dispatcher:
                     f"in the last {secs} s.",
                     "talk",
                     [country_a, country_b],
-                    None,
                 )
             )
 
@@ -178,57 +174,14 @@ class Dispatcher:
                     f"{previous_name}.",
                     "territory",
                     [leader_name, previous_name],
-                    None,
                 )
             )
         self._previous_leader = leader
 
-        for item in self._art[:2]:
-            agent_id, _tool, what, x, y = item
-            agent = self.agents.get(agent_id)
-            if agent is None:
-                continue
-            events.append(
-                (
-                    ("art",),
-                    "🎨 New artwork",
-                    f"{agent.name} ({agent.country}) finished {what} at ({x}, {y}).",
-                    "art",
-                    [agent.country],
-                    item,
-                )
-            )
-
         posts: list[Post] = []
-        consumed_art: set[tuple[int, str, str, int, int]] = set()
-        for key, title, body, kind, countries, art_item in events[:MAX_PER_TICK]:
+        for key, title, body, kind, countries in events[:MAX_PER_TICK]:
             posts.append(self._post(key, title, body, now, kind, countries))
-            if art_item is not None:
-                consumed_art.add(art_item)
-        if consumed_art:
-            self._art = [item for item in self._art if item not in consumed_art]
         return posts
-
-    def observe_action(self, agent_id: int, payload: dict[str, Any]) -> None:
-        tool = payload.get("tool")
-        if tool not in ("draw_flag", "draw_text", "draw_shape"):
-            return
-        result = payload.get("result")
-        if not isinstance(result, dict) or not result.get("done"):
-            return
-        args = payload.get("args")
-        if not isinstance(args, dict):
-            return
-        key = "country" if tool == "draw_flag" else "text" if tool == "draw_text" else "shape"
-        if key not in args or "x" not in args or "y" not in args:
-            return
-        try:
-            item = (agent_id, str(tool), str(args[key]), int(args["x"]), int(args["y"]))
-        except (TypeError, ValueError):
-            return
-        if item not in self._seen_art:
-            self._seen_art.add(item)
-            self._art.append(item)
 
     def feed_entries(self, now: float) -> list[dict[str, Any]]:
         entries: list[tuple[float, dict[str, Any]]] = []
