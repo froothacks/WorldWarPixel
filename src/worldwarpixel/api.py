@@ -15,7 +15,7 @@ from fastapi import (
 
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
-from worldwarpixel.sim.hub import RESYNC, snapshot_frame
+from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.run import Run, RunConfig
 
 
@@ -51,6 +51,7 @@ class RunManager:
         if run is None:
             raise HTTPException(404, f"run {run_id} not found")
         await run.stop()
+        run.hub.close_all()
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
@@ -177,6 +178,9 @@ async def run_socket(websocket: WebSocket, run_id: str) -> None:
         await send_snapshot()
         while True:
             msg = await queue.get()
+            if msg == CLOSE:
+                await websocket.close(code=1001, reason="run deleted")
+                return
             if msg == RESYNC:
                 await send_snapshot()
             elif isinstance(msg, bytes):

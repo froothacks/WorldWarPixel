@@ -97,3 +97,22 @@ def test_websocket_closes_when_client_disconnects_from_stopped_run(client: TestC
     while run.hub.client_count and time.time() < deadline:
         time.sleep(0.02)
     assert run.hub.client_count == 0
+
+
+def test_deleting_a_run_closes_its_websockets(client: TestClient) -> None:
+    run_id = client.post("/runs", json=SMALL).json()["id"]
+    manager = client.app.state.runs  # type: ignore[attr-defined]
+    run = manager.get(run_id)
+    with client.websocket_connect(f"/runs/{run_id}/ws") as ws:
+        ws.receive_json()
+        ws.receive_bytes()
+        assert client.delete(f"/runs/{run_id}").status_code == 204
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            msg = ws.receive()
+            if msg["type"] == "websocket.close":
+                assert msg["code"] == 1001
+                break
+        else:
+            pytest.fail("socket was not closed")
+    assert run.hub.client_count == 0

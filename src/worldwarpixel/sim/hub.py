@@ -10,6 +10,8 @@ FRAME_SNAPSHOT = 1
 FRAME_PIXELS = 2
 RESYNC = b"\x00"
 """Queued for a subscriber that fell behind: the socket must resend a full snapshot."""
+CLOSE = b"\x00\x01"
+"""Queued when the run is deleted: the socket must close."""
 PIXEL_STRUCT = struct.Struct("<HHBH")  # x, y, color, agent_id
 
 
@@ -85,3 +87,11 @@ class Hub:
                 await self._task
             self._task = None
         self.flush()
+
+    def close_all(self) -> None:
+        """Tell every subscriber to disconnect and forget them."""
+        for q in self._subs:
+            self._mark_stale(q)
+            q.get_nowait()
+            q.put_nowait(CLOSE)
+        self._subs.clear()
