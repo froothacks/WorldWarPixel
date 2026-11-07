@@ -85,6 +85,7 @@ class ToolSet:
             raise ToolError("width and height must be positive")
         if not (self._canvas.in_bounds(x, y) and self._canvas.in_bounds(x + w - 1, y + h - 1)):
             raise ToolError("rectangle goes off the canvas")
+        self._check("pixels", w * h)
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 

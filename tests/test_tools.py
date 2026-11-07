@@ -43,6 +43,8 @@ def test_fill_rect_charges_every_cell() -> None:
         tools.fill_rect(0, 0, 3, 3, 5)
     with pytest.raises(ToolError, match="off the canvas"):
         tools.fill_rect(31, 31, 2, 1, 5)
+    with pytest.raises(ToolError, match="budget exceeded"):
+        tools.fill_rect(0, 0, 32, 32, 5)
 
 
 def test_invalid_pixels_are_rejected_before_writing() -> None:
