@@ -71,6 +71,33 @@ def test_runs_survive_a_restart_as_stopped_runs(server: None) -> None:
         assert client.delete(f"/runs/{rid}").status_code == 404
 
 
+def test_archived_runs_floor_legacy_pixel_intervals(server: None) -> None:
+    with TestClient(app) as client:
+        log = app.state.runs.log
+        run_ids = ("legacy-003", "legacy-zero")
+        for run_id, pixel_interval in zip(run_ids, (0.03, 0), strict=True):
+            log.append(
+                run_id,
+                1.0,
+                "run.created",
+                None,
+                {"config": {**SMALL, "pixel_interval": pixel_interval}},
+            )
+            restored = restore_run(log, run_id)
+            assert restored is not None
+            assert restored.config.pixel_interval == 0.05
+
+        listed = client.get("/runs")
+        assert listed.status_code == 200
+        summaries = {run["id"]: run for run in listed.json()}
+        assert set(run_ids) <= summaries.keys()
+        assert all(summaries[run_id]["config"]["pixel_interval"] == 0.05 for run_id in run_ids)
+        for run_id in run_ids:
+            opened = client.get(f"/runs/{run_id}")
+            assert opened.status_code == 200
+            assert opened.json()["config"]["pixel_interval"] == 0.05
+
+
 def test_unknown_and_legacy_runs() -> None:
     log = EventLog()
     assert restore_run(log, "nope") is None
