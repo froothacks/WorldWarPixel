@@ -1,158 +1,524 @@
-// WorldWarPixel podium: one ESP32-S3 per debater.
-//
-// Connects to WS /runs/{RUN_ID}/stage/ws, shows the debater's avatar colour and captions on an
-// ST7789 / ILI9341 display (TFT_eSPI), and plays its spoken lines through an I2S amp such as a
-// MAX98357A by streaming GET /runs/{RUN_ID}/stage/lines/{id}/audio?format=pcm
-// (24 kHz signed 16-bit little-endian mono).
-//
-// Libraries: ArduinoJson 7, links2004/WebSockets, TFT_eSPI (configure User_Setup.h for your panel).
-// Board: any ESP32-S3 with PSRAM; arduino-esp32 core 3.x (ESP_I2S.h).
-// Untested reference sketch: check pins against your wiring.
-
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Arduino_GFX_Library.h>
 #include <ESP_I2S.h>
 #include <HTTPClient.h>
-#include <TFT_eSPI.h>
-#include <WebSocketsClient.h>
 #include <WiFi.h>
+#include <Wire.h>
+#include <WebSocketsClient.h>
+#include <esp_heap_caps.h>
+#include <esp32-hal-psram.h>
+#include <math.h>
 
-// ---- configure ------------------------------------------------------------------------
-const char *WIFI_SSID = "your-ssid";
-const char *WIFI_PASS = "your-password";
-const char *HOST = "192.168.1.10";  // machine running `uv run worldwarpixel`
-const uint16_t PORT = 8000;
-const char *RUN_ID = "abcd1234";    // from the URL of the live view (?run=...)
-const int PODIUM = 0;               // 0 = left debater, 1 = right debater
-const bool PLAY_NARRATOR = PODIUM == 0;  // one device also voices the MC and the verdict
+#include "config.h"
+#include "es8311.h"
+#include "st77922_init.h"
 
-const int I2S_BCLK = 15, I2S_LRCK = 16, I2S_DOUT = 17;
-// ----------------------------------------------------------------------------------------
+constexpr int BACKLIGHT_PIN = 41;
+const int AMP_EN = -1;
+constexpr int I2S_BCLK = 5;
+constexpr int I2S_WS = 4;
+constexpr int I2S_DOUT = 6;
+constexpr int I2S_DIN = 7;
+constexpr int I2S_MCLK = 2;
 
-TFT_eSPI tft;
-WebSocketsClient ws;
+constexpr int SCREEN_WIDTH = 320;
+constexpr int SCREEN_HEIGHT = 480;
+constexpr int HEADER_HEIGHT = 50;
+constexpr int FRAME_HEIGHT = 320;
+constexpr int CAPTION_Y = HEADER_HEIGHT + FRAME_HEIGHT;
+constexpr int CAPTION_HEIGHT = SCREEN_HEIGHT - CAPTION_Y;
+constexpr size_t FRAME_BYTES = SCREEN_WIDTH * FRAME_HEIGHT * 2;
+constexpr uint16_t COLOR_BLACK = 0x0000;
+constexpr uint16_t COLOR_WHITE = 0xFFFF;
+constexpr uint16_t COLOR_GRAY = 0x7BEF;
+constexpr uint16_t COLOR_DARK_GRAY = 0x4208;
+constexpr uint32_t FRAME_REFRESH_MS = 1500;
+constexpr uint8_t LINE_QUEUE_CAPACITY = 8;
+constexpr size_t INIT_OPS_CAPACITY = 1024;
+
+Arduino_ESP32QSPI displayBus(10, 12, 11, 13, 14, 9);
+Arduino_ST77916 *display = nullptr;
+WebSocketsClient stageSocket;
 I2SClass i2s;
+uint16_t *frameBuffer = nullptr;
+uint8_t initOperations[INIT_OPS_CAPACITY];
+size_t initOperationsLength = 0;
 
-struct Line {
+struct StageLine {
   int id = -1;
   bool audio = false;
-  int sampleRate = 24000;
+  uint32_t sampleRate = 24000;
   float duration = 0;
+  uint16_t color = COLOR_WHITE;
+  String text;
 };
 
-volatile bool pending = false;
-Line next;
-String debaterName = "", debaterCountry = "", phase = "idle";
-uint16_t debaterColor = TFT_DARKGREY;
+StageLine lineQueue[LINE_QUEUE_CAPACITY];
+uint8_t lineQueueHead = 0;
+uint8_t lineQueueTail = 0;
+uint8_t lineQueueSize = 0;
+bool linePlaying = false;
+bool speaking = false;
+uint32_t lastFrameMs = 0;
+String phase = "idle";
+String debaterName;
+String debaterCountry;
+String currentCaption;
+uint16_t debaterColor = COLOR_DARK_GRAY;
+uint16_t captionColor = COLOR_WHITE;
 
-uint16_t rgb565(const char *hex) {
-  if (!hex || hex[0] != '#') return TFT_DARKGREY;
-  long v = strtol(hex + 1, nullptr, 16);
-  return tft.color565((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff);
+bool appendOperation(uint8_t value, size_t &length) {
+  if (length >= INIT_OPS_CAPACITY) return false;
+  initOperations[length++] = value;
+  return true;
 }
 
-void drawPodium(const String &caption, const String &emotion, bool speaking) {
-  tft.fillScreen(TFT_BLACK);
-  int w = tft.width();
-  // Pixel avatar: a block of the debater's canvas colour, framed while speaking.
-  tft.fillRect(w / 2 - 40, 12, 80, 80, debaterColor);
-  if (speaking) tft.drawRect(w / 2 - 44, 8, 88, 88, TFT_WHITE);
-  tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString(debaterName.length() ? debaterName : "waiting for debate", w / 2, 102, 4);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.drawString(debaterCountry + (emotion.length() ? "  (" + emotion + ")" : ""), w / 2, 130, 2);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setCursor(8, 156, 2);
-  tft.setTextWrap(true);
-  tft.print(caption);
-}
+bool buildInitOperations() {
+  size_t length = 0;
+  if (!appendOperation(BEGIN_WRITE, length)) return false;
 
-void onState(JsonDocument &doc) {
-  phase = doc["phase"] | "idle";
-  debaterName = "";
-  debaterCountry = "";
-  debaterColor = TFT_DARKGREY;
-  for (JsonObject d : doc["debaters"].as<JsonArray>()) {
-    if (d["podium"] == PODIUM) {
-      debaterName = d["name"].as<String>();
-      debaterCountry = d["country"].as<String>();
-      debaterColor = rgb565(d["color_hex"]);
+  for (size_t i = 0; i < sizeof(ST77922_INIT) / sizeof(ST77922_INIT[0]); ++i) {
+    const InitCmd &entry = ST77922_INIT[i];
+    if (!appendOperation(WRITE_COMMAND_8, length) ||
+        !appendOperation(entry.cmd, length) ||
+        !appendOperation(WRITE_BYTES, length) ||
+        !appendOperation(entry.len, length)) {
+      return false;
+    }
+    for (uint8_t j = 0; j < entry.len; ++j) {
+      if (!appendOperation(entry.data[j], length)) return false;
+    }
+    if (entry.delay_ms > 0) {
+      if (entry.delay_ms > 255 ||
+          !appendOperation(DELAY, length) ||
+          !appendOperation(static_cast<uint8_t>(entry.delay_ms), length)) {
+        return false;
+      }
     }
   }
-  drawPodium(phase == "voting" ? "Vote now!" : String(doc["topic"] | ""), "", false);
+
+  if (!appendOperation(END_WRITE, length)) return false;
+  initOperationsLength = length;
+  return true;
 }
 
-void onLine(JsonDocument &doc) {
-  bool mine = !doc["podium"].isNull() && doc["podium"] == PODIUM;
-  bool narrator = doc["podium"].isNull();
-  if (!mine && !(narrator && PLAY_NARRATOR)) return;
-  if (mine) drawPodium(doc["text"].as<String>(), doc["emotion"].as<String>(), true);
-  next.id = doc["id"];
-  next.audio = doc["audio"];
-  next.sampleRate = doc["sample_rate"] | 24000;
-  next.duration = doc["duration"] | 0.0;
-  pending = true;  // played from loop(), not inside the websocket callback
+uint16_t colorFromHex(const String &hex, uint16_t fallback) {
+  if (display == nullptr || hex.length() < 7 || hex[0] != '#') return fallback;
+  const uint32_t value = strtoul(hex.c_str() + 1, nullptr, 16);
+  return display->color565((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
 }
 
-void onWs(WStype_t type, uint8_t *payload, size_t len) {
-  if (type == WStype_CONNECTED) Serial.println("stage ws connected");
-  if (type != WStype_TEXT) return;
-  JsonDocument doc;
-  if (deserializeJson(doc, payload, len)) return;
-  String t = doc["type"].as<String>();
-  if (t == "stage.snapshot" || t == "stage.state") onState(doc);
-  else if (t == "stage.line") onLine(doc);
-  else if (t == "stage.verdict" && doc["winner_id"].is<int>()) drawPodium("The crowd has spoken.", "", false);
+String wrapCaption(const String &text) {
+  constexpr size_t MAX_CHARS_PER_LINE = 48;
+  constexpr uint8_t MAX_LINES = 11;
+  String output;
+  String line;
+  size_t start = 0;
+  uint8_t lineCount = 0;
+
+  while (start < text.length()) {
+    int end = text.indexOf(' ', start);
+    if (end < 0) end = text.length();
+    String word = text.substring(start, end);
+    if (line.length() > 0 && line.length() + 1 + word.length() > MAX_CHARS_PER_LINE) {
+      if (output.length() > 0) output += '\n';
+      output += line;
+      line = word;
+      if (++lineCount >= MAX_LINES) {
+        output += "\n...";
+        return output;
+      }
+    } else {
+      if (line.length() > 0) line += ' ';
+      line += word;
+    }
+    start = static_cast<size_t>(end) + 1;
+  }
+
+  if (line.length() > 0) {
+    if (output.length() > 0) output += '\n';
+    output += line;
+  }
+  return output;
 }
 
-void playLine(const Line &line) {
-  if (!line.audio) {  // server has no TTS: just hold the caption for the line's duration
-    delay((uint32_t)(line.duration * 1000));
+void drawHeader() {
+  if (display == nullptr) return;
+  const uint16_t foreground =
+      ((debaterColor & 0xF800) * 299UL / 0xF800 +
+       ((debaterColor & 0x07E0) >> 5) * 587UL / 0x3F +
+       (debaterColor & 0x001F) * 114UL / 0x1F) > 500
+          ? COLOR_BLACK
+          : COLOR_WHITE;
+  display->fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, debaterColor);
+  display->setTextWrap(false);
+  display->setTextSize(1);
+  display->setTextColor(foreground);
+  display->setCursor(8, 8);
+  display->print(debaterName.length() > 0 ? debaterName : String("WorldWarPixel podium"));
+  if (debaterCountry.length() > 0) {
+    display->print(" - ");
+    display->print(debaterCountry);
+  }
+  display->setCursor(8, 29);
+  display->print("Phase: ");
+  display->print(phase);
+}
+
+void drawCaption() {
+  if (display == nullptr) return;
+  display->fillRect(0, CAPTION_Y, SCREEN_WIDTH, CAPTION_HEIGHT, COLOR_BLACK);
+  const uint16_t border = speaking ? captionColor : COLOR_DARK_GRAY;
+  for (int inset = 0; inset < 4; ++inset) {
+    display->drawRect(
+        inset,
+        CAPTION_Y + inset,
+        SCREEN_WIDTH - inset * 2,
+        CAPTION_HEIGHT - inset * 2,
+        border);
+  }
+  display->setTextWrap(false);
+  display->setTextSize(1);
+  display->setTextColor(COLOR_WHITE);
+  display->setCursor(12, CAPTION_Y + 10);
+  const String text = currentCaption.length() > 0 ? currentCaption : "Waiting for debate";
+  display->print(wrapCaption(text));
+}
+
+void showWaitingScreen() {
+  if (display == nullptr) return;
+  currentCaption = "Waiting for debate";
+  display->fillRect(0, HEADER_HEIGHT, SCREEN_WIDTH, FRAME_HEIGHT, COLOR_BLACK);
+  drawCaption();
+}
+
+bool appendLine(const StageLine &line) {
+  if (lineQueueSize >= LINE_QUEUE_CAPACITY) {
+    Serial.println("stage line queue full");
+    return false;
+  }
+  lineQueue[lineQueueHead] = line;
+  lineQueueHead = (lineQueueHead + 1) % LINE_QUEUE_CAPACITY;
+  ++lineQueueSize;
+  return true;
+}
+
+bool takeLine(StageLine &line) {
+  if (lineQueueSize == 0) return false;
+  line = lineQueue[lineQueueTail];
+  lineQueueTail = (lineQueueTail + 1) % LINE_QUEUE_CAPACITY;
+  --lineQueueSize;
+  return true;
+}
+
+void applyStageState(JsonDocument &doc) {
+  const String oldPhase = phase;
+  phase = doc["phase"] | "idle";
+  bool foundDebater = false;
+
+  for (JsonObjectConst debater : doc["debaters"].as<JsonArrayConst>()) {
+    if (!debater["podium"].isNull() && debater["podium"].as<int>() == PODIUM) {
+      debaterName = debater["name"] | "";
+      debaterCountry = debater["country"] | "";
+      debaterColor = colorFromHex(debater["color_hex"] | "", COLOR_DARK_GRAY);
+      foundDebater = true;
+      break;
+    }
+  }
+
+  if (!foundDebater && phase == "idle") {
+    debaterName = "";
+    debaterCountry = "";
+    debaterColor = COLOR_DARK_GRAY;
+  }
+  drawHeader();
+
+  if (oldPhase == "idle" && phase != "idle") lastFrameMs = millis() - FRAME_REFRESH_MS;
+  if (phase == "idle" && !linePlaying && lineQueueSize == 0) showWaitingScreen();
+}
+
+void queueStageLine(JsonDocument &doc) {
+  const String kind = doc["kind"] | "";
+  const bool isMine = !doc["podium"].isNull() && doc["podium"].as<int>() == PODIUM;
+  const bool isNarrator = doc["podium"].isNull() && (kind == "narrator" || kind == "verdict");
+  if (!isMine && !(PLAY_NARRATOR && isNarrator)) return;
+
+  StageLine line;
+  line.id = doc["id"] | -1;
+  line.audio = doc["audio"] | false;
+  line.sampleRate = doc["sample_rate"] | 24000;
+  line.duration = doc["duration"] | 0.0f;
+  line.text = doc["text"] | "";
+  line.color = colorFromHex(doc["color_hex"] | "", isMine ? debaterColor : COLOR_WHITE);
+  appendLine(line);
+}
+
+void onStageEvent(WStype_t type, uint8_t *payload, size_t length) {
+  if (type == WStype_CONNECTED) {
+    Serial.println("ws connected");
     return;
   }
+  if (type == WStype_DISCONNECTED) {
+    Serial.println("ws disconnected");
+    return;
+  }
+  if (type != WStype_TEXT) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, length)) return;
+  const String eventType = doc["type"] | "";
+  if (eventType == "stage.snapshot" || eventType == "stage.state") {
+    applyStageState(doc);
+  } else if (eventType == "stage.line") {
+    queueStageLine(doc);
+  }
+}
+
+void refreshFrame() {
+  if (display == nullptr || frameBuffer == nullptr || WiFi.status() != WL_CONNECTED) return;
+  String url = "http://" + String(HOST) + ":" + String(SERVER_PORT) +
+               "/runs/" + String(RUN_ID) + "/stage/frame?w=320&h=320&podium=" + String(PODIUM);
   HTTPClient http;
-  String url = "http://" + String(HOST) + ":" + PORT + "/runs/" + RUN_ID + "/stage/lines/" + line.id +
-               "/audio?format=pcm";
+  http.setTimeout(5000);
   http.begin(url);
-  if (http.GET() != 200) {
+  const int status = http.GET();
+  if (status != HTTP_CODE_OK) {
+    Serial.printf("stage frame http %d\n", status);
     http.end();
     return;
   }
-  i2s.end();
-  i2s.begin(I2S_MODE_STD, line.sampleRate, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+
+  const int contentLength = http.getSize();
+  if (contentLength >= 0 && static_cast<size_t>(contentLength) != FRAME_BYTES) {
+    Serial.printf("stage frame size %d, expected %u\n", contentLength, FRAME_BYTES);
+    http.end();
+    return;
+  }
+
   WiFiClient *stream = http.getStreamPtr();
+  size_t received = 0;
+  const uint32_t deadline = millis() + 5000;
+  while (received < FRAME_BYTES && static_cast<int32_t>(millis() - deadline) < 0) {
+    const int available = stream->available();
+    if (available > 0) {
+      size_t wanted = static_cast<size_t>(available);
+      if (wanted > FRAME_BYTES - received) wanted = FRAME_BYTES - received;
+      const size_t count = stream->readBytes(
+          reinterpret_cast<char *>(reinterpret_cast<uint8_t *>(frameBuffer) + received),
+          wanted);
+      received += count;
+    } else if (!http.connected()) {
+      break;
+    } else {
+      delay(1);
+    }
+  }
+  http.end();
+
+  if (received == FRAME_BYTES) {
+    display->draw16bitRGBBitmap(0, HEADER_HEIGHT, frameBuffer, SCREEN_WIDTH, FRAME_HEIGHT);
+  } else {
+    Serial.printf("stage frame truncated: %u/%u\n", received, FRAME_BYTES);
+  }
+}
+
+void serviceFrameRefresh() {
+  if (phase != "idle" && millis() - lastFrameMs >= FRAME_REFRESH_MS) {
+    lastFrameMs = millis();
+    refreshFrame();
+  }
+}
+
+void waitForLine(float seconds) {
+  const uint32_t durationMs = static_cast<uint32_t>(seconds * 1000.0f);
+  const uint32_t started = millis();
+  while (millis() - started < durationMs) {
+    stageSocket.loop();
+    serviceFrameRefresh();
+    delay(2);
+  }
+}
+
+void playAudio(const StageLine &line) {
+  if (line.sampleRate != 24000) {
+    Serial.printf("unsupported stage sample rate: %u\n", line.sampleRate);
+    waitForLine(line.duration);
+    return;
+  }
+
+  String url = "http://" + String(HOST) + ":" + String(SERVER_PORT) +
+               "/runs/" + String(RUN_ID) + "/stage/lines/" + String(line.id) + "/audio?format=pcm";
+  HTTPClient http;
+  http.setTimeout(5000);
+  http.begin(url);
+  if (http.GET() != HTTP_CODE_OK) {
+    Serial.printf("stage audio unavailable for line %d\n", line.id);
+    http.end();
+    waitForLine(line.duration);
+    return;
+  }
+
   int remaining = http.getSize();
-  static uint8_t buf[2048];
-  while (http.connected() && (remaining > 0 || remaining == -1)) {
-    size_t n = stream->readBytes(buf, sizeof(buf));
-    if (n == 0) break;
-    i2s.write(buf, n);
-    if (remaining > 0) remaining -= n;
-    ws.loop();  // keep the stage socket alive while talking
+  WiFiClient *stream = http.getStreamPtr();
+  uint8_t buffer[2048];
+  while ((remaining > 0 || remaining == -1) && (remaining > 0 || http.connected())) {
+    const int available = stream->available();
+    if (available <= 0) {
+      if (!http.connected()) break;
+      stageSocket.loop();
+      serviceFrameRefresh();
+      delay(2);
+      continue;
+    }
+
+    size_t wanted = sizeof(buffer);
+    if (wanted > static_cast<size_t>(available)) wanted = static_cast<size_t>(available);
+    if (remaining > 0 && wanted > static_cast<size_t>(remaining)) {
+      wanted = static_cast<size_t>(remaining);
+    }
+    const size_t count = stream->readBytes(reinterpret_cast<char *>(buffer), wanted);
+    if (count == 0) break;
+    i2s.write(buffer, count);
+    if (remaining > 0) remaining -= count;
+    stageSocket.loop();
+    serviceFrameRefresh();
   }
   http.end();
 }
 
+void playNextLine() {
+  StageLine line;
+  if (!takeLine(line)) return;
+  linePlaying = true;
+  speaking = true;
+  currentCaption = line.text;
+  captionColor = line.color;
+  drawCaption();
+
+  if (line.audio) playAudio(line);
+  else waitForLine(line.duration);
+
+  speaking = false;
+  linePlaying = false;
+  drawCaption();
+  if (phase == "idle" && lineQueueSize == 0) showWaitingScreen();
+}
+
+void drawSelfTest() {
+  if (display == nullptr) return;
+  constexpr uint16_t bars[] = {
+      0xF800, 0x07E0, 0x001F, 0xFFE0, 0x07FF, 0xF81F, 0xFFFF, 0x7BEF};
+  const int barWidth = SCREEN_WIDTH / (sizeof(bars) / sizeof(bars[0]));
+  display->fillScreen(COLOR_BLACK);
+  for (size_t i = 0; i < sizeof(bars) / sizeof(bars[0]); ++i) {
+    display->fillRect(i * barWidth, 0, barWidth, SCREEN_HEIGHT, bars[i]);
+  }
+  display->fillRect(0, SCREEN_HEIGHT / 2 - 24, SCREEN_WIDTH, 48, COLOR_BLACK);
+  display->setTextSize(2);
+  display->setTextColor(COLOR_WHITE);
+  display->setCursor(24, SCREEN_HEIGHT / 2 - 8);
+  display->print("WorldWarPixel podium");
+}
+
+void playSelfTestTone() {
+  constexpr uint32_t SAMPLE_RATE = 24000;
+  constexpr uint32_t SAMPLE_COUNT = SAMPLE_RATE;
+  constexpr float TWO_PI_VALUE = 6.28318530718f;
+  constexpr float AMPLITUDE = 5000.0f;
+  uint8_t buffer[512];
+
+  for (uint32_t offset = 0; offset < SAMPLE_COUNT;) {
+    const uint32_t samplesPerChunk = sizeof(buffer) / 2;
+    const uint32_t left = SAMPLE_COUNT - offset;
+    const uint32_t count = samplesPerChunk < left ? samplesPerChunk : left;
+    for (uint32_t i = 0; i < count; ++i) {
+      const float angle = TWO_PI_VALUE * 440.0f * (offset + i) / SAMPLE_RATE;
+      const int16_t sample = static_cast<int16_t>(AMPLITUDE * sinf(angle));
+      buffer[i * 2] = sample & 0xFF;
+      buffer[i * 2 + 1] = (sample >> 8) & 0xFF;
+    }
+    i2s.write(buffer, count * 2);
+    offset += count;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  tft.init();
-  tft.setRotation(1);
-  drawPodium("connecting...", "", false);
+  delay(200);
+
+  if (!buildInitOperations()) {
+    Serial.println("display init table overflow");
+  } else {
+    display = new Arduino_ST77916(
+        &displayBus,
+        -1,
+        0,
+        true,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        0,
+        0,
+        0,
+        0,
+        initOperations,
+        initOperationsLength);
+    if (display != nullptr && display->begin(80000000)) {
+      Serial.println("display ok");
+    } else {
+      Serial.println("display init failed");
+    }
+  }
+
+  pinMode(BACKLIGHT_PIN, OUTPUT);
+  ledcAttach(BACKLIGHT_PIN, 5000, 10);
+  ledcWrite(BACKLIGHT_PIN, 1023);
+
+  Wire.begin(38, 39);
+  Wire.setClock(400000);
+  uint8_t chipId1 = 0;
+  uint8_t chipId2 = 0;
+  if (es8311ReadChipId(chipId1, chipId2)) {
+    Serial.printf("codec id 0x%02X 0x%02X\n", chipId1, chipId2);
+  } else {
+    Serial.println("codec id read failed");
+  }
+  if (es8311Init()) Serial.println("codec init ok");
+  else Serial.println("codec init failed");
+
+  if (AMP_EN >= 0) {
+    pinMode(AMP_EN, OUTPUT);
+    digitalWrite(AMP_EN, HIGH);
+  }
+
+  i2s.setPins(I2S_BCLK, I2S_WS, I2S_DOUT, I2S_DIN, I2S_MCLK);
+  const bool i2sReady =
+      i2s.begin(I2S_MODE_STD, 24000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  if (i2sReady) Serial.println("I2S ok");
+  else Serial.printf("I2S init failed: %d\n", i2s.lastError());
+
+  if (display != nullptr) drawSelfTest();
+  if (i2sReady) playSelfTestTone();
+
+  frameBuffer = static_cast<uint16_t *>(ps_malloc(FRAME_BYTES));
+  if (frameBuffer == nullptr) Serial.println("PSRAM frame buffer allocation failed");
+
+  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) delay(250);
-  i2s.setPins(I2S_BCLK, I2S_LRCK, I2S_DOUT);
-  i2s.begin(I2S_MODE_STD, 24000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
-  ws.begin(HOST, PORT, String("/runs/") + RUN_ID + "/stage/ws");
-  ws.onEvent(onWs);
-  ws.setReconnectInterval(2000);
+  Serial.print("wifi ip ");
+  Serial.println(WiFi.localIP());
+
+  const String path = String("/runs/") + RUN_ID + "/stage/ws?podium=" + PODIUM +
+                      (PLAY_NARRATOR ? "&narrator=1" : "");
+  stageSocket.begin(HOST, SERVER_PORT, path);
+  stageSocket.onEvent(onStageEvent);
+  stageSocket.setReconnectInterval(2000);
 }
 
 void loop() {
-  ws.loop();
-  if (pending) {
-    pending = false;
-    playLine(next);
-  }
+  stageSocket.loop();
+  serviceFrameRefresh();
+  if (!linePlaying && lineQueueSize > 0) playNextLine();
+  delay(2);
 }
