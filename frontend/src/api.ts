@@ -96,6 +96,8 @@ export interface Agent {
   cooldown: number;
   /** One-line profile for roster runs; empty for world runs. */
   headline?: string;
+  /** Roster runs: school or company, so the people list can filter by it. */
+  affiliation?: string;
   status: AgentStatus;
   last_thought: Thought | null;
 }

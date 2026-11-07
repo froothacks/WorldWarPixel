@@ -21,7 +21,7 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
   const [limit, setLimit] = useState(MAX_ROWS);
   const matching = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q) || (a.headline ?? "").toLowerCase().includes(q)) : agents;
+    return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q) || `${a.headline ?? ""} ${a.affiliation ?? ""}`.toLowerCase().includes(q)) : agents;
   }, [agents, query]);
   const shown = matching.length > limit ? matching.slice(0, limit) : matching;
   const active = agents.filter((a) => a.status !== "idle").length;

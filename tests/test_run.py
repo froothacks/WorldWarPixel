@@ -217,4 +217,6 @@ def test_hackathon_roster_run_has_one_agent_per_attendee() -> None:
     run = Run("h", config, EventLog(), RandomWalkPolicy(seed=1))
     assert len(run.agents) == run.config.agents == 86
     row = run.agent_list()[0]
-    assert row["headline"] and row["country"]
+    assert row["headline"] and row["country"] and row["affiliation"]
+    stokes = next(r for r in run.agent_list() if r["name"] == "Matt Stokes")
+    assert stokes["affiliation"] == "Waterloo"

@@ -509,6 +509,7 @@ class Run:
         return [
             {
                 **{k: getattr(a, k) for k in LIST_FIELDS},
+                "affiliation": a.persona_card.get("affiliation", "") if a.headline else "",
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }
