@@ -80,5 +80,15 @@ class EventLog:
         rows = self._conn.execute("SELECT DISTINCT run_id FROM events ORDER BY run_id").fetchall()
         return [str(r[0]) for r in rows]
 
+    def run_totals(self) -> list[tuple[str, float, int, int, int, bool, str | None]]:
+        """Per run: id, first ts, pixel/post/thought counts, deleted?, config JSON (if created)."""
+        rows = self._conn.execute(
+            "SELECT run_id, MIN(ts), SUM(kind = 'pixel'), SUM(kind = 'post'),"
+            " SUM(kind = 'agent.thought'), MAX(kind = 'run.deleted'),"
+            " MAX(CASE WHEN kind = 'run.created' THEN json_extract(payload, '$.config') END)"
+            " FROM events GROUP BY run_id ORDER BY run_id"
+        ).fetchall()
+        return [(r[0], r[1], r[2], r[3], r[4], bool(r[5]), r[6]) for r in rows]
+
     def close(self) -> None:
         self._conn.close()

@@ -1,0 +1,91 @@
+import time
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from worldwarpixel.app import app
+from worldwarpixel.config import get_settings
+from worldwarpixel.sim.archive import restore_run
+from worldwarpixel.sim.board import Board, Post
+from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.hub import FRAME_SNAPSHOT
+from worldwarpixel.sim.run import RunConfig
+
+SMALL = {"width": 32, "height": 16, "agents": 3, "cooldown": 0.01, "jitter": 0, "policy": "random"}
+
+
+@pytest.fixture
+def server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
+    """Each ``TestClient(app)`` block is one server process sharing an on-disk event log."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("EVENT_LOG_PATH", str(tmp_path / "events.db"))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_runs_survive_a_restart_as_stopped_runs(server: None) -> None:
+    with TestClient(app) as client:
+        rid = client.post("/runs", json=SMALL).json()["id"]
+        deadline = time.time() + 3
+        while client.get(f"/runs/{rid}").json()["stats"]["posts"] == 0 and time.time() < deadline:
+            time.sleep(0.02)
+        client.app.state.runs.get(rid).god_announce("Hear ye", "Restarting soon")  # type: ignore[attr-defined]
+        client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 5]]})
+        before = client.post(f"/runs/{rid}/stop").json()
+        canvas = client.get(f"/runs/{rid}/canvas").json()
+        agents = client.get(f"/runs/{rid}/agents").json()
+        threads = client.get(f"/runs/{rid}/threads").json()
+        thoughts = client.get(f"/runs/{rid}/agents/1").json()["thoughts"]
+
+    with TestClient(app) as client:
+        listed = client.get("/runs").json()
+        assert [r["id"] for r in listed] == [rid]
+        assert listed[0]["state"] == "stopped" and listed[0]["agents"] == 3
+        assert listed[0]["stats"]["pixels"] == before["stats"]["pixels"] > 0
+        run = client.get(f"/runs/{rid}").json()
+        assert run["state"] == "stopped" and run["stats"] == before["stats"]
+        assert client.get(f"/runs/{rid}/canvas").json() == canvas
+        restored_agents = client.get(f"/runs/{rid}/agents").json()
+        assert [a["name"] for a in restored_agents] == [a["name"] for a in agents]
+        assert client.get(f"/runs/{rid}/threads").json() == threads
+        assert client.get(f"/runs/{rid}/agents/1").json()["thoughts"] == thoughts
+        assert client.get(f"/runs/{rid}/events", params={"limit": 1}).json()[0]["kind"] == (
+            "run.created"
+        )
+        assert client.get(f"/runs/{rid}/timelapse", params={"frames": 4}).status_code == 200
+        with client.websocket_connect(f"/runs/{rid}/ws") as ws:
+            assert ws.receive_json()["run"]["state"] == "stopped"
+            assert ws.receive_bytes()[0] == FRAME_SNAPSHOT
+        assert client.delete(f"/runs/{rid}").status_code == 204
+        assert client.get("/runs").json() == []
+        assert client.get(f"/runs/{rid}").status_code == 404
+
+    with TestClient(app) as client:
+        assert client.get("/runs").json() == []
+        assert client.get(f"/runs/{rid}").status_code == 404
+        assert client.delete(f"/runs/{rid}").status_code == 404
+
+
+def test_unknown_and_legacy_runs() -> None:
+    log = EventLog()
+    assert restore_run(log, "nope") is None
+    # Logged before the roster was recorded: seeded agents are rebuilt from the config.
+    config = RunConfig(width=16, height=16, agents=2, seed=3, policy="random")
+    log.append("old", 1.0, "run.created", None, {"config": config.model_dump()})
+    log.append("old", 2.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
+    run = restore_run(log, "old")
+    assert run is not None and run.state == "stopped" and len(run.agents) == 2
+    assert run.canvas.get(2, 3) == 4 and run.canvas.owner(2, 3) == 1
+    assert run.stats["pixels"] == 1 and run.created_at == 1.0
+
+
+def test_board_restore_keeps_ids_and_skips_orphans() -> None:
+    board = Board()
+    board.restore(Post(5, 1, 5, None, "t", "root", 1.0))
+    board.restore(Post(6, 2, 5, 5, None, "reply", 2.0))
+    board.restore(Post(7, 2, 99, None, None, "orphan", 3.0))
+    assert [p.id for p in board.thread(5)] == [5, 6] and board.get(7) is None
+    assert board.post_thread(1, "next", "body", 4.0).id == 8

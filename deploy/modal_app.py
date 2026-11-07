@@ -4,7 +4,7 @@ Sandboxes are capped at 24h and get a new tunnel URL each time, so this module a
 hourly ``keep_alive`` job (restarts the sandbox if it died, replaces it before the cap) and a
 ``home`` web endpoint with a stable URL that redirects to whichever sandbox is current. The event
 log is SQLite on the sandbox disk, backed up to a Volume (see ``serve.py``). Live runs are held
-in memory, so they end whenever the sandbox is replaced; their event history survives.
+in memory, so they end whenever the sandbox is replaced; they reopen as stopped runs from the log.
 
     uv run --with modal python deploy/modal_app.py launch   # build + publish image, (re)start
     uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
