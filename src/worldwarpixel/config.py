@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     agent_model: str | None = None
     agent_endpoints: str = ""
     """Extra agent models selectable per run: "model=base_url,model=base_url"."""
+    agent_text_only: str = ""
+    """Comma-separated agent model ids that get no canvas image (images make GLM ramble)."""
     agent_reasoning_effort: str = ""
     """Sent as reasoning_effort on agent calls when set ("low" keeps GLM-style thinkers brief)."""
     narrator_model: str | None = None

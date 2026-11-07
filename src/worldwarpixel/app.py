@@ -84,7 +84,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     agent_clients[model],
                     model,
                     timeout=settings.request_timeout,
-                    vision=settings.agent_vision,
+                    vision=settings.agent_vision
+                    and model not in {m.strip() for m in settings.agent_text_only.split(",")},
                     guided=config.policy == "llm-guided",
                     reasoning_effort=settings.agent_reasoning_effort,
                 )
