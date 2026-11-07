@@ -98,15 +98,17 @@ class Canvas:
         swapped.byteswap()
         return swapped.tobytes()
 
-    def regions(self, limit: int = 10) -> list[dict[str, int]]:
+    def regions(self, limit: int | None = 10) -> list[dict[str, int]]:
         """Busiest TILE x TILE areas: bounds, painted (non-zero) pixel count and dominant colour.
+
+        limit=None returns every tile, including empty ones (colour 0), busiest first.
 
         Counts are maintained incrementally in write(), so this is O(tiles), not O(pixels).
         """
         out: list[dict[str, int]] = []
         for t, counts in enumerate(self._tile_counts):
             painted = sum(counts[1:])
-            if not painted:
+            if not painted and limit is not None:
                 continue
             x0, y0 = (t % self._tiles_w) * TILE, (t // self._tiles_w) * TILE
             out.append(
@@ -120,7 +122,7 @@ class Canvas:
                 }
             )
         out.sort(key=lambda r: r["painted"], reverse=True)
-        return out[:limit]
+        return out if limit is None else out[:limit]
 
     def to_png(self, max_side: int = 640) -> tuple[bytes, int]:
         """Palette PNG of the canvas, nearest-neighbour downsampled so no side exceeds max_side.
