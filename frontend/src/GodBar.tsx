@@ -135,13 +135,13 @@ export default function GodBar({
             autoFocus
             placeholder="Title the agents will see on the board"
             value={title}
-            maxLength={80}
+            maxLength={120}
             onChange={(e) => setTitle(e.target.value)}
           />
           <input
             placeholder="Message"
             value={body}
-            maxLength={500}
+            maxLength={600}
             onChange={(e) => setBody(e.target.value)}
           />
           <button type="submit" disabled={busy !== null || !title.trim() || !body.trim()}>
