@@ -1,3 +1,4 @@
+import math
 import random
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
@@ -13,6 +14,8 @@ from worldwarpixel.personas.wpp import Country, load_countries
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.names import random_name
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+
+CLAIM_MOVE_PX = 30
 
 
 @dataclass(slots=True)
@@ -137,6 +140,7 @@ class RandomWalkPolicy:
         self._rng = random.Random(seed)
         self._post_chance = post_chance
         self._reacted: set[tuple[int, int]] = set()
+        self._claims: dict[int, tuple[int, int, int]] = {}
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         rng = self._rng
@@ -152,6 +156,15 @@ class RandomWalkPolicy:
         if obs.budget.posts and rng.random() < self._post_chance:
             thought += " " + self._post(agent, tools, obs.board, rng)
         return thought
+
+    def _claim(self, agent: AgentSpec, tools: ToolSet, x: int, y: int) -> str:
+        result = tools.post_thread(
+            f"{agent.country} claims ({x}, {y})",
+            "Anyone nearby want to coordinate colours?",
+        )
+        thread_id = int(str(result["thread_id"]))
+        self._claims[agent.id] = (thread_id, x, y)
+        return "Started a thread to claim my area."
 
     def _post(
         self,
@@ -204,11 +217,21 @@ class RandomWalkPolicy:
                 self._reacted.add((agent.id, tid))
                 return f"Replied in thread {tid}."
             if rng.random() < 0.2:
-                tools.post_thread(
-                    f"{agent.country} claims ({agent.home_x}, {agent.home_y})",
-                    "Anyone nearby want to coordinate colours?",
-                )
-                return "Started a thread to claim my area."
+                x, y = agent.home_x, agent.home_y
+                claim = self._claims.get(agent.id)
+                if claim is None:
+                    return self._claim(agent, tools, x, y)
+                thread_id, claim_x, claim_y = claim
+                if math.dist((x, y), (claim_x, claim_y)) >= CLAIM_MOVE_PX:
+                    try:
+                        tools.reply(thread_id, f"{agent.country} now also holds ({x}, {y}).")
+                    except ToolError as e:
+                        if "does not exist" not in str(e):
+                            raise
+                        del self._claims[agent.id]
+                        return self._claim(agent, tools, x, y)
+                    self._claims[agent.id] = (thread_id, x, y)
+                    return f"Updated my claim in thread {thread_id}."
             return "Stayed quiet."
         except ToolError as e:
             return f"Post failed: {e}"

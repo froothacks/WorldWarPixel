@@ -81,22 +81,6 @@ def test_territory_dispatch_requires_a_leader_change() -> None:
     assert board.threads() == [post]
 
 
-def test_art_dispatch_deduplicates_completed_actions() -> None:
-    board, _, _, dispatcher = make()
-    action = {
-        "tool": "draw_flag",
-        "args": {"country": "India", "x": 3, "y": 4},
-        "result": {"done": True},
-    }
-    dispatcher.observe_action(1, action)
-    dispatcher.observe_action(1, action)
-    [post] = dispatcher.tick(30)
-    assert post.title == "🎨 New artwork"
-    assert post.body == "A One (A) finished India at (3, 4)."
-    assert dispatcher.tick(60) == []
-    assert len(board.threads()) == 1
-
-
 def test_interval_zero_disables_scheduler() -> None:
     _, world, _, dispatcher = make(interval=0)
     for _ in range(60):
@@ -142,22 +126,14 @@ def test_feed_entries_keep_recent_dispatch_metadata_and_limit_to_three() -> None
         canvas.write(PixelWrite(x, 0, 3, 2))
     dispatcher.tick(90)
 
-    dispatcher.observe_action(
-        3,
-        {
-            "tool": "draw_shape",
-            "args": {"shape": "heart", "x": 5, "y": 0},
-            "result": {"done": True},
-        },
-    )
     dispatcher.tick(120)
 
     entries = dispatcher.feed_entries(120)
     assert len(entries) == 3
-    assert [entry["kind"] for entry in entries] == ["art", "territory", "talk"]
+    assert [entry["kind"] for entry in entries] == ["territory", "talk", "war"]
     assert all(entry["tag"] == "dispatch" for entry in entries)
-    assert entries[0]["countries"] == ["C"]
-    assert entries[1]["countries"] == ["B", "A"]
-    assert entries[2]["countries"] == ["A", "C"]
+    assert entries[0]["countries"] == ["B", "A"]
+    assert entries[1]["countries"] == ["A", "C"]
+    assert entries[2]["countries"] == ["A", "B"]
     assert entries[0]["latest"]["author"] == "World News"
     assert dispatcher.feed_entries(321) == []

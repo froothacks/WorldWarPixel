@@ -430,9 +430,7 @@ class Run:
                 if pending is not None:
                     pending[(w.x, w.y)] = (w.color, w.agent_id)
 
-        tools = ToolSet(
-            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
-        )
+        tools = ToolSet(self.canvas, self.board, agent.id, budget, sink, self._clock, writer)
         obs = Observation(
             elapsed=elapsed,
             budget=budget,
@@ -479,7 +477,6 @@ class Run:
             self.world.observe_post(payload)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
-            self.dispatcher.observe_action(agent_id, payload)
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:

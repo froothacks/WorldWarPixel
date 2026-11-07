@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,7 +42,10 @@ def apply_writes(
 
 
 class ToolSet:
-    """The tools one agent may call during one turn, enforcing that turn's budget."""
+    """The tools one agent may call during one turn, enforcing that turn's budget.
+
+    Agents only get pixel-level painting; see the design rule in llm_policy.py.
+    """
 
     def __init__(
         self,
@@ -53,7 +56,6 @@ class ToolSet:
         sink: EventSink,
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
-        pending: Mapping[tuple[int, int], tuple[int, int]] | None = None,
     ) -> None:
         self._canvas = canvas
         self._board = board
@@ -62,16 +64,6 @@ class ToolSet:
         self._sink = sink
         self._clock = clock
         self._writer = writer
-        self._pending = pending if pending is not None else {}
-        """(x, y) -> (color, owner) of pixels handed to the writer but not yet on the canvas."""
-
-    def _get(self, x: int, y: int) -> int:
-        hit = self._pending.get((x, y))
-        return hit[0] if hit else self._canvas.get(x, y)
-
-    def _owner(self, x: int, y: int) -> int:
-        hit = self._pending.get((x, y))
-        return hit[1] if hit else self._canvas.owner(x, y)
 
     def _check(self, kind: str, n: int) -> None:
         left = getattr(self.budget, kind)
@@ -111,49 +103,6 @@ class ToolSet:
         if dropped:
             out["dropped"] = dropped
             out["note"] = f"only {len(writes)} fit the budget; {dropped} pixels were dropped"
-        return out
-
-    def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> dict[str, Any]:
-        if w <= 0 or h <= 0:
-            raise ToolError("width and height must be positive")
-        if not (self._canvas.in_bounds(x, y) and self._canvas.in_bounds(x + w - 1, y + h - 1)):
-            raise ToolError("rectangle goes off the canvas")
-        self._check("pixels", w * h)
-        cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
-        return self.place_pixels(cells)
-
-    def paint_stencil(self, cells: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
-        """Paint towards a target picture: only cells that differ, in raster order, up to budget.
-
-        Calling again with the same stencil continues (or repairs) it, so big drawings take
-        several turns and a raided drawing can be restored.
-        """
-        # Visible progress first: cells whose colour changes, then same-coloured cells we merely
-        # claim from other agents (or from the blank background).
-        wanted = [
-            (x, y, c) for x, y, c in cells if self._canvas.in_bounds(x, y) and self._get(x, y) != c
-        ] + [
-            (x, y, c)
-            for x, y, c in cells
-            if self._canvas.in_bounds(x, y)
-            and self._get(x, y) == c
-            and self._owner(x, y) != self._agent_id
-        ]
-        if not cells:
-            raise ToolError("the stencil is empty")
-        if not any(self._canvas.in_bounds(x, y) for x, y, _ in cells):
-            raise ToolError("the drawing would be entirely off the canvas")
-        if not wanted:
-            return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
-        if self.budget.pixels <= 0:
-            raise ToolError("no pixel budget left this turn")
-        out = self.place_pixels(wanted[: self.budget.pixels])
-        out.pop("dropped", None)
-        out.pop("note", None)
-        remaining = len(wanted) - int(out["placed"])
-        out.update({"remaining": remaining, "done": remaining == 0})
-        if remaining:
-            out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
         return out
 
     def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:
