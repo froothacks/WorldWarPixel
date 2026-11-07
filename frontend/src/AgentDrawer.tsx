@@ -46,15 +46,17 @@ function formatValue(v: string | number | string[] | null): string {
 
 export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixelsOwned, onClose }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
+  const [failed, setFailed] = useState(false);
 
   // Refetch whenever a new live thought arrives so position / history stay current.
   const liveCount = liveThoughts.length;
   const latestTs = liveThoughts[0]?.ts ?? 0;
   useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     api.agent(runId, agent.id)
       .then((d) => !cancelled && setDetail(d))
-      .catch(() => undefined);
+      .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
     };
@@ -88,7 +90,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
           <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
           <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
         </dl>
-        <p className="small persona">{fresh?.persona ?? "Loading persona…"}</p>
+        <p className="small persona">{fresh?.persona ?? (failed ? "Couldn't load this agent's persona." : "Loading persona…")}</p>
         {Object.keys(card).length > 0 && (
           <details className="prompt">
             <summary className="muted small">
