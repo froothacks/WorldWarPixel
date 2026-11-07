@@ -1,9 +1,10 @@
 """Society screens (ESP32 touchscreens or the browser emulator).
 
-Each device is bound to one society by its bearer token (``DEVICE_TOKENS``). It receives that
-society's live state and can send a short voice clip; the clip is transcribed and condensed into
-the society's unattributed murmur. With no tokens configured the endpoints are open and the
-society comes from ``?society=`` (local development only).
+Any bearer token in ``DEVICE_TOKENS`` admits a device; the society it maps to is only the default.
+A screen picks which society it shows and speaks to with ``?society=`` (HTTP and WebSocket) or a
+``society.select`` WebSocket message. It receives that society's live state and can send a short
+voice clip; the clip is transcribed and condensed into the society's unattributed murmur. With no
+tokens configured the endpoints are open (local development only).
 """
 
 import array
@@ -15,7 +16,7 @@ import logging
 import os
 import time
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -69,7 +70,7 @@ def authenticate(token: str | None, society: int | None) -> Device | None:
         return Device(f"dev-{s}", s)
     for i, (known, s) in enumerate(tokens.items()):
         if token and hmac.compare_digest(token.encode(), known.encode()):
-            return Device(f"screen-{i + 1}", s)
+            return Device(f"screen-{i + 1}", s if society is None else society)
     return None
 
 
@@ -257,9 +258,10 @@ async def device_socket(websocket: WebSocket) -> None:
     if device is None:
         await websocket.close(code=4401, reason="invalid device token")
         return
+    me = device
     await websocket.accept()
     await websocket.send_json(
-        {"type": "hello", "device": device.id, "society": device.society, "palette": PALETTE}
+        {"type": "hello", "device": me.id, "society": me.society, "palette": PALETTE}
     )
     voice: dict[str, Any] = {"status": "idle", "transcript": None, "error": None}
     clip: bytearray | None = None
@@ -268,17 +270,18 @@ async def device_socket(websocket: WebSocket) -> None:
     app = websocket.app
     busy: asyncio.Task[None] | None = None
     clip_run: Run | None = None
+    clip_society = me.society
 
     async def push() -> None:
         nonlocal seen
         run = current_run(app.state.runs, run_id)
-        if run is None or run.societies is None or device.society >= run.societies.count:
+        if run is None or run.societies is None or me.society >= run.societies.count:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
             return
         migs = list(run.societies.migrations)
         new = min(run.societies.moves - seen, len(migs))
         for m in migs[len(migs) - new :] if new > 0 else []:
-            if device.society in (m.src, m.dst):
+            if me.society in (m.src, m.dst):
                 await websocket.send_json(
                     {
                         "type": "migration",
@@ -288,23 +291,23 @@ async def device_socket(websocket: WebSocket) -> None:
                     }
                 )
         seen = run.societies.moves
-        await websocket.send_json(device_state(run, device, voice))
+        await websocket.send_json(device_state(run, me, voice))
 
-    async def finish(pcm: bytes, run: Run | None) -> None:
+    async def finish(pcm: bytes, run: Run | None, society: int) -> None:
         voice.update(status="transcribing", error=None)
-        log.info("voice clip from %s: %s", device.id, clip_stats(pcm, rate))
+        log.info("voice clip from %s for society %d: %s", me.id, society, clip_stats(pcm, rate))
         with contextlib.suppress(OSError):
-            dump_clip(device, pcm, rate)
+            dump_clip(me, pcm, rate)
         try:
             await push()
-            if run is None:
-                raise ValueError("no running world with societies")
+            if run is None or run.societies is None or society >= run.societies.count:
+                raise ValueError("no running world with that society")
             transcript = await transcribe(app, pcm, rate)
             voice.update(transcript=transcript)
-            await speak(app, run, device.society, transcript)
+            await speak(app, run, society, transcript)
             voice.update(status="done")
         except (TranscriptionUnavailable, ValueError) as e:
-            log.warning("voice clip from %s failed: %s", device.id, e)
+            log.warning("voice clip from %s failed: %s", me.id, e)
             voice.update(status="error", error=str(e))
         except Exception as e:
             log.exception("voice clip failed")
@@ -341,14 +344,25 @@ async def device_socket(websocket: WebSocket) -> None:
                 rate = int(data.get("rate", RATE))
                 clip = bytearray()
                 clip_run = current_run(app.state.runs, run_id)
+                clip_society = me.society
                 voice.update(status="listening", error=None)
+            elif kind == "society.select":
+                n = data.get("society")
+                run = current_run(app.state.runs, run_id)
+                count = run.societies.count if run and run.societies else 6
+                if isinstance(n, int) and not isinstance(n, bool) and 0 <= n < count:
+                    me = replace(me, society=n)
+                    await websocket.send_json({"type": "society.selected", "society": n})
+                    await push()
+                else:
+                    await websocket.send_json({"type": "error", "error": f"no society {n!r}"})
             elif kind == "voice.cancel":
                 clip = None
                 voice.update(status="idle")
             elif kind == "voice.end" and clip is not None:
                 pcm, clip = bytes(clip), None
                 if busy is None or busy.done():
-                    busy = asyncio.create_task(finish(pcm, clip_run))
+                    busy = asyncio.create_task(finish(pcm, clip_run, clip_society))
     except WebSocketDisconnect:
         pass
     finally:

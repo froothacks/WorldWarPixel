@@ -183,6 +183,11 @@ def test_device_auth_state_say_and_canvas(client: TestClient) -> None:
     summary = client.get(f"/runs/{run_id}").json()["societies"]
     assert summary[1]["transcript"] == "more blue"
 
+    other = client.post("/devices/say?society=2", json={"text": "hey"}, headers=hdr).json()
+    assert other["society"] == 2
+    assert client.get("/devices/me?token=tok-a&society=2").json()["society"] == 2
+    assert client.post("/devices/say?society=4", json={"text": "x"}, headers=hdr).status_code == 409
+
     thumb = client.get("/devices/canvas?w=8&h=4", headers=hdr)
     assert thumb.status_code == 200 and len(thumb.content) == 32
 
@@ -204,6 +209,15 @@ def test_device_voice_over_websocket(client: TestClient) -> None:
             if msg["type"] == "state" and msg["voice"]["status"] == "done":
                 break
         assert msg["murmur"] == "rumour: heard 3200 bytes at 16000"
+        ws.send_json({"type": "society.select", "society": 5})
+        while (msg := ws.receive_json())["type"] != "error":
+            pass
+        ws.send_json({"type": "society.select", "society": 1})
+        while (msg := ws.receive_json())["type"] != "society.selected":
+            pass
+        assert msg["society"] == 1
+        state = ws.receive_json()
+        assert state["type"] == "state" and state["society"]["id"] == 1
 
 
 def test_agent_votes_are_throttled() -> None:
