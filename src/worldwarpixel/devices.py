@@ -147,6 +147,8 @@ async def transcribe(request_app: Any, pcm: bytes, rate: int) -> str:
 
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+MAX_BODY = MAX_SECONDS * 48_000 * 2 * 2 + 4096
+"""Largest upload worth reading: 20 s of 48 kHz stereo 16-bit WAV."""
 
 
 @router.get("/me")
@@ -187,7 +189,14 @@ async def device_say(request: Request, body: Say, device: DeviceDep) -> dict[str
 async def device_voice(request: Request, device: DeviceDep) -> dict[str, Any]:
     """Body: a 16-bit WAV, or raw 16 kHz mono s16le PCM (Content-Type audio/L16)."""
     run = _run_for(request, device)
-    data = await request.body()
+    if int(request.headers.get("content-length") or 0) > MAX_BODY:
+        raise HTTPException(413, f"clip longer than {MAX_SECONDS} s")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > MAX_BODY:
+            raise HTTPException(413, f"clip longer than {MAX_SECONDS} s")
+    data = bytes(buf)
     try:
         if data[:4] == b"RIFF":
             pcm, rate = wav_to_pcm(data)
