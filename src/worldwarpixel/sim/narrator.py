@@ -48,7 +48,12 @@ SYSTEM_PROMPT = (
     "they are juicy. Give coordinates so viewers can find things. Keep storylines going from "
     "your previous headlines but never repeat one. Skip raw statistics unless they are the "
     "story. Be concrete, vivid and short; only name agents, countries, drawings and threads "
-    "that appear in the digest, never invent any.\n\n"
+    "that appear in the digest, never invent any, and copy pixel counts and coordinates "
+    "exactly as given (never make up numbers). Each bullet must cover a different event; do "
+    "not reuse a phrase from one bullet in another or from your previous headlines.\n\n"
+    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64) while India's "
+    "flag is finished', bullets like 'Qiang Li wiped 92 px of Antoine Moreau's Brazil flag; "
+    "Moreau hit back for 80 px and the corner is a mess of red and green.'\n\n"
     "Reply with JSON only, in this shape:\n"
     '{"headline": "one punchy line", "bullets": ["2 to 4 short bullets, each a different '
     'storyline"], '
@@ -484,7 +489,11 @@ class Narrator:
         def label(p: dict[str, Any]) -> str:
             match p["tool"]:
                 case "draw_flag":
-                    return f"{p['what'].replace('_', ' ').title()} flag"
+                    w = p["what"]
+                    pretty = (
+                        w.upper() if w in ("usa", "uk", "eu", "un") else w.replace("_", " ").title()
+                    )
+                    return f"{pretty} flag"
                 case "draw_text":
                     return f"the words '{p['what']}'"
             return f"a {p['what']}"
@@ -796,6 +805,11 @@ class Narrator:
                     raise NarratorUnavailable(f"{type(e).__name__}: {e}") from e
                 source, error = "fallback", f"model call failed: {type(e).__name__}"
                 headline, bullets, raw = self.fallback_update(digest)
+        highlights = self.clean_highlights(raw)
+        if not highlights and kind == "update":
+            highlights = self.clean_highlights(
+                [e["highlight"] for e in digest.get("events", []) if e.get("highlight")][:5]
+            )
         update = {
             "id": self._next_id,
             "ts": self._clock(),
@@ -803,7 +817,7 @@ class Narrator:
             "question": question,
             "headline": headline,
             "bullets": bullets,
-            "highlights": self.clean_highlights(raw),
+            "highlights": highlights,
             "events": [{"kind": e["kind"], "text": e["text"]} for e in digest.get("events", [])],
             "source": source,
             "error": error,

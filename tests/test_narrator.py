@@ -337,6 +337,11 @@ def test_notable_events_cover_drawings_teams_raids_repairs_and_moves() -> None:
         assert update["headline"].startswith(f"{n(4)} finished")
         assert update["events"][0]["kind"] == "finished"
         assert any(h["type"] == "region" for h in update["highlights"])
+        # a model reply with no usable highlights falls back to the events' own links
+        run.narrator._model = FakeNarratorModel(json.dumps({"headline": "h", "bullets": []}))
+        run._on_write(3, "action", _action("draw_flag", {**flag, "x": 30}, placed=4, remaining=1))
+        update = await run.narrator.tick()
+        assert update["source"] == "model" and update["highlights"]
         # next window: a far jump is a move, 'started' is not repeated
         run._on_write(
             1, "action", _action("draw_flag", {**flag, "x": 500, "y": 300}, placed=4, remaining=92)
