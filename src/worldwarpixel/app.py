@@ -7,8 +7,11 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
+from worldwarpixel.api import RunManager
+from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
 from worldwarpixel.llm import ChatService
+from worldwarpixel.sim.events import EventLog
 
 
 class Message(BaseModel):
@@ -49,10 +52,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
-        yield
+        app.state.runs = RunManager(EventLog(settings.event_log_path))
+        try:
+            yield
+        finally:
+            await app.state.runs.shutdown()
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
+app.include_router(runs_router)
 
 
 def get_chat_service(request: Request) -> ChatService:

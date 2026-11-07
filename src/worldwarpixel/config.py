@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     max_concurrency: int = 10
     request_timeout: float = 60.0
+    event_log_path: str = "events.db"
 
 
 @lru_cache

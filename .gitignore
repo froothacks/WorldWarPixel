@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Simulation event log
+*.db
+*.db-wal
+*.db-shm
