@@ -89,7 +89,8 @@ TOOLS: list[ChatCompletionToolParam] = [
         "function": {
             "name": "draw_flag",
             "description": (
-                "Paint a simplified national flag with its top-left corner at (x, y). Paints as "
+                "Last resort: flags are overdone and forgettable, so prefer original art. Paint a "
+                "simplified national flag with its top-left corner at (x, y). Paints as "
                 "many pixels as your budget allows; call it again next turn with the same "
                 "arguments to continue or repair it. Known flags: " + ", ".join(FLAGS) + "."
             ),
@@ -111,7 +112,8 @@ TOOLS: list[ChatCompletionToolParam] = [
             "name": "draw_text",
             "description": (
                 "Write a short word or slogan in 3x5 pixel letters starting at (x, y); each "
-                "letter is 4*scale pixels wide and 5*scale tall. Progressive like draw_flag."
+                "letter is 4*scale pixels wide and 5*scale tall. Paints as much as your budget "
+                "allows; call it again with the same arguments to continue or repair it."
             ),
             "parameters": {
                 "type": "object",
@@ -132,7 +134,9 @@ TOOLS: list[ChatCompletionToolParam] = [
             "name": "draw_shape",
             "description": (
                 "Paint a pixel-art shape (about 7*scale pixels) with top-left at (x, y). "
-                "Progressive like draw_flag. Shapes: " + ", ".join(SHAPES) + "."
+                "Call it again with the same arguments to continue or repair it. Shapes: "
+                + ", ".join(SHAPES)
+                + "."
             ),
             "parameters": {
                 "type": "object",
@@ -219,13 +223,13 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         f"every country. Nobody is in charge and nothing is pre-planned. Each turn you may paint "
         f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
-        "In events like this people have done all sorts of things: painted their national or "
-        "regional flag, a city skyline, a sports club crest or a university logo; drawn pixel-art "
-        "mascots, animals, anime or game characters, memes, hearts, rainbows, religious symbols, "
-        "portraits of heroes or musicians; written slogans, jokes, names, protest messages, "
+        "In events like this people have done all sorts of things: drawn pixel-art mascots, "
+        "animals, anime or game characters, memes, hearts, rainbows, religious symbols, "
+        "portraits of heroes or musicians; painted a city skyline, a landmark, a sports club "
+        "crest or a university logo; written slogans, jokes, names, protest messages, "
         "lyrics, QR codes or a tiny webcomic; built roads, borders, flowers and landscapes "
         "connecting their region to neighbours. Groups have formed around a shared idea and "
-        "recruited on the board, negotiated land swaps and peace treaties, merged rival flags "
+        "recruited on the board, negotiated land swaps and peace treaties, merged rival murals "
         "into one, formed alliances to defend a mural against raids, or launched raids to "
         "overwrite someone else's work, spread a single colour like a void, troll a neighbour, "
         "camouflage graffiti into a bigger picture, or ambush an unfinished drawing. Others "
@@ -235,10 +239,14 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "you side with or against, and pursue it over many turns. Each turn you see the whole "
         "canvas as an image plus a short list of the busiest areas with their coordinates.\n\n"
         "Practical notes:\n"
-        f"- Use your whole pixel budget every turn ({pixels} pixels). draw_flag, draw_text and "
-        "draw_shape paint real pictures a bit at a time: call the same one again each turn until "
+        f"- Use your whole pixel budget every turn ({pixels} pixels). draw_shape and draw_text "
+        "paint real pictures a bit at a time: call the same one again each turn until "
         "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
         "borders and backgrounds.\n"
+        "- Flags are the most overdone, least memorable thing on a canvas like this. Avoid "
+        "draw_flag and make something original instead: a creature, a scene, a symbol, a joke "
+        "or a slogan that says something about you. To show where you are from, draw what your "
+        "place is known for (a landmark, food, animal, team or hero) rather than its flag.\n"
         "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
         "them as the most important thing on the board: read them first, reply in that thread "
         "and act on what they ask before anything else, in whatever way your persona would.\n"
@@ -334,8 +342,8 @@ def user_prompt(
     return (
         budget
         + f"{view}\n\n{project}Some current threads:\n{board}\n\n"
-        + "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
-        + "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
+        + "One or two sentences of thought, then call a drawing tool (draw_shape, draw_text, "
+        + "place_pixels or fill_rect; not a flag) on whatever you are pursuing. If a thread above "
         + "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
         + "new one. Anything marked 📢 from The Hand of God comes first: answer it and act on it."
     )
