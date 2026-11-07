@@ -12,13 +12,14 @@ from pydantic import BaseModel, Field
 
 from worldwarpixel.api import RunManager, random_policy
 from worldwarpixel.api import router as runs_router
-from worldwarpixel.config import get_settings
+from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.llm import ChatService
 from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.sim.stage import OpenAISpeech, SpeechSynth
 
 
 class Message(BaseModel):
@@ -48,9 +49,39 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
     return [m.model_dump() for m in messages]  # type: ignore[misc]
 
 
+def tts_client(settings: Settings) -> AsyncOpenAI | None:
+    """Stage voices need their own endpoint: an OpenAI key, or a local OpenAI-compatible TTS."""
+    key = settings.tts_api_key.get_secret_value()
+    if not key and not settings.tts_base_url:
+        return None
+    return AsyncOpenAI(
+        api_key=key or "none",
+        # Explicit, so an OPENAI_BASE_URL pointing at the chat endpoint is never used for TTS.
+        base_url=settings.tts_base_url or "https://api.openai.com/v1",
+        timeout=settings.request_timeout,
+    )
+
+
+def stage_model(
+    settings: Settings, client: AsyncOpenAI, tts: AsyncOpenAI | None
+) -> OpenAINarratorModel | None:
+    """STAGE_MODEL on OpenAI when the TTS client is OpenAI, else on the main chat endpoint."""
+    if not settings.stage_model:
+        return None
+    if tts is not None and not settings.tts_base_url:
+        return OpenAINarratorModel(
+            tts, settings.stage_model, settings.request_timeout, temperature=0.9, extra_body=None
+        )
+    return OpenAINarratorModel(client, settings.stage_model, settings.request_timeout, 0.9)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    tts = tts_client(settings)
+    speech: SpeechSynth | None = (
+        OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
+    )
     async with AsyncOpenAI(
         api_key=settings.openai_api_key.get_secret_value() or "none",
         base_url=settings.openai_base_url,
@@ -79,11 +110,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             OpenAINarratorModel(
                 client, settings.narrator_model or settings.openai_model, settings.request_timeout
             ),
+            speech,
+            stage_model(settings, client, tts),
         )
         try:
             yield
         finally:
             await app.state.runs.shutdown()
+            if tts is not None:
+                await tts.close()
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)

@@ -75,20 +75,32 @@ class NarratorModel(Protocol):
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str: ...
 
 
+VLLM_NO_THINKING: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
 class OpenAINarratorModel:
-    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 60.0,
+        temperature: float = 0.4,
+        extra_body: dict[str, Any] | None = VLLM_NO_THINKING,
+    ) -> None:
         self._client = client
         self.model = model
         self._timeout = timeout
+        self._temperature = temperature
+        self._extra_body = extra_body
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         response = await self._client.chat.completions.create(
             model=self.model,
             messages=messages,
             max_tokens=700,
-            temperature=0.4,
+            temperature=self._temperature,
             timeout=self._timeout,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            extra_body=self._extra_body,
         )
         return response.choices[0].message.content or ""
 

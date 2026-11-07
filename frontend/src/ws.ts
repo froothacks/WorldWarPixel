@@ -1,3 +1,4 @@
+import type { StageLine, StageReaction, StageState } from "./api";
 import type { AgentStatus, NarratorStats, NarratorUpdate, Post, RunState, RunStats, Snapshot, Thought } from "./api";
 
 export const FRAME_SNAPSHOT = 1;
@@ -103,6 +104,48 @@ export function openRunStream(runId: string, handlers: StreamHandlers): () => vo
   };
   connect();
 
+  return () => {
+    stopped = true;
+    if (retry !== null) window.clearTimeout(retry);
+    ws?.close();
+  };
+}
+
+export type StageEvent =
+  | ({ type: "stage.snapshot" } & StageState)
+  | ({ type: "stage.state" } & StageState)
+  | ({ type: "stage.line" } & StageLine)
+  | { type: "stage.votes"; debate_id: number; votes: Record<string, number> }
+  | { type: "stage.reaction"; reaction: StageReaction; agent_id: number | null }
+  | { type: "stage.verdict"; debate_id: number; votes: Record<string, number>; winner_id: number | null; topic: string };
+
+/** The stage-only stream (what a podium device gets); reconnects with backoff. */
+export function openStageStream(
+  runId: string,
+  onEvent: (event: StageEvent) => void,
+  onStatus: (live: boolean) => void,
+): () => void {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  let ws: WebSocket | null = null;
+  let retry: number | null = null;
+  let delay = RECONNECT_MIN_MS;
+  let stopped = false;
+  const connect = () => {
+    ws = new WebSocket(`${proto}//${location.host}/runs/${runId}/stage/ws`);
+    ws.onopen = () => {
+      delay = RECONNECT_MIN_MS;
+      onStatus(true);
+    };
+    ws.onmessage = (msg: MessageEvent<string>) => onEvent(JSON.parse(msg.data) as StageEvent);
+    ws.onclose = () => {
+      ws = null;
+      onStatus(false);
+      if (stopped) return;
+      retry = window.setTimeout(connect, delay);
+      delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+    };
+  };
+  connect();
   return () => {
     stopped = true;
     if (retry !== null) window.clearTimeout(retry);

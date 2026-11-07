@@ -276,6 +276,22 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           >
             God mode
           </button>
+          <a
+            className="button-link"
+            href={`?stage=${initial.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Live debate: two rivals argue out loud, the audience votes and narrates"
+          >
+            Stage{run.stage && run.stage.phase !== "idle" ? " ●" : ""}
+          </a>
+          <button
+            className={run.stage && run.stage.phase !== "idle" ? "on" : ""}
+            onClick={() => window.open(`?stage=${initial.id}`, "_blank")}
+            title="Live debate: two rivals argue out loud, the audience votes and narrates"
+          >
+            Stage
+          </button>
           <button onClick={() => setTimelapse(true)} title="Replay the canvas history so far">
             Timelapse
           </button>

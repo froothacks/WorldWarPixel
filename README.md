@@ -44,7 +44,7 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (10 s), `jitter` (0.3), `pixels_per_turn` (8), `posts_per_turn` (1), `max_concurrency` (10), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (10 s), `jitter` (0.3), `pixels_per_turn` (8), `posts_per_turn` (1), `max_concurrency` (10), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds` (see below).
 - `GET /runs`, `GET /runs/{id}`: run state and stats.
 - `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it and drops it from memory (the event log is kept). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
@@ -65,6 +65,48 @@ curl -X POST localhost:8000/runs -H 'content-type: application/json' \
 
 Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the model (`NARRATOR_MODEL`, default `OPENAI_MODEL`) for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
 
+## Live debate stage
+
+A run also has a **stage** (`sim/stage.py`): a wall-clock layer on top of the sim where two agents
+argue out loud while the swarm keeps painting on its own clock. The stage picks the pair that has
+overwritten each other most (or `a`/`b` you choose), asks the model for one in-character spoken line
+per turn (persona, recent thoughts, the opponent's last line, crowd reactions, the vote so far), and
+paces lines by their audio length. While on stage the two debaters' sim turns wait for their line to
+finish, so their canvas moves and their words stay in step; everyone else keeps their cooldown. After
+`stage_lines` lines the audience votes for `stage_vote_seconds`, and the verdict is pinned to every
+agent as a God announcement.
+
+The audience is the narrator: a narrator line (typed or spoken through the browser mic) is spoken next
+and every following line responds to it; with `announce` it is also pinned for all agents.
+
+Debate lines come from the narrator model unless `STAGE_MODEL` is set (e.g. `gpt-4o-mini`); with an
+OpenAI `TTS_API_KEY` (no `TTS_BASE_URL`) that model is called on OpenAI with the same key, otherwise on
+`OPENAI_BASE_URL`.
+
+Voices: set `TTS_API_KEY` (OpenAI, `TTS_MODEL` default `gpt-4o-mini-tts`) or `TTS_BASE_URL` for a local
+OpenAI-compatible TTS server (e.g. Kokoro/Piper wrappers). Each agent gets a stable voice from its
+persona and speaks with an accent/emotion instruction. Without TTS the lines are text-only and the
+browser podium reads them with the browser's own speech voices.
+
+Pages: the live view's **Stage** button opens `/?stage=<run>` (both podiums, controls, transcript);
+`/?audience=<run>` is the phone page (vote, cheer/boo/laugh/gasp, narrate); `/?stage=<run>&podium=0`
+shows one podium, the browser stand-in for an ESP32 podium (`firmware/podium/`).
+
+- `GET /runs/{id}/stage`: phase (`idle` | `debating` | `voting`), topic, debaters, votes, transcript.
+- `POST /runs/{id}/stage/start` `{"a"?, "b"?, "topic"?, "auto"?}`, `POST /runs/{id}/stage/stop`,
+  `POST /runs/{id}/stage/auto` `{"auto": true}` (start a new debate whenever idle). God-gated.
+- `POST /runs/{id}/stage/vote` `{"voter", "agent_id"}` (one vote per voter, re-voting moves it),
+  `POST /runs/{id}/stage/react` `{"reaction": "cheer"|"boo"|"laugh"|"gasp", "agent_id"?}`,
+  `POST /runs/{id}/stage/narrate` `{"text", "name"?, "announce"?}` (`announce` is God-gated).
+- `GET /runs/{id}/stage/lines/{line_id}/audio?format=wav|pcm`: WAV for browsers, raw s16le mono PCM
+  (`X-Sample-Rate`, 24 kHz) for devices.
+- `WS /runs/{id}/stage/ws`: `stage.snapshot`, then `stage.state`, `stage.line` (`speaker_id`, `name`,
+  `country`, `color_hex`, `podium` 0/1 or null for narrator/verdict, `text`, `emotion`, `voice`,
+  `audio`, `duration`), `stage.votes`, `stage.reaction`, `stage.verdict`. The same events also go out
+  on the run WebSocket.
+
+Run config: `stage_auto` (false), `stage_lines` (6), `stage_vote_seconds` (20).
+
 ## Chat endpoints
 
 - `GET /health`: liveness check.
@@ -78,7 +120,7 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates.
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates; `TTS_API_KEY`, `TTS_BASE_URL`, `TTS_MODEL` for stage voices and `STAGE_MODEL` for debate lines.
 
 ## Persona data
 

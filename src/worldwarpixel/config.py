@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     modal_secret: SecretStr = SecretStr("")
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
+    tts_api_key: SecretStr = SecretStr("")
+    """Stage voices: an OpenAI key, or set TTS_BASE_URL for a local OpenAI-compatible TTS."""
+    tts_base_url: str | None = None
+    tts_model: str = "gpt-4o-mini-tts"
+    stage_model: str | None = None
+    """Debate lines model (default: the narrator's). With an OpenAI TTS key it runs on OpenAI."""
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"

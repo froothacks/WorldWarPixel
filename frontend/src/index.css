@@ -299,3 +299,87 @@ button.text:hover { background: none; color: var(--text); }
 
 .narr-row .narr-headline { border: 0; height: auto; padding: 0; text-align: left; background: none; font: inherit; color: var(--text); }
 .narr-row .narr-headline:disabled { opacity: 1; cursor: default; }
+
+/* Live debate stage ------------------------------------------------------------------- */
+html.stage-page, html.stage-page body, html.stage-page #root { min-width: 0; }
+.stage { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+.stage-top { display: flex; align-items: center; gap: 10px; height: 44px; flex: none; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.stage-top .brand { color: var(--text); text-decoration: none; font-weight: 600; }
+.stage-top .spacer, .narrate-row .spacer { flex: 1; }
+.stage-top .actions { display: flex; gap: 6px; }
+.stage-phase-debating { color: var(--accent); }
+.stage-phase-voting { color: var(--yellow); }
+.stage-error { padding: 6px 14px; color: var(--danger); border-bottom: 1px solid var(--border); }
+.stage-floor { position: relative; flex: 1; min-height: 360px; display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 22px 18px; }
+.stage-topic { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; max-width: 760px; }
+.stage-topic-label { font-family: var(--mono); font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.stage-topic-text { font-size: 20px; font-weight: 600; line-height: 1.3; }
+.podiums { position: relative; display: flex; justify-content: center; gap: 64px; width: 100%; }
+.vs { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); font-family: var(--mono); font-weight: 600; color: var(--faint); font-size: 18px; }
+.podium { --c: var(--accent); display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(420px, 44vw); padding: 18px; border: 1px solid var(--border); background: var(--panel); transition: border-color 0.3s, box-shadow 0.3s; }
+.podium.speaking { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 0 40px -10px var(--c); }
+.podium.winner { border-color: var(--yellow); }
+.avatar { position: relative; display: grid; place-items: center; width: 112px; height: 112px; background: var(--c); image-rendering: pixelated; box-shadow: inset 0 0 0 6px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--border-strong); }
+.avatar span:first-child { mix-blend-mode: difference; }
+.avatar span:first-child { font-family: var(--mono); font-size: 34px; font-weight: 600; color: rgba(255, 255, 255, 0.55); }
+.podium.speaking .avatar { animation: talk 0.35s steps(2) infinite; }
+@keyframes talk { 50% { transform: translateY(-3px); } }
+.podium-name { font-size: 18px; font-weight: 600; }
+.podium-country { color: var(--muted); }
+.caption { min-height: 88px; width: 100%; padding: 10px 12px; font-size: 16px; line-height: 1.45; border: 1px solid var(--border); background: var(--bg); color: var(--muted); }
+.caption.live { color: var(--text); border-color: var(--c); }
+.emotion { display: inline-block; margin-right: 8px; padding: 0 5px; font-family: var(--mono); font-size: 11px; color: var(--c); border: 1px solid var(--c); vertical-align: 2px; }
+.votebar { width: 100%; height: 6px; background: var(--raise); }
+.votebar span { display: block; height: 100%; background: var(--c); transition: width 0.4s; }
+.narrator-line { min-height: 44px; max-width: 760px; display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; font-size: 16px; border: 1px solid transparent; opacity: 0; transition: opacity 0.3s; }
+.narrator-line.on { opacity: 1; border-color: rgba(255, 107, 61, 0.4); background: var(--raise); }
+.narrator-name { font-family: var(--mono); font-size: 12px; color: var(--accent); text-transform: uppercase; }
+.crowd { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 10px; pointer-events: none; }
+.burst { position: absolute; font-family: var(--mono); font-weight: 600; font-size: 18px; animation: burst 1.8s ease-out forwards; pointer-events: none; }
+.crowd .burst { position: static; }
+.avatar .burst { top: -8px; right: -12px; }
+.burst-cheer { color: var(--green); }
+.burst-boo { color: var(--danger); }
+.burst-laugh { color: var(--yellow); }
+.burst-gasp { color: var(--blue); }
+@keyframes burst { from { opacity: 1; transform: translateY(0) scale(1.2); } to { opacity: 0; transform: translateY(-40px) scale(1); } }
+.stage-bottom { display: grid; grid-template-columns: 1fr 420px; flex: none; height: 300px; border-top: 1px solid var(--border); }
+.stage-panel { display: flex; flex-direction: column; min-height: 0; overflow: auto; background: var(--panel); }
+.audience-panel { border-left: 1px solid var(--border); gap: 10px; padding-bottom: 12px; }
+.transcript .panel-head { position: sticky; top: 0; background: var(--panel); justify-content: space-between; }
+.tline { display: flex; gap: 6px; align-items: baseline; padding: 5px 14px; }
+.tline .dot { transform: translateY(1px); }
+.tline-name { font-weight: 600; white-space: nowrap; }
+.tline-text { color: var(--muted); }
+.tline-narrator .tline-name, .tline-verdict .tline-name { color: var(--accent); }
+.vote-row, .react-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px; }
+.vote { display: inline-flex; align-items: center; gap: 6px; flex: 1; justify-content: center; height: 36px; }
+.react-row button { flex: 1; }
+.narrate { display: flex; flex-direction: column; gap: 6px; padding: 0 14px; }
+.narrate-row { display: flex; gap: 6px; align-items: center; }
+.narrate-name { width: 110px; flex: none; }
+.narrate-text { flex: 1; min-width: 0; }
+.check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.check input { height: auto; }
+.audience-link { padding: 0 14px; margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.audience-link a { color: var(--blue); }
+
+.stage-single .podium { width: min(640px, 92vw); }
+.stage-single .avatar { width: 200px; height: 200px; }
+.stage-single .caption { font-size: 22px; min-height: 140px; }
+
+.stage-audience .stage-floor { flex: none; min-height: 0; padding: 14px; }
+.stage-audience .caption { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.stage-audience .podiums { gap: 10px; }
+.stage-audience .podium { padding: 10px; min-width: 0; }
+.stage-audience .podium-name { font-size: 14px; text-align: center; }
+.stage-audience .avatar { width: 64px; height: 64px; }
+.stage-audience .avatar span:first-child { font-size: 20px; }
+.stage-audience .caption { font-size: 14px; min-height: 60px; }
+.stage-audience .vs { display: none; }
+@media (max-width: 760px) {
+  .stage-bottom { grid-template-columns: 1fr; height: auto; }
+  .audience-panel { border-left: 0; border-top: 1px solid var(--border); order: -1; }
+  .transcript { max-height: 280px; }
+  .stage-topic-text { font-size: 16px; }
+}

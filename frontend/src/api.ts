@@ -11,6 +11,9 @@ export interface RunConfig {
   policy: "llm" | "random";
   narrator_interval: number;
   narrator_canvas_image: boolean;
+  stage_auto: boolean;
+  stage_lines: number;
+  stage_vote_seconds: number;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -26,6 +29,9 @@ export const DEFAULT_CONFIG: RunConfig = {
   policy: "llm",
   narrator_interval: 60,
   narrator_canvas_image: true,
+  stage_auto: false,
+  stage_lines: 6,
+  stage_vote_seconds: 20,
 };
 
 export type RunState = "created" | "running" | "paused" | "stopped";
@@ -71,6 +77,7 @@ export interface RunSummary {
   clients: number;
   llm: LLMStats | null;
   narrator: NarratorStats;
+  stage?: { phase: StagePhase; debate_id: number };
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -164,6 +171,55 @@ export interface Snapshot {
   narrator: NarratorState;
 }
 
+export type StagePhase = "idle" | "debating" | "voting";
+export type StageReaction = "cheer" | "boo" | "laugh" | "gasp";
+
+export interface Debater {
+  id: number;
+  name: string;
+  country: string;
+  color: number;
+  color_hex: string;
+  podium: number;
+  voice: string;
+}
+
+export interface StageLine {
+  id: number;
+  debate_id: number;
+  kind: "debate" | "narrator" | "verdict";
+  speaker_id: number;
+  name: string;
+  country: string;
+  color: number | null;
+  color_hex: string | null;
+  podium: number | null;
+  text: string;
+  emotion: string;
+  voice: string;
+  audio: boolean;
+  sample_rate: number;
+  duration: number;
+  ts: number;
+}
+
+export interface StageState {
+  phase: StagePhase;
+  auto: boolean;
+  debate_id: number;
+  topic: string;
+  region: { x: number; y: number; w: number; h: number } | null;
+  debaters: Debater[];
+  votes: Record<string, number>;
+  vote_ends_at: number | null;
+  lines_per_debate: number;
+  spoken: number;
+  speech: boolean;
+  model: boolean;
+  stats: Record<string, number>;
+  transcript?: StageLine[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = sessionStorage.getItem("godToken");
   const headers: Record<string, string> = {
@@ -233,4 +289,27 @@ export const api = {
       method: "POST",
       body: JSON.stringify(pace),
     }),
+  stage: (id: string) => request<StageState>(`/runs/${id}/stage`),
+  stageStart: (id: string, opts: { a?: number; b?: number; topic?: string; auto?: boolean } = {}) =>
+    request<StageState>(`/runs/${id}/stage/start`, { method: "POST", body: JSON.stringify(opts) }),
+  stageStop: (id: string) => request<StageState>(`/runs/${id}/stage/stop`, { method: "POST" }),
+  stageAuto: (id: string, auto: boolean) =>
+    request<StageState>(`/runs/${id}/stage/auto`, { method: "POST", body: JSON.stringify({ auto }) }),
+  stageVote: (id: string, voter: string, agentId: number) =>
+    request<{ votes: Record<string, number> }>(`/runs/${id}/stage/vote`, {
+      method: "POST",
+      body: JSON.stringify({ voter, agent_id: agentId }),
+    }),
+  stageReact: (id: string, reaction: StageReaction, agentId: number | null) =>
+    request<void>(`/runs/${id}/stage/react`, {
+      method: "POST",
+      body: JSON.stringify({ reaction, agent_id: agentId }),
+    }),
+  stageNarrate: (id: string, text: string, name: string, announce = false) =>
+    request<{ queued: boolean }>(`/runs/${id}/stage/narrate`, {
+      method: "POST",
+      body: JSON.stringify({ text, name: name || null, announce }),
+    }),
 };
+
+export const stageAudioUrl = (id: string, lineId: number) => `/runs/${id}/stage/lines/${lineId}/audio`;

@@ -14,6 +14,7 @@ from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
+from worldwarpixel.sim.stage import SpeechSynth, Stage
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 RunState = Literal["created", "running", "paused", "stopped"]
@@ -36,6 +37,13 @@ class RunConfig(BaseModel):
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
+    stage_auto: bool = Field(
+        default=False, description="Start live debates on stage automatically, one after another"
+    )
+    stage_lines: int = Field(default=6, ge=2, le=30, description="Spoken lines per debate")
+    stage_vote_seconds: float = Field(
+        default=20.0, ge=3, le=600, description="Seconds the audience votes after a debate"
+    )
 
 
 GOD_ID = 65535
@@ -57,6 +65,8 @@ class Run:
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
+        speech: SpeechSynth | None = None,
+        stage_model: NarratorModel | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -89,6 +99,17 @@ class Run:
             self._running,
             interval=config.narrator_interval,
             include_image=config.narrator_canvas_image,
+            clock=clock,
+            sleep=sleep,
+        )
+        self.stage = Stage(
+            self,
+            (stage_model or narrator_model) if config.policy == "llm" else None,
+            speech,
+            self._running,
+            auto=config.stage_auto,
+            lines_per_debate=config.stage_lines,
+            vote_seconds=config.stage_vote_seconds,
             clock=clock,
             sleep=sleep,
         )
@@ -198,6 +219,7 @@ class Run:
         self.hub.start()
         self._tasks = [asyncio.create_task(self._agent_loop(a)) for a in self.agents]
         self.narrator.start()
+        self.stage.start()
 
     def pause(self) -> None:
         if self.state == "running":
@@ -219,6 +241,7 @@ class Run:
                 await t
         self._tasks = []
         await self.narrator.stop()
+        await self.stage.stop()
         self._running.set()
         self._set_state("stopped")
         await self.hub.stop()
@@ -235,6 +258,7 @@ class Run:
         last_turn = self.started_at or self._clock()
         while True:
             await self._running.wait()
+            await self.stage.gate(agent.id)
             now = self._clock()
             await self._turn(agent, now - last_turn)
             last_turn = now
@@ -280,6 +304,7 @@ class Run:
     def _on_write(self, agent_id: int, kind: str, payload: dict[str, Any]) -> None:
         self._record(kind, agent_id, payload)
         self.narrator.observe_write(agent_id, kind, payload)
+        self.stage.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
             owner = int(payload.get("owner", agent_id))
@@ -294,7 +319,7 @@ class Run:
         self.log.append(self.id, self._clock(), kind, agent_id, payload)
 
     def record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
-        """Append an event on behalf of a collaborator (the narrator)."""
+        """Append an event on behalf of a collaborator (the narrator, the stage)."""
         self._record(kind, agent_id, payload)
 
     # -- read model ------------------------------------------------------------------------
@@ -313,6 +338,7 @@ class Run:
             "clients": self.hub.client_count,
             "llm": public_stats() if public_stats else None,
             "narrator": dict(self.narrator.stats),
+            "stage": {"phase": self.stage.phase, "debate_id": self.stage.debate_id},
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
@@ -357,4 +383,5 @@ class Run:
             "agents": self.agent_list(),
             "threads": self.board.listing(limit=50, name_of=self.agent_name),
             "narrator": self.narrator.state(),
+            "stage": self.stage.state(transcript=False),
         }
