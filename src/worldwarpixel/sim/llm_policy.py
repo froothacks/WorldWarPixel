@@ -437,7 +437,7 @@ class LLMPolicy:
         if agent.id not in self._projects:
             return ""
         name, args, remaining = self._projects[agent.id]
-        keep = ("country", "text", "shape", "x", "y", "width", "color", "scale")
+        keep = ("country", "text", "shape", "x", "y", "width", "color", "color2", "scale")
         shown = {k: v for k, v in args.items() if k in keep}
         return (
             f"Your unfinished drawing: {name}({json.dumps(shown)}), about {remaining} px left; "
