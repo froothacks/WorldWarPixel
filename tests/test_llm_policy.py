@@ -145,6 +145,26 @@ def test_agent_max_tokens_is_passed_to_the_model() -> None:
     assert client.chat.completions.requests[0]["max_tokens"] == 4000
 
 
+def test_openai_reasoning_model_params_are_passed_to_the_model() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([_response(None, [])])
+    policy = LLMPolicy(
+        client,  # type: ignore[arg-type]
+        "gpt-6-luna",
+        vision=False,
+        max_tokens=3000,
+        token_param="max_completion_tokens",
+        chat_template_kwargs=False,
+        reasoning_effort="none",
+    )
+    asyncio.run(policy.act(agent, tools, obs))
+    request = client.chat.completions.requests[0]
+    assert request["max_completion_tokens"] == 3000
+    assert "max_tokens" not in request
+    assert request["reasoning_effort"] == "none"
+    assert not request.get("extra_body")  # no chat_template_kwargs for api.openai.com
+
+
 def test_system_prompt_does_not_assign_a_usual_colour() -> None:
     agent, *_ = _setup()
     prompt = system_prompt(agent, 64, 40, 4, 1)

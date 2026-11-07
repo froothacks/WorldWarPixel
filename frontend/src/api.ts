@@ -10,6 +10,7 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "random";
+  model: string;
   narrator_interval: number;
   narrator_canvas_image: boolean;
 }
@@ -26,9 +27,17 @@ export const DEFAULT_CONFIG: RunConfig = {
   max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  model: "gpt-6-luna",
   narrator_interval: 60,
   narrator_canvas_image: true,
 };
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  model: string;
+  available: boolean;
+}
 
 export type RunState = "created" | "running" | "paused" | "stopped";
 
@@ -216,6 +225,7 @@ export const GOD_NAME = "The Hand of God";
 
 export const api = {
   listRuns: () => request<RunSummary[]>("/runs"),
+  listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {
       method: "POST",

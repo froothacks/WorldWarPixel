@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     """Optional bearer key for OpenAI-style endpoints; never sent to Modal hosts."""
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o-mini"
-    agent_model: str | None = None
-    narrator_model: str | None = None
     agent_vision: bool = True
     agent_max_tokens: int = Field(default=700, ge=1)
     """Max output tokens per agent model call; reasoning models need more to reach the tool call."""
@@ -21,6 +19,12 @@ class Settings(BaseSettings):
     """Max output tokens per narrator update; reasoning models need more to finish the JSON."""
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
+    qwen_base_url: str = "https://advait-m--ep-world-war-pixel-server.us-west.modal.direct/v1"
+    """Endpoint of the 'qwen' model preset (see models.py); override for another deployment."""
+    deepseek_base_url: str = (
+        "https://advait-m--ep-deepseek-v4-1-flash-server.us-west.modal.direct/v1"
+    )
+    """Endpoint of the 'deepseek' model preset (see models.py); override for another deployment."""
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
     max_concurrency: int = 10

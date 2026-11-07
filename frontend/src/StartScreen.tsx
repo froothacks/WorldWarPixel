@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DEFAULT_CONFIG, type RunConfig, type RunSummary } from "./api";
+import { api, DEFAULT_CONFIG, type ModelInfo, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
 
 interface Props {
@@ -38,9 +38,11 @@ export default function StartScreen({ onStarted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<RunSummary[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
+    api.listModels().then(setModels).catch(() => setModels([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
@@ -116,6 +118,24 @@ export default function StartScreen({ onStarted }: Props) {
             </div>
             <span className="hint">{brain.hint}</span>
           </div>
+
+          {cfg.policy === "llm" && models.length > 0 && (
+            <div className="field">
+              <span className="field-label">Model</span>
+              <select value={cfg.model} onChange={(e) => set("model", e.target.value)}>
+                {cfg.model && !models.some((m) => m.id === cfg.model) && (
+                  <option value={cfg.model}>{cfg.model}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id} disabled={!m.available}>
+                    {m.label}
+                    {m.available ? "" : " — unavailable"}
+                  </option>
+                ))}
+              </select>
+              <span className="hint">Every agent and the narrator use this model for the whole run.</span>
+            </div>
+          )}
 
           <label className="field">
             <span className="field-label agent-label">
@@ -235,7 +255,7 @@ export default function StartScreen({ onStarted }: Props) {
                     <span className={`state state-${r.state}`}>{r.state}</span>
                     <span className="mono run-id">{r.id}</span>
                     <span className="run-meta">
-                      {r.agents} {r.config.policy === "random" ? "random" : "LLM"} agents · {r.config.width}×{r.config.height} ·{" "}
+                      {r.agents} {r.config.policy === "random" ? "random" : (r.config.model ?? "LLM")} agents · {r.config.width}×{r.config.height} ·{" "}
                       {r.stats.pixels.toLocaleString()} px
                     </span>
                     <span className="run-when">{ago(r.created_at)}</span>
