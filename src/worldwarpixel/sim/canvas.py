@@ -118,7 +118,8 @@ class Canvas:
                     "x1": min(x0 + TILE, self.width) - 1,
                     "y1": min(y0 + TILE, self.height) - 1,
                     "painted": painted,
-                    "color": max(range(1, len(PALETTE)), key=counts.__getitem__),
+                    "size": (min(x0 + TILE, self.width) - x0) * (min(y0 + TILE, self.height) - y0),
+                    "color": max(range(1, len(PALETTE)), key=counts.__getitem__) if painted else 0,
                 }
             )
         out.sort(key=lambda r: r["painted"], reverse=True)

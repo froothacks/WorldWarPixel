@@ -222,6 +222,15 @@ def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
     assert [r["x0"] for r in regions] == [0, 64]
     assert regions[0]["painted"] == 9 and regions[0]["color"] == 5
     assert regions[0]["x1"] == 63 and regions[0]["y1"] == 63
+    every = canvas.regions(limit=None)
+    assert len(every) == 2 and every[-1]["size"] == 64 * 64
+    narrow = Canvas(70, 64)
+    for x in range(64, 70):
+        for y in range(64):
+            narrow.write(PixelWrite(x=x, y=y, color=5, agent_id=0))
+    edge = next(t for t in narrow.regions(limit=None) if t["x0"] == 64)
+    assert edge["size"] == 6 * 64 and edge["painted"] == edge["size"]
+    assert not any(t["x0"] == 64 for t in Canvas(70, 64).regions(limit=None) if t["color"] != 0)
 
 
 def test_pick_threads_mixes_top_and_random_sample() -> None:
