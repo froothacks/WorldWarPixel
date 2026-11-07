@@ -94,11 +94,13 @@ def fetch(iso3: str, rows: int = DEFAULT_ROWS, dest: Path | None = None) -> tupl
     return dest, written
 
 
-@lru_cache(maxsize=8)
 def _load(iso3: str) -> list[tuple[int, int, str, tuple[str, ...]]]:
     path = data_dir() / f"{iso3}.csv"
-    if not path.exists():
-        return []
+    return _read(path, path.stat().st_mtime_ns) if path.exists() else []
+
+
+@lru_cache(maxsize=8)
+def _read(path: Path, mtime_ns: int) -> list[tuple[int, int, str, tuple[str, ...]]]:
     out = []
     with path.open(encoding="utf-8") as f:
         for row in csv.DictReader(f):

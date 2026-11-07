@@ -203,20 +203,17 @@ def test_nemotron_enrich_without_data_is_noop_and_with_data_matches_sex(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(nemotron.ENV_VAR, str(tmp_path))
-    nemotron._load.cache_clear()
     assert nemotron.enrich(SAMPLE, "USA", random.Random(0)) == SAMPLE
     with (tmp_path / "USA.csv").open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(nemotron.COLUMNS)
         w.writerow([1, 40, "Train conductor", '["model trains", "chess"]'])
         w.writerow([2, 41, "Nurse", '["knitting"]'])
-    nemotron._load.cache_clear()
     enriched = nemotron.enrich(SAMPLE, "USA", random.Random(0))
     assert enriched.extra == {"hobbies": ["model trains", "chess"], "occupation": "Train conductor"}
     card = persona_card(enriched, "United States", "United States")
     assert card["hobbies"] == ["model trains", "chess"] and card["occupation"] == "Train conductor"
     assert "model trains" in persona_text("Sam Hill", enriched, "United States")
-    nemotron._load.cache_clear()
 
 
 def test_random_name_is_sex_aware_unique_and_falls_back_by_region() -> None:
@@ -245,3 +242,17 @@ def test_seed_agents_is_representative_named_and_reproducible() -> None:
         assert 0 <= a.home_x < 512 and 0 <= a.home_y < 320
     small = seed_agents(3, 64, 64, 1.0, random.Random(0))
     assert [a.country for a in small] and len(small) == 3
+
+
+def test_default_pool_picks_up_an_import_without_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from worldwarpixel.personas import pool as pool_mod
+
+    target = tmp_path / "wvs7.csv"
+    monkeypatch.setenv(pool_mod.ENV_VAR, str(target))
+    assert pool_mod.default_pool().sources == {"synthetic"}
+    write_respondents(
+        [Respondent(source="wvs7", country_iso3="CHN", weight=2.0, age=33, sex=1)], target
+    )
+    assert pool_mod.default_pool().sources == {"wvs7", "synthetic"}

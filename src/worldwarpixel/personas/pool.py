@@ -77,5 +77,12 @@ def load_pool(path: Path | None = None) -> RespondentPool:
 
 
 @lru_cache(maxsize=1)
+def _cached_pool(path: Path, mtime_ns: int | None) -> RespondentPool:
+    return load_pool(path)
+
+
 def default_pool() -> RespondentPool:
-    return load_pool()
+    """The pool for the configured respondent file, re-read when the file appears or changes."""
+    path = wvs_path()
+    mtime = path.stat().st_mtime_ns if path.exists() else None
+    return _cached_pool(path, mtime)

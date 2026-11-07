@@ -130,7 +130,7 @@ country — it is *not* survey data; a warning is logged at startup when it is u
    uv run worldwarpixel-personas build-synthetic
    ```
 
-`seed_agents()` picks up `data/wvs7_respondents.csv` automatically on the next run; survey countries
+`seed_agents()` picks up `data/wvs7_respondents.csv` automatically on the next run (no restart needed); survey countries
 missing from the file are topped up from the synthetic set. Generated persona pools derived from WVS
 must stay out of git.
 
