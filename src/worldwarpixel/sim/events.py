@@ -90,12 +90,12 @@ class EventLog:
         rows = self._conn.execute(
             "SELECT run_id, MIN(ts), SUM(kind = 'pixel'), SUM(kind = 'post'),"
             " SUM(kind = 'agent.thought'),"
-            " SUM(kind = 'agent.thought' AND json_extract(payload, '$.thought') LIKE ?),"
+            " SUM(kind = 'agent.thought' AND substr(json_extract(payload, '$.thought'), 1, ?) = ?),"
             f" SUM({narrated} IS NOT 'answer'), SUM({narrated} = 'answer'),"
             " MAX(kind = 'run.deleted'),"
             " MAX(CASE WHEN kind = 'run.created' THEN json_extract(payload, '$.config') END)"
             " FROM events GROUP BY run_id ORDER BY run_id",
-            (f"{rejected_prefix}%",),
+            (len(rejected_prefix), rejected_prefix),
         ).fetchall()
         return [(*r[:8], bool(r[8]), r[9]) for r in rows]
 

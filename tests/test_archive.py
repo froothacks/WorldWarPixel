@@ -78,6 +78,7 @@ def test_unknown_and_legacy_runs() -> None:
     log.append("old", 2.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
     log.append("old", 3.0, "agent.thought", 1, {"thought": "Tool call rejected: bad json"})
     log.append("old", 4.0, "agent.thought", 2, {"thought": "Painting a sun"})
+    log.append("old", 4.5, "agent.thought", 2, {"thought": "tool call rejected? no"})
     log.append("old", 5.0, "narrator.update", None, {"kind": "update", "text": "Hi"})
     log.append("old", 6.0, "narrator.update", None, {"kind": "answer", "text": "Yes"})
     run = restore_run(log, "old")
