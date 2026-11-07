@@ -202,10 +202,10 @@ export const api = {
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
-  vote: (id: string, threadId: number, delta: number) =>
+  vote: (id: string, threadId: number, voter: string, vote: number) =>
     request<{ thread_id: number; votes: number }>(
       `/runs/${id}/threads/${threadId}/vote`,
-      { method: "POST", body: JSON.stringify({ delta }) },
+      { method: "POST", body: JSON.stringify({ voter, vote }) },
     ),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>

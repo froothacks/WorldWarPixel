@@ -45,13 +45,14 @@ def test_votes_shift_recency_order_and_reset_on_clear() -> None:
     old = b.post_thread(1, "old", "x", now=0.0)
     new = b.post_thread(2, "new", "y", now=30.0)
     assert [d["thread_id"] for d in b.digest()] == [new.id, old.id]
-    assert b.vote(old.id, 1) == 1
+    assert b.vote(old.id, "a", 1) == 1
+    assert b.vote(old.id, "a", 1) == 1
     assert [d["thread_id"] for d in b.digest()] == [old.id, new.id]
     assert b.digest()[0]["votes"] == 1
-    assert b.vote(old.id, -2) == -1
+    assert b.vote(old.id, "a", -1) == -1
     assert [d["thread_id"] for d in b.digest()] == [new.id, old.id]
     with pytest.raises(BoardError):
-        b.vote(999, 1)
+        b.vote(999, "a", 1)
     b.clear()
     again = b.post_thread(1, "again", "z", now=40.0)
     assert b.votes(again.id) == 0

@@ -151,14 +151,23 @@ def test_thread_votes_reorder_the_board(client: TestClient) -> None:
     second = client.post(f"/runs/{run_id}/god/announce", json={"title": "B", "body": "b"}).json()
     order = [t["thread_id"] for t in client.get(f"/runs/{run_id}/threads").json()]
     assert order == [second["id"], first["id"]]
-    r = client.post(f"/runs/{run_id}/threads/{first['id']}/vote", json={"delta": 1})
+    r = client.post(f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1})
     assert r.status_code == 200 and r.json() == {"thread_id": first["id"], "votes": 1}
     threads = client.get(f"/runs/{run_id}/threads").json()
     assert [t["thread_id"] for t in threads] == [first["id"], second["id"]]
     assert threads[0]["votes"] == 1
-    assert client.post(f"/runs/{run_id}/threads/999/vote", json={"delta": 1}).status_code == 404
+    again = client.post(
+        f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1}
+    )
+    assert again.json()["votes"] == 1
     assert (
-        client.post(f"/runs/{run_id}/threads/{first['id']}/vote", json={"delta": 5}).status_code
+        client.post(f"/runs/{run_id}/threads/999/vote", json={"voter": "v1", "vote": 1}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 2}
+        ).status_code
         == 422
     )
     client.post(f"/runs/{run_id}/stop")

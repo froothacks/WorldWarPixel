@@ -22,6 +22,15 @@ function loadVotes(runId: string): MyVotes {
   }
 }
 
+function voterId(): string {
+  let id = localStorage.getItem("wwp-voter");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("wwp-voter", id);
+  }
+  return id;
+}
+
 export default function Board({ runId, threads, agentName, version, totalThreads, open, onOpen, onVoted }: Props) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
@@ -32,12 +41,15 @@ export default function Board({ runId, threads, agentName, version, totalThreads
     const updated = { ...myVotes };
     if (next === 0) delete updated[threadId];
     else updated[threadId] = next;
-    setMyVotes(updated);
-    localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(updated));
+    const save = (v: MyVotes) => {
+      setMyVotes(v);
+      localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(v));
+    };
+    save(updated);
     api
-      .vote(runId, threadId, next - prev)
+      .vote(runId, threadId, voterId(), next)
       .then(onVoted)
-      .catch(() => setMyVotes(myVotes));
+      .catch(() => save(myVotes));
   };
 
   const voter = (threadId: number, votes: number) => (

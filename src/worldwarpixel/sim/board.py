@@ -34,6 +34,7 @@ class Board:
         self._posts: dict[int, Post] = {}
         self._replies: dict[int, list[int]] = {}
         self._votes: dict[int, int] = {}
+        self._ballots: dict[int, dict[str, int]] = {}
         self._next_id = 1
 
     def _new_post(
@@ -61,6 +62,7 @@ class Board:
         self._posts.clear()
         self._replies.clear()
         self._votes.clear()
+        self._ballots.clear()
 
     def post_thread(self, author_id: int, title: str, body: str, now: float) -> Post:
         title = title.strip()
@@ -105,11 +107,17 @@ class Board:
         last = replies[-1] if replies else thread_id
         return self._posts[last].created_at
 
-    def vote(self, thread_id: int, delta: int) -> int:
-        """Add a viewer's up/down vote (or the change of one) to a thread; returns its score."""
+    def vote(self, thread_id: int, voter: str, value: int) -> int:
+        """Set one viewer's vote on a thread (+1, -1, or 0 to withdraw); returns its score."""
         if thread_id not in self._replies:
             raise BoardError(f"thread {thread_id} does not exist")
-        self._votes[thread_id] = self._votes.get(thread_id, 0) + delta
+        if value not in (-1, 0, 1):
+            raise BoardError("vote must be -1, 0 or 1")
+        ballots = self._ballots.setdefault(thread_id, {})
+        prev = ballots.pop(voter, 0)
+        if value:
+            ballots[voter] = value
+        self._votes[thread_id] = self._votes.get(thread_id, 0) + value - prev
         return self._votes[thread_id]
 
     def votes(self, thread_id: int) -> int:

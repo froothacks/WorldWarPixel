@@ -138,7 +138,8 @@ GodDep = Annotated[None, Depends(require_god)]
 
 
 class ThreadVote(BaseModel):
-    delta: int = Field(ge=-2, le=2, description="+1/-1 to vote, ±2 to flip an earlier vote")
+    voter: str = Field(min_length=1, max_length=64, description="Stable per-browser viewer id")
+    vote: int = Field(ge=-1, le=1, description="+1 up, -1 down, 0 to withdraw")
 
 
 class GodPixels(BaseModel):
@@ -237,7 +238,7 @@ async def vote_thread(
     run_id: str, thread_id: int, body: ThreadVote, manager: ManagerDep
 ) -> dict[str, Any]:
     try:
-        votes = manager.get(run_id).vote_thread(thread_id, body.delta)
+        votes = manager.get(run_id).vote_thread(thread_id, body.voter, body.vote)
     except BoardError as e:
         raise HTTPException(404, str(e)) from e
     return {"thread_id": thread_id, "votes": votes}
