@@ -93,7 +93,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
               ? ` (proxy: ${agent.persona_card.survey_country})`
               : ""}
           </summary>
-          <dl className="facts small">
+          <dl className="facts small" style={{ maxHeight: 240, overflowY: "auto", padding: "6px 0 0" }}>
             {CARD_FIELDS.filter(([key]) => agent.persona_card[key] != null && agent.persona_card[key] !== "").map(
               ([key, label]) => (
                 <Fragment key={key}>
