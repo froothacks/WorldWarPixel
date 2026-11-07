@@ -59,3 +59,11 @@ def test_ambiguous_first_name_prefers_thread_participant() -> None:
     # Inside Emily Garcia's thread the mention is hers, not Emily Miller's.
     assert world.agent_talk[(3, 5)] == 1
     assert world.talk[(0, 2)] == 2
+
+
+def test_mentions_in_thread_titles_count() -> None:
+    board = Board()
+    world = World(AGENTS, board)
+    root = board.post_thread(1, "@Wei_Jun let's talk", "Border proposal below.", now=1.0)
+    world.observe_post(root.to_dict())
+    assert world.talk[(0, 1)] == 1

@@ -57,7 +57,8 @@ class World:
             target_post = self._board.get(thread_id)
         if target_post is not None:
             targets.add(target_post.author_id)
-        for handle in MENTION_RE.findall(str(post.get("body", ""))):
+        text = f"{post.get('title') or ''} {post.get('body', '')}"
+        for handle in MENTION_RE.findall(text):
             hit = self._resolve(handle, thread_id)
             if hit is not None:
                 targets.add(hit)
