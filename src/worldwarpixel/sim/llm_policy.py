@@ -287,12 +287,18 @@ class LLMPolicy:
     """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
 
     def __init__(
-        self, client: AsyncOpenAI, model: str, timeout: float = 45.0, vision: bool = True
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 45.0,
+        vision: bool = True,
+        max_tokens: int = 700,
     ) -> None:
         self._client = client
         self._model = model
         self._timeout = timeout
         self._vision = vision
+        self._max_tokens = max_tokens
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -357,7 +363,7 @@ class LLMPolicy:
                     messages=messages,
                     tools=self._tools_for(obs),
                     tool_choice="auto",
-                    max_tokens=700,
+                    max_tokens=self._max_tokens,
                     temperature=1.0,
                     timeout=self._timeout,
                     extra_body={"chat_template_kwargs": {"enable_thinking": False}},

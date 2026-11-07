@@ -1,7 +1,7 @@
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     agent_model: str | None = None
     narrator_model: str | None = None
     agent_vision: bool = True
+    agent_max_tokens: int = Field(default=700, ge=1)
+    """Max output tokens per agent model call; reasoning models need more to reach the tool call."""
+    narrator_max_tokens: int = Field(default=700, ge=1)
+    """Max output tokens per narrator update; reasoning models need more to finish the JSON."""
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
     god_token: SecretStr = SecretStr("")
