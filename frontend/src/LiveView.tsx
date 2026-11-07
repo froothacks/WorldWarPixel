@@ -11,6 +11,7 @@ import {
 } from "./api";
 import { openRunStream, type ServerEvent } from "./ws";
 import { PixelStore } from "./pixelStore";
+import GodBar, { type GodTool } from "./GodBar";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
@@ -85,6 +86,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           break;
         case "post.created":
           scheduleThreadRefresh();
+          break;
+        case "board.cleared":
+          setThreads([]);
+          setOpenThread(null);
+          setBoardVersion((v) => v + 1);
           break;
       }
     };
@@ -161,6 +167,14 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   );
 
   const control = (action: "pause" | "resume" | "stop") => api[action](initial.id).then(setRun).catch((e: Error) => alert(e.message));
+  const [god, setGod] = useState(false);
+  const [tool, setTool] = useState<GodTool | null>(null);
+  const paint = useCallback(
+    (pixels: [number, number, number][], erase: boolean) => {
+      api.godPixels(initial.id, pixels, erase).catch(() => undefined);
+    },
+    [initial.id],
+  );
 
   return (
     <div className="live">
@@ -174,13 +188,46 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           {" · "}{connection}
         </span>
         <span className="spacer" />
+        <button
+          className={god ? "primary" : ""}
+          onClick={() => {
+            setGod(!god);
+            if (god) setTool(null);
+          }}
+          title="Intervene: paint, erase, clear, announce, change the pace"
+        >
+          ⚡ God mode
+        </button>
         {run.state === "running" && <button onClick={() => control("pause")}>Pause</button>}
         {run.state === "paused" && <button onClick={() => control("resume")}>Resume</button>}
         {run.state !== "stopped" && <button className="danger" onClick={() => control("stop")}>Stop</button>}
       </header>
+      {god && (
+        <GodBar
+          runId={initial.id}
+          run={run}
+          palette={palette}
+          tool={tool}
+          onTool={setTool}
+          onRun={setRun}
+          onClose={() => {
+            setGod(false);
+            setTool(null);
+          }}
+        />
+      )}
       <div className="live-grid">
         <AgentList agents={agents} palette={palette} selected={selected} lastThought={lastThought} onSelect={setSelected} />
-        <CanvasView store={store} version={version} agents={agentMap} highlightAgent={selected} onPickAgent={setSelected} focus={focus} />
+        <CanvasView
+          store={store}
+          version={version}
+          agents={agentMap}
+          highlightAgent={selected}
+          onPickAgent={setSelected}
+          focus={focus}
+          tool={god ? tool : null}
+          onPaint={paint}
+        />
         {selectedAgent ? (
           <AgentDrawer
             runId={initial.id}

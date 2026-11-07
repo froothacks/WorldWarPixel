@@ -172,4 +172,12 @@ export const api = {
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>
     request<NarratorUpdate>(`/runs/${id}/narrator/ask`, { method: "POST", body: JSON.stringify({ question }) }),
+  godPixels: (id: string, pixels: [number, number, number][], erase = false) =>
+    request<{ placed: number }>(`/runs/${id}/god/pixels`, { method: "POST", body: JSON.stringify({ pixels, erase }) }),
+  godClearCanvas: (id: string) => request<RunSummary>(`/runs/${id}/god/clear-canvas`, { method: "POST" }),
+  godClearBoard: (id: string) => request<RunSummary>(`/runs/${id}/god/clear-board`, { method: "POST" }),
+  godAnnounce: (id: string, title: string, body: string) =>
+    request<Post>(`/runs/${id}/god/announce`, { method: "POST", body: JSON.stringify({ title, body }) }),
+  godPace: (id: string, pace: { cooldown?: number; pixels_per_turn?: number }) =>
+    request<RunSummary>(`/runs/${id}/god/pace`, { method: "POST", body: JSON.stringify(pace) }),
 };
