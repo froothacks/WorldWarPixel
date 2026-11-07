@@ -121,6 +121,8 @@ button.ghost { background: transparent; border-color: transparent; }
 .prompt pre { white-space: pre-wrap; font-size: 11px; line-height: 1.4; background: #1a1d23; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
 
 .godbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, #2a1f3d, #1b1f2a); flex-wrap: wrap; }
+.godbar .god-announce { display: flex; gap: 6px; align-items: center; flex: 1 1 100%; }
+.godbar .god-announce input { flex: 1; min-width: 120px; }
 .godbar .sep { width: 1px; height: 22px; background: var(--border); }
 .godbar label.small { display: flex; align-items: center; gap: 6px; }
 .godbar input[type="range"] { width: 120px; }
