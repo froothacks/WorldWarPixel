@@ -601,6 +601,13 @@ def _scale(v: Any) -> int:
 
 
 _TOOL_HINTS = (
+    ("view_thread", "read_thread"),
+    ("read", "read_thread"),
+    ("canvas", "view_canvas"),
+    ("image", "view_canvas"),
+    ("see", "view_canvas"),
+    ("look", "view_canvas"),
+    ("view", "view_canvas"),
     ("flag", "draw_flag"),
     ("text", "draw_text"),
     ("write", "draw_text"),
@@ -609,14 +616,8 @@ _TOOL_HINTS = (
     ("pixel", "place_pixels"),
     ("paint", "place_pixels"),
     ("reply", "reply"),
-    ("read", "read_thread"),
     ("thread", "post_thread"),
     ("post", "post_thread"),
-    ("canvas", "view_canvas"),
-    ("image", "view_canvas"),
-    ("see", "view_canvas"),
-    ("look", "view_canvas"),
-    ("view", "view_canvas"),
 )
 
 
