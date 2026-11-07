@@ -185,7 +185,7 @@ class GodAnnouncement(BaseModel):
 
 
 class GodPace(BaseModel):
-    cooldown: float | None = Field(default=None, ge=0.5, le=600)
+    cooldown: float | None = Field(default=None, ge=0.1, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
     pixel_interval: float | None = Field(default=None, ge=0, le=5)
 

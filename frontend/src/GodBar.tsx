@@ -174,9 +174,9 @@ export default function GodBar({
         cooldown {run.config.cooldown}s
         <input
           type="range"
-          min={0.5}
+          min={0.1}
           max={60}
-          step={0.5}
+          step={0.1}
           value={run.config.cooldown}
           onChange={(e) => pace(+e.target.value)}
         />
