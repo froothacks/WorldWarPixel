@@ -63,12 +63,17 @@ export default function Territory({ store, version, agents, palette, highlight, 
   const trend = useRef<{ per: Uint32Array; at: number } | null>(null);
   const lastPer = useRef<Uint32Array | null>(null);
   const lastVersion = useRef(-1);
+  const lastStore = useRef<PixelStore | null>(null);
 
   useEffect(() => {
     if (!store) return;
-    lastVersion.current = -1;
-    trend.current = null;
-    lastPer.current = null;
+    if (lastStore.current !== store) {
+      // a new store (fresh snapshot / canvas clear) restarts the count; agent status churn does not
+      lastStore.current = store;
+      lastVersion.current = -1;
+      trend.current = null;
+      lastPer.current = null;
+    }
     const recount = () => {
       if (store.version === lastVersion.current) return;
       lastVersion.current = store.version;
