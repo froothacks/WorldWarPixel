@@ -31,13 +31,15 @@ def iter_events(log: EventLog, run_id: str) -> Iterable[Event]:
 KINDS = ("pixel", "god.clear_canvas")
 
 
-def _time_span(log: EventLog, run_id: str) -> tuple[float, float] | None:
+def _time_span(log: EventLog, run_id: str) -> tuple[float, float, int] | None:
+    """(first ts, last ts, last event id) of the relevant events, or None if there are none."""
     t0 = t1 = None
+    last_id = 0
     for e in iter_events(log, run_id):
         if e.kind in KINDS:
             t0 = e.ts if t0 is None else t0
-            t1 = e.ts
-    return None if t0 is None or t1 is None else (t0, t1)
+            t1, last_id = e.ts, e.id
+    return None if t0 is None or t1 is None else (t0, t1, last_id)
 
 
 def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames: int) -> bytes:
@@ -47,13 +49,14 @@ def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames:
     span = _time_span(log, run_id)
     if span is None:
         return bytes(out)
-    t0, t1 = span
+    t0, t1, last_id = span
     step = (t1 - t0) / frames if t1 > t0 else 0.0
     state = bytearray(width * height)
     pending: dict[int, int] = {}
     written = 0
     relevant = (e for e in iter_events(log, run_id) if e.kind in KINDS)
-    events = takewhile(lambda e: e.ts <= t1, relevant)  # a live run keeps appending past the span
+    # A live run keeps appending past the span; cut by id so a clock step never truncates it.
+    events = takewhile(lambda e: e.id <= last_id, relevant)
     nxt = next(events, None)
 
     def flush(ts: float) -> None:
