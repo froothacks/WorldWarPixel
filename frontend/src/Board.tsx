@@ -61,7 +61,7 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
   const [sort, setSort] = useState<Sort>("active");
   const [seen, setSeen] = useState<Map<number, number>>(() => new Map());
   const [mountedAt] = useState(() => Date.now() / 1000);
-  const [frozen, setFrozen] = useState<number[] | null>(null);
+  const [frozen, setFrozen] = useState<{ ids: number[]; sort: Sort; query: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listScroll = useRef(0);
   const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
@@ -103,9 +103,9 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
         )
       : threads;
     const sorted = [...matches].sort(sorters[sort]);
-    if (!frozen) return sorted;
+    if (!frozen || frozen.sort !== sort || frozen.query !== query) return sorted;
     // Don't reshuffle rows under the pointer; new threads wait at the bottom until it leaves.
-    const rank = new Map(frozen.map((id, i) => [id, i]));
+    const rank = new Map(frozen.ids.map((id, i) => [id, i]));
     return sorted.sort((a, b) => (rank.get(a.thread_id) ?? Infinity) - (rank.get(b.thread_id) ?? Infinity));
   }, [threads, query, sort, frozen]);
 
@@ -120,6 +120,7 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
     // The list unmounts under the pointer, so onMouseLeave never fires.
     setFrozen(null);
     listScroll.current = listRef.current?.scrollTop ?? 0;
+    setFrozen(null);
     onOpen(id);
   };
 
@@ -204,7 +205,7 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
       <div
         className="thread-list"
         ref={listRef}
-        onMouseEnter={() => setFrozen(shown.map((t) => t.thread_id))}
+        onMouseEnter={() => setFrozen({ ids: shown.map((t) => t.thread_id), sort, query })}
         onMouseLeave={() => setFrozen(null)}
         onKeyDown={onListKey}
       >
