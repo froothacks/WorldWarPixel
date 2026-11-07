@@ -80,14 +80,22 @@ export function openRunStream(runId: string, handlers: StreamHandlers): () => vo
     ws.onclose = (e) => {
       ws = null;
       if (stopped) return;
-      // 4004 = run not found, 1001 = run deleted: nothing to reconnect to.
-      if (e.code === 4004 || e.code === 1001) {
-        handlers.onClose(e.reason || `closed (${e.code})`);
-        return;
-      }
-      handlers.onClose(`${e.reason || `closed (${e.code})`} · reconnecting in ${Math.round(delay / 1000)} s`);
-      retry = window.setTimeout(connect, delay);
-      delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+      const reason = e.reason || `closed (${e.code})`;
+      // Close codes are unreliable (a refused handshake reaches the browser as 1006, proxies
+      // send 1001), so ask the REST API whether the run still exists before retrying.
+      void fetch(`/runs/${runId}`)
+        .then((r) => r.status !== 404)
+        .catch(() => true)
+        .then((exists) => {
+          if (stopped) return;
+          if (!exists) {
+            handlers.onClose(`${reason} · run gone`);
+            return;
+          }
+          handlers.onClose(`${reason} · reconnecting in ${Math.round(delay / 1000)} s`);
+          retry = window.setTimeout(connect, delay);
+          delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+        });
     };
   };
   connect();
