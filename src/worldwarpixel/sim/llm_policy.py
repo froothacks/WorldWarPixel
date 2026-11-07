@@ -410,6 +410,7 @@ class LLMPolicy:
         vision: bool = True,
         guided: bool = False,
         reasoning_effort: str = "",
+        max_tokens: int = 700,
     ) -> None:
         self._client = client
         # GLM ignores reasoning_effort and thinks until the token cap when enable_thinking is off.
@@ -422,6 +423,7 @@ class LLMPolicy:
         self._model = model
         self._timeout = timeout
         self._vision = vision
+        self._max_tokens = max_tokens
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -492,7 +494,7 @@ class LLMPolicy:
                     messages=messages,
                     tools=self._tools_for(obs),
                     tool_choice="auto",
-                    max_tokens=1500,
+                    max_tokens=self._max_tokens,
                     temperature=1.0,
                     timeout=self._timeout,
                     extra_body=self._extra_body,
