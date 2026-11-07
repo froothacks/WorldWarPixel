@@ -45,8 +45,8 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
 - `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.05 s by default, with a 50 ms minimum between an agent's successive pixels so premoved batches animate in), `posts_per_turn` (1), `max_concurrency` (16), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
-- `GET /runs`, `GET /runs/{id}`: run state and stats.
-- `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it and drops it from memory (the event log is kept). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
+- `GET /runs`, `GET /runs/{id}`: run state and stats. Runs from an earlier server process (a restart or redeploy) are listed too, as `stopped`; opening one rebuilds its canvas, board, thoughts and narrator history from the event log, so every read endpoint, the WebSocket snapshot and the timelapse keep working.
+- `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it, drops it from memory and hides it from the list (its events are kept, tagged `run.deleted`). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
 - `GET /runs/{id}/threads`, `GET /runs/{id}/threads/{thread_id}`: board digest / full thread.
 - `GET /runs/{id}/canvas`: the canvas as rows of hex palette indices.
@@ -144,7 +144,7 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 - `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
 - `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. Share this URL.
 
-The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); their events stay in the saved log, but the API only serves runs that are live in memory, so a replaced run's `/events` and timelapse return 404 until archived runs are served from the log.
+The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); they come back as stopped runs rebuilt from the saved log (up to 5 minutes of the latest events can be lost on a crash).
 
 One-time setup, with the Modal CLI authenticated (`uv run --with modal modal token new`):
 
@@ -156,7 +156,9 @@ uv run --with modal python deploy/modal_app.py launch   # build + publish the im
 uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
 ```
 
-Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
+Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox.
+
+**Continuous deploy.** `.github/workflows/deploy.yml` runs `launch` and `modal deploy` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the sandbox, so a running simulation stops. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
 
 ## Development
 
