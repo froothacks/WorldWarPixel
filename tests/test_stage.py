@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import RandomWalkPolicy
-from worldwarpixel.sim.canvas import PixelWrite
+from worldwarpixel.sim.canvas import PALETTE, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.run import GOD_ID, Run, RunConfig
 from worldwarpixel.sim.stage import (
@@ -312,8 +312,39 @@ def test_rivals_are_the_pair_that_overwrote_each_other_most() -> None:
     assert run.narrator.rivalry[(5, 3)] == 1
     a, b, topic, region = run.stage.pick_rivals()
     assert (a, b) == (3, 5)
-    assert "(14, 12)" in topic and region == {"x": 0, "y": 0, "w": 48, "h": 48}
+    assert "(14, 12)" in topic and region == {"x": 0, "y": 0, "w": 48, "h": 32}
     assert run.narrator.rivalry[(3, 5)] == 2
+
+
+def test_rivalry_region_is_clamped_at_the_canvas_edges() -> None:
+    run = make_run()
+    run.narrator.rivalry[(1, 2)] = 1
+    run.narrator.rivalry_at[(1, 2)] = (63, 31)
+
+    _, _, _, region = run.stage.pick_rivals()
+
+    assert region == {"x": 16, "y": 0, "w": 48, "h": 32}
+    assert region["x"] >= 0 and region["y"] >= 0
+    assert region["x"] + region["w"] <= run.canvas.width
+    assert region["y"] + region["h"] <= run.canvas.height
+
+
+def test_small_canvas_rivalry_region_renders_debater_corner_pixel() -> None:
+    run = make_run(config=CONFIG.model_copy(update={"width": 16, "height": 16}))
+    run.narrator.rivalry[(1, 2)] = 1
+    run.narrator.rivalry_at[(1, 2)] = (15, 15)
+
+    state = run.stage.start_debate()
+    assert state["region"] == {"x": 0, "y": 0, "w": 16, "h": 16}
+    run.canvas.write(PixelWrite(15, 15, 5, 1))
+
+    frame = run.stage.frame(16, 16)
+    expected_rgb = tuple(int(PALETTE[5][i : i + 2], 16) for i in (1, 3, 5))
+    red, green, blue = expected_rgb
+    expected = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3)
+    assert len(frame) == 16 * 16 * 2
+    assert struct.unpack_from("<H", frame, (15 * 16 + 15) * 2)[0] == expected
+    assert expected != 0
 
 
 def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:

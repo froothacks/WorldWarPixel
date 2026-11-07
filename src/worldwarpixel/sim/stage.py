@@ -252,11 +252,14 @@ class Stage:
             self._picked_rivalry_at = at
             x, y = at
             half = 24
+            canvas = self._run.canvas
+            w = min(48, canvas.width)
+            h = min(48, canvas.height)
             region = {
-                "x": max(0, x - half),
-                "y": max(0, y - half),
-                "w": half * 2,
-                "h": half * 2,
+                "x": min(max(0, x - half), canvas.width - w),
+                "y": min(max(0, y - half), canvas.height - h),
+                "w": w,
+                "h": h,
             }
             for k in list(self._run.narrator.rivalry):
                 self._run.narrator.rivalry[k] //= 2
