@@ -846,7 +846,10 @@ def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "place_pixels":
         px = args.get("pixels") or []
         return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
-    keep = ("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape")
+    keep = (
+        *("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape"),
+        *("society_id", "name"),
+    )
     out = {k: v for k, v in args.items() if k in keep}
     if name in ("post_thread", "reply"):
         out["thread_id"] = args.get("thread_id")

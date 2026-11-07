@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     whisper_model: str = "base"
+    murmur_condense: bool = False
+    """Rephrase voice transcripts into a rumour with the narrator model (small models mangle it)."""
     """faster-whisper model size used to transcribe society-screen voice clips."""
     max_concurrency: int = 10
     request_timeout: float = 60.0

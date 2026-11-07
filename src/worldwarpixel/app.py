@@ -77,7 +77,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state.transcriber = WhisperTranscriber(settings.whisper_model)
         app.state.murmurer = Murmurer(
-            client, settings.narrator_model or settings.openai_model, settings.request_timeout
+            client if settings.murmur_condense else None,
+            settings.narrator_model or settings.openai_model,
+            settings.request_timeout,
         )
         app.state.runs = RunManager(
             EventLog(settings.event_log_path),

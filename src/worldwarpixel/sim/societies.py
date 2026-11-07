@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SOCIETY_COLORS = ("#ff4500", "#2450a4", "#00a368", "#ffd635", "#811e9f", "#51e9f4")
+SOCIETY_NAMES = ("Red", "Blue", "Green", "Yellow", "Purple", "Cyan")
+"""Neutral starting names (no numbers, so models don't mix them up with 0-based ids)."""
 MURMUR_WINDOW = 900.0
 """Seconds a murmur stays in members' prompts before it fades."""
 MIGRATION_WINDOW = 60.0
@@ -54,7 +56,7 @@ class Societies:
 
     def __post_init__(self) -> None:
         self.societies = [
-            Society(i, f"Society {i + 1}", SOCIETY_COLORS[i % len(SOCIETY_COLORS)])
+            Society(i, SOCIETY_NAMES[i % 6], SOCIETY_COLORS[i % len(SOCIETY_COLORS)])
             for i in range(self.count)
         ]
 
