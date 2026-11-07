@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"
+    max_active_runs: int = 4
 
 
 @lru_cache

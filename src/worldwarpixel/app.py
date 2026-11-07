@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
-        app.state.runs = RunManager(EventLog(settings.event_log_path))
+        app.state.runs = RunManager(EventLog(settings.event_log_path), settings.max_active_runs)
         try:
             yield
         finally:

@@ -49,6 +49,18 @@ def test_run_lifecycle(client: TestClient) -> None:
 
     assert client.post(f"/runs/{run_id}/stop").json()["state"] == "stopped"
     assert [r["id"] for r in client.get("/runs").json()] == [run_id]
+    assert client.delete(f"/runs/{run_id}").status_code == 204
+    assert client.get("/runs").json() == []
+    assert client.delete(f"/runs/{run_id}").status_code == 404
+
+
+def test_active_run_cap(client: TestClient) -> None:
+    ids = [client.post("/runs", json=SMALL).json()["id"] for _ in range(4)]
+    assert client.post("/runs", json=SMALL).status_code == 409
+    client.post(f"/runs/{ids[0]}/stop")
+    assert client.post("/runs", json=SMALL).status_code == 201
+    for r in client.get("/runs").json():
+        client.delete(f"/runs/{r['id']}")
 
 
 def test_websocket_sends_snapshot_then_diffs(client: TestClient) -> None:

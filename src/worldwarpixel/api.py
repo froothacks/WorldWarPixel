@@ -21,11 +21,17 @@ from worldwarpixel.sim.run import Run, RunConfig
 class RunManager:
     """Holds the in-memory runs of this process; the event log persists what they did."""
 
-    def __init__(self, log: EventLog) -> None:
+    def __init__(self, log: EventLog, max_active_runs: int = 4) -> None:
         self.log = log
+        self.max_active_runs = max_active_runs
         self.runs: dict[str, Run] = {}
 
+    def active(self) -> list[Run]:
+        return [r for r in self.runs.values() if r.state != "stopped"]
+
     async def create(self, config: RunConfig) -> Run:
+        if len(self.active()) >= self.max_active_runs:
+            raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = RandomWalkPolicy(seed=config.seed if config.seed is not None else 0)
         run = Run(run_id, config, self.log, policy)
@@ -38,6 +44,11 @@ class RunManager:
         if run is None:
             raise HTTPException(404, f"run {run_id} not found")
         return run
+
+    async def delete(self, run_id: str) -> None:
+        run = self.get(run_id)
+        await run.stop()
+        del self.runs[run_id]
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
@@ -89,6 +100,12 @@ async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = manager.get(run_id)
     await run.stop()
     return run.summary()
+
+
+@router.delete("/{run_id}", status_code=204)
+async def delete_run(run_id: str, manager: ManagerDep) -> None:
+    """Stop the run (if needed) and drop it from memory; its event log is kept."""
+    await manager.delete(run_id)
 
 
 @router.get("/{run_id}/agents")
