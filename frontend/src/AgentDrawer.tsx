@@ -78,49 +78,51 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
         <span className={`status status-${agent.status}`}>{agent.status}</span>
         <button className="ghost" onClick={onClose}>Close</button>
       </header>
-      <dl className="facts">
-        <dt>Country</dt><dd>{agent.country}</dd>
-        <dt>Position</dt><dd>({pos.home_x}, {pos.home_y})</dd>
-        <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
-        <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
-      </dl>
-      <p className="small persona">{agent.persona}</p>
-      {agent.persona_card && Object.keys(agent.persona_card).length > 0 && (
-        <details className="prompt">
-          <summary className="muted small">
-            Persona card · {agent.persona_card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}
-            {agent.persona_card.survey_country && agent.persona_card.survey_country !== agent.country
-              ? ` (proxy: ${agent.persona_card.survey_country})`
-              : ""}
-          </summary>
-          <dl className="facts small" style={{ maxHeight: 240, overflowY: "auto", padding: "6px 0 0" }}>
-            {CARD_FIELDS.filter(([key]) => agent.persona_card[key] != null && agent.persona_card[key] !== "").map(
-              ([key, label]) => (
-                <Fragment key={key}>
-                  <dt>{label}</dt>
-                  <dd>{formatValue(agent.persona_card[key])}</dd>
-                </Fragment>
-              ),
-            )}
-          </dl>
-        </details>
-      )}
-      <p className="muted small">Its pixels are highlighted on the canvas.</p>
-      {fresh?.system_prompt && (
-        <details className="prompt">
-          <summary className="muted small">System prompt</summary>
-          <pre>{fresh.system_prompt}</pre>
-        </details>
-      )}
-      <h3>Thoughts</h3>
-      <div className="thoughts">
-        {thoughts.length === 0 && <p className="muted small">No turns yet.</p>}
-        {thoughts.map((t) => (
-          <div key={t.ts} className="thought">
-            <span className="muted small">{new Date(t.ts * 1000).toLocaleTimeString()}</span>
-            <p>{t.thought}</p>
-          </div>
-        ))}
+      <div className="drawer-body" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <dl className="facts">
+          <dt>Country</dt><dd>{agent.country}</dd>
+          <dt>Position</dt><dd>({pos.home_x}, {pos.home_y})</dd>
+          <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
+          <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
+        </dl>
+        <p className="small persona">{agent.persona}</p>
+        {agent.persona_card && Object.keys(agent.persona_card).length > 0 && (
+          <details className="prompt">
+            <summary className="muted small">
+              Persona card · {agent.persona_card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}
+              {agent.persona_card.survey_country && agent.persona_card.survey_country !== agent.country
+                ? ` (proxy: ${agent.persona_card.survey_country})`
+                : ""}
+            </summary>
+            <dl className="facts small">
+              {CARD_FIELDS.filter(([key]) => agent.persona_card[key] != null && agent.persona_card[key] !== "").map(
+                ([key, label]) => (
+                  <Fragment key={key}>
+                    <dt>{label}</dt>
+                    <dd>{formatValue(agent.persona_card[key])}</dd>
+                  </Fragment>
+                ),
+              )}
+            </dl>
+          </details>
+        )}
+        <p className="muted small">Its pixels are highlighted on the canvas.</p>
+        {fresh?.system_prompt && (
+          <details className="prompt">
+            <summary className="muted small">System prompt</summary>
+            <pre>{fresh.system_prompt}</pre>
+          </details>
+        )}
+        <h3>Thoughts</h3>
+        <div className="thoughts">
+          {thoughts.length === 0 && <p className="muted small">No turns yet.</p>}
+          {thoughts.map((t) => (
+            <div key={t.ts} className="thought">
+              <span className="muted small">{new Date(t.ts * 1000).toLocaleTimeString()}</span>
+              <p>{t.thought}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </aside>
   );
