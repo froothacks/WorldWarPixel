@@ -241,7 +241,8 @@ async def device_socket(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
             return
         migs = list(run.societies.migrations)
-        for m in migs[seen:] if seen <= len(migs) else migs:
+        new = min(run.societies.moves - seen, len(migs))
+        for m in migs[len(migs) - new :] if new > 0 else []:
             if device.society in (m.src, m.dst):
                 await websocket.send_json(
                     {
@@ -251,7 +252,7 @@ async def device_socket(websocket: WebSocket) -> None:
                         "to": m.dst,
                     }
                 )
-        seen = len(migs)
+        seen = run.societies.moves
         await websocket.send_json(device_state(run, device, voice))
 
     async def finish(pcm: bytes) -> None:

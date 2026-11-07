@@ -53,6 +53,8 @@ class Societies:
     members: dict[int, int] = field(default_factory=dict)
     last_switch: dict[int, float] = field(default_factory=dict)
     migrations: deque[Migration] = field(default_factory=lambda: deque(maxlen=500))
+    moves: int = 0
+    """Total joins ever, so readers can tell what is new after the deque wraps."""
 
     def __post_init__(self) -> None:
         self.societies = [
@@ -88,6 +90,7 @@ class Societies:
         self.last_switch[agent_id] = now
         m = Migration(now, agent_id, src, society_id)
         self.migrations.append(m)
+        self.moves += 1
         return m
 
     def rename(self, society_id: int, name: str) -> Society:
