@@ -18,7 +18,7 @@ from pathlib import Path
 
 from worldwarpixel.personas import nemotron, synthetic, wpp, wvs
 from worldwarpixel.personas.allocation import allocate_seats
-from worldwarpixel.personas.pool import DEFAULT_WVS_PATH, load_pool
+from worldwarpixel.personas.pool import load_pool, wvs_path
 
 
 def _show(args: argparse.Namespace) -> None:
@@ -54,7 +54,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("fetch-wpp")
     p = sub.add_parser("import-wvs")
     p.add_argument("csv", type=Path)
-    p.add_argument("--out", type=Path, default=DEFAULT_WVS_PATH)
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=wvs_path(),
+        help="default: $WVS_RESPONDENTS_PATH or data/wvs7_respondents.csv",
+    )
     p = sub.add_parser("fetch-nemotron")
     p.add_argument("iso3", nargs="*", default=sorted(nemotron.DATASETS))
     p.add_argument("--rows", type=int, default=nemotron.DEFAULT_ROWS)
