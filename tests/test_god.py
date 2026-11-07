@@ -21,6 +21,9 @@ def test_god_paint_erase_and_clear() -> None:
         q = run.hub.subscribe()
         assert run.god_paint([(1, 1, 5), (2, 1, 5), (99, 99, 5)]) == 2
         assert run.canvas.get(1, 1) == 5 and run.canvas.owner(1, 1) == GOD_ID
+        with pytest.raises(ValueError):
+            run.god_paint([(3, 3, 5), (4, 4, 99)])
+        assert run.canvas.get(3, 3) == 0  # nothing from the bad batch landed
         assert run.god_paint([(1, 1, 0)], erase=True) == 1
         assert run.canvas.get(1, 1) == 0 and run.canvas.owner(1, 1) == 0
         run.hub.flush()
@@ -29,6 +32,8 @@ def test_god_paint_erase_and_clear() -> None:
         assert run.canvas.get(2, 1) == 0 and run.canvas.owner(2, 1) == 0
         assert q.get_nowait() == RESYNC
         assert run.agent_name(GOD_ID) == GOD_NAME
+        kinds = [e.kind for e in run.log.read("g")]
+        assert kinds.count("pixel") == 3 and "god.paint" in kinds
 
     asyncio.run(main())
 
@@ -39,8 +44,11 @@ def test_god_board_and_pace() -> None:
         post = run.god_announce("Hear ye", "The canvas belongs to the brave.")
         assert post["author_id"] == GOD_ID and run.board.threads()
         assert run.board.digest(name_of=run.agent_name)[0]["author"] == GOD_NAME
+        board = run.board
         run.god_clear_board()
-        assert run.board.threads() == []
+        assert run.board is board and run.board.threads() == []
+        again = run.god_announce("Again", "ids keep growing")
+        assert again["thread_id"] > post["thread_id"]
         run.god_set_pace(cooldown=3.0, pixels_per_turn=99)
         assert all(a.cooldown == 3.0 for a in run.agents)
         assert run.config.pixels_per_turn == 99
@@ -54,6 +62,9 @@ def test_god_endpoints() -> None:
         rid = run["id"]
         r = client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 5], [2, 2, 6]]})
         assert r.status_code == 200 and r.json()["placed"] == 2
+        assert (
+            client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 42]]}).status_code == 422
+        )
         r = client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 0]], "erase": True})
         assert r.json()["placed"] == 1
         r = client.post(f"/runs/{rid}/god/announce", json={"title": "Hi", "body": "Paint hearts."})

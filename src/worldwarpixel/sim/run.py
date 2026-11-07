@@ -105,14 +105,17 @@ class Run:
 
     def god_paint(self, pixels: list[tuple[int, int, int]], erase: bool = False) -> int:
         """Paint (or erase to blank, unowned) pixels as the human; returns how many landed."""
+        batch = pixels[:MAX_GOD_PIXELS]
+        bad = [c for _, _, c in batch if not 0 <= int(c) < len(PALETTE)]
+        if bad:
+            raise ValueError(f"colour {bad[0]} is not in 0..{len(PALETTE) - 1}")
         n = 0
-        for x, y, color in pixels[:MAX_GOD_PIXELS]:
+        for x, y, color in batch:
             if not self.canvas.in_bounds(x, y):
                 continue
-            c, owner = (0, 0) if erase else (color, GOD_ID)
+            c, owner = (0, 0) if erase else (int(color), GOD_ID)
             self.canvas.write(PixelWrite(x, y, c, owner))
-            self.stats["pixels"] += 1
-            self.hub.push_pixel(x, y, c, owner)
+            self._on_write(owner, "pixel", {"x": x, "y": y, "color": c})
             n += 1
         if n:
             self._record("god.paint", GOD_ID, {"pixels": n, "erase": erase})
@@ -125,7 +128,7 @@ class Run:
         self.hub.publish("canvas.cleared")
 
     def god_clear_board(self) -> None:
-        self.board = Board()
+        self.board.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
 

@@ -155,7 +155,10 @@ async def god_pixels(
     run_id: str, body: GodPixels, manager: ManagerDep, _god: GodDep
 ) -> dict[str, Any]:
     run = manager.get(run_id)
-    return {"placed": run.god_paint(body.pixels, body.erase)}
+    try:
+        return {"placed": run.god_paint(body.pixels, body.erase)}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/{run_id}/god/clear-canvas")
