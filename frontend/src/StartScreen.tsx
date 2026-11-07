@@ -14,6 +14,12 @@ const SIZES: [number, number][] = [
   [512, 512],
 ];
 
+const SLIDER_MAX = 2000;
+const MAX_AGENTS = 10000;
+/** Random turns are instant, so past this the single-core event loop saturates. */
+const RANDOM_TURNS_PER_SEC = 100;
+const PRESETS = [50, 100, 250, 500, 1000, 2000, 5000];
+
 const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
   { value: "llm", title: "Language model", hint: "Each turn is one call to the configured model." },
   { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
@@ -54,6 +60,13 @@ export default function StartScreen({ onStarted }: Props) {
   const turnsPerMin = Math.round((cfg.agents * 60) / cfg.cooldown);
   const pxPerMin = turnsPerMin * cfg.pixels_per_turn;
   const brain = BRAINS.find((b) => b.value === cfg.policy) ?? BRAINS[0];
+  const turnsPerSec = cfg.agents / cfg.cooldown;
+  const warning =
+    cfg.policy === "random" && turnsPerSec > RANDOM_TURNS_PER_SEC
+      ? `${Math.round(turnsPerSec)} random turns a second will saturate one CPU core; raise the cooldown or use fewer agents.`
+      : cfg.policy !== "random" && turnsPerSec > cfg.max_concurrency
+        ? `Turns are capped by "Turns in flight" (${cfg.max_concurrency}); with ${cfg.agents.toLocaleString()} agents each one will wait longer than its ${cfg.cooldown}s cooldown.`
+        : null;
   const runs = [...existing].sort((a, b) => b.created_at - a.created_at);
 
   return (
@@ -66,6 +79,22 @@ export default function StartScreen({ onStarted }: Props) {
             Give a crowd of agents one shared canvas and one message board, then see what they draw, who they team up
             with and what they fight over.
           </p>
+          <dl className="hero-stats">
+            <div>
+              <dt>Agents</dt>
+              <dd>{cfg.agents.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Canvas</dt>
+              <dd>
+                {cfg.width}×{cfg.height}
+              </dd>
+            </div>
+            <div>
+              <dt>Turns / min</dt>
+              <dd>{turnsPerMin.toLocaleString()}</dd>
+            </div>
+          </dl>
         </div>
       </aside>
 
@@ -74,7 +103,7 @@ export default function StartScreen({ onStarted }: Props) {
           <h2>New simulation</h2>
 
           <div className="field">
-            <span className="field-label">Agents</span>
+            <span className="field-label">Brain</span>
             <div className="segmented">
               {BRAINS.map((b) => (
                 <button key={b.value} type="button" className={cfg.policy === b.value ? "on" : ""} onClick={() => set("policy", b.value)}>
@@ -86,17 +115,36 @@ export default function StartScreen({ onStarted }: Props) {
           </div>
 
           <label className="field">
-            <span className="field-label">How many</span>
+            <span className="field-label agent-label">
+              Agents
+              <strong className="agent-n">
+                {cfg.agents.toLocaleString()} <span>agent{cfg.agents === 1 ? "" : "s"}</span>
+              </strong>
+            </span>
             <div className="agent-count">
               <input
                 type="range"
                 min={1}
-                max={500}
-                value={Math.min(cfg.agents, 500)}
+                max={SLIDER_MAX}
+                value={Math.min(cfg.agents, SLIDER_MAX)}
                 onChange={(e) => set("agents", +e.target.value)}
               />
-              <input type="number" min={1} max={5000} value={cfg.agents} onChange={(e) => set("agents", +e.target.value)} />
+              <input
+                type="number"
+                min={1}
+                max={MAX_AGENTS}
+                value={cfg.agents}
+                onChange={(e) => set("agents", Math.max(1, Math.min(MAX_AGENTS, Math.round(+e.target.value) || 1)))}
+              />
             </div>
+            <div className="presets">
+              {PRESETS.map((n) => (
+                <button key={n} type="button" className={cfg.agents === n ? "on" : ""} onClick={() => set("agents", n)}>
+                  {n.toLocaleString()}
+                </button>
+              ))}
+            </div>
+            <span className="hint">Up to {MAX_AGENTS.toLocaleString()}. Agents are seated per country by population, so more agents means more countries show up.</span>
           </label>
 
           <div className="field">
@@ -166,6 +214,7 @@ export default function StartScreen({ onStarted }: Props) {
               {busy ? "Starting…" : "Start simulation"}
             </button>
           </div>
+          {warning && <p className="warn">{warning}</p>}
           {error && <p className="error">{error}</p>}
         </section>
 

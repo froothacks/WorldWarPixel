@@ -329,7 +329,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           open={openThread}
           onOpen={setOpenThread}
         />
-        {selectedAgent ? (
+        {selectedAgent && (
           <AgentDrawer
             runId={initial.id}
             agent={selectedAgent}
@@ -338,9 +338,15 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             pixelsOwned={pixelsOwned}
             onClose={() => setSelected(null)}
           />
-        ) : (
-          <AgentList agents={agents} palette={palette} selected={selected} lastThought={lastThought} onSelect={setSelected} />
         )}
+        <AgentList
+          agents={agents}
+          palette={palette}
+          selected={selected}
+          lastThought={lastThought}
+          onSelect={setSelected}
+          hidden={selectedAgent !== undefined}
+        />
       </div>
       {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
     </div>
