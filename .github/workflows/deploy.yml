@@ -1,0 +1,36 @@
+name: Deploy
+
+# After CI passes on main (or on demand), rebuild the image, replace the Modal sandbox and
+# redeploy the keeper job + stable URL. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo
+# secrets; app settings live in the `worldwarpixel` Modal secret, not here.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      - if: env.MODAL_TOKEN_ID == '' || env.MODAL_TOKEN_SECRET == ''
+        run: echo "::notice::MODAL_TOKEN_ID / MODAL_TOKEN_SECRET not set; skipping deploy"
+      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        uses: astral-sh/setup-uv@v6
+      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        run: uv run --with modal==1.6.3 python deploy/modal_app.py launch
+      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+        run: uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
