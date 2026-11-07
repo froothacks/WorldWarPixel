@@ -220,7 +220,9 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
   const [missing, setMissing] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const [fresh, setFresh] = useState<Set<number>>(() => new Set());
-  const [pending, setPending] = useState<number[]>([]);
+  const [unseen, setUnseen] = useState<number[]>([]);
+  const jumpTarget = useRef<number | null>(null);
+  const activeRef = useRef(active);
   const scrollRef = useRef<HTMLDivElement>(null);
   const known = useRef<Set<number> | null>(null);
   const atBottom = useRef(false);
@@ -232,12 +234,15 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
       .then((p) => {
         if (!live) return;
         const el = scrollRef.current;
-        atBottom.current = !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        if (activeRef.current) atBottom.current = !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         const prev = known.current;
         known.current = new Set(p.map((x) => x.id));
         if (prev) {
           const added = p.filter((x) => !prev.has(x.id)).map((x) => x.id);
-          if (added.length) setFresh(new Set(added));
+          if (added.length) {
+            setFresh(new Set(added));
+            setUnseen((u) => [...u, ...added.filter((id) => !u.includes(id))]);
+          }
         }
         setPosts(p);
         setMissing(false);
@@ -249,24 +254,39 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
   }, [runId, threadId, version]);
 
   useEffect(() => {
-    if (!posts?.length) return;
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || !posts?.length) return;
     onSeen(threadId, Math.max(...posts.map((p) => p.created_at)));
-  }, [posts, threadId, onSeen]);
+  }, [posts, threadId, onSeen, active]);
+
+  // New replies stay "unseen" until their card has actually been on screen.
+  const pruneSeen = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setUnseen((u) => {
+      const left = u.filter((id) => {
+        const node = postNode(el, id);
+        return !node || !isVisible(el, node);
+      });
+      return left.length === u.length ? u : left;
+    });
+  }, []);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el || fresh.size === 0) return;
-    if (atBottom.current) el.scrollTop = el.scrollHeight;
-    // Whatever new reply still isn't on screen (e.g. nested above the viewport) gets a jump target.
-    const raf = requestAnimationFrame(() => {
-      const offscreen = [...fresh].filter((id) => {
-        const node = postNode(el, id);
-        return node !== null && !isVisible(el, node);
-      });
-      if (offscreen.length) setPending((p) => [...p, ...offscreen.filter((id) => !p.includes(id))]);
-    });
+    if (!el || !active) return;
+    if (jumpTarget.current !== null) {
+      postNode(el, jumpTarget.current)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      jumpTarget.current = null;
+    } else if (atBottom.current && fresh.size) {
+      el.scrollTop = el.scrollHeight;
+    }
+    const raf = requestAnimationFrame(pruneSeen);
     return () => cancelAnimationFrame(raf);
-  }, [fresh]);
+  }, [posts, fresh, collapsed, active, pruneSeen]);
 
   useEffect(() => {
     if (fresh.size === 0) return;
@@ -299,25 +319,30 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
     const el = scrollRef.current;
     if (!el) return;
     atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    setPending((p) => {
-      const left = p.filter((id) => {
-        const node = postNode(el, id);
-        return node !== null && !isVisible(el, node);
-      });
-      return left.length === p.length ? p : left;
-    });
+    pruneSeen();
   };
 
   const jumpToNext = () => {
     const el = scrollRef.current;
-    if (!el) return;
-    const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post]"));
-    const target = nodes.find((n) => pending.includes(Number(n.dataset.post)));
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      setPending((p) => p.filter((id) => id !== Number(target.dataset.post)));
+    if (!el || !tree) return;
+    const want = new Set(unseen);
+    const find = (n: Node, path: number[]): number[] | null => {
+      if (want.has(n.post.id)) return [...path, n.post.id];
+      for (const c of n.children) {
+        const hit = find(c, [...path, n.post.id]);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const hit = find(tree, []);
+    if (!hit) return setUnseen([]);
+    const id = hit[hit.length - 1];
+    const closed = hit.slice(0, -1).filter((a) => collapsed.has(a));
+    if (closed.length) {
+      jumpTarget.current = id;
+      setCollapsed((s) => new Set([...s].filter((a) => !closed.includes(a))));
     } else {
-      setPending([]);
+      postNode(el, id)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
 
@@ -380,9 +405,9 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           </>
         )}
       </div>
-      {pending.length > 0 && (
+      {unseen.length > 0 && (
         <button className="new-below" onClick={jumpToNext} title="Jump to the next new reply you haven't seen">
-          {pending.length} new {pending.length === 1 ? "reply" : "replies"}
+          {unseen.length} new {unseen.length === 1 ? "reply" : "replies"}
         </button>
       )}
     </>
