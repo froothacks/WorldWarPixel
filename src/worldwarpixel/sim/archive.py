@@ -51,6 +51,13 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
         elif e.kind == "narrator.update":
             narrator.history.append(p)
             narrator.stats["answers" if p.get("kind") == "answer" else "updates"] += 1
+        elif e.kind == "god.pace":
+            if p.get("cooldown") is not None:
+                config.cooldown = float(p["cooldown"])
+                for agent in run.agents:
+                    agent.cooldown = config.cooldown
+            if p.get("pixels_per_turn") is not None:
+                config.pixels_per_turn = int(p["pixels_per_turn"])
         elif e.kind == "run.deleted":
             return None
     return run

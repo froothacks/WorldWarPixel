@@ -89,3 +89,15 @@ def test_board_restore_keeps_ids_and_skips_orphans() -> None:
     board.restore(Post(7, 2, 99, None, None, "orphan", 3.0))
     assert [p.id for p in board.thread(5)] == [5, 6] and board.get(7) is None
     assert board.post_thread(1, "next", "body", 4.0).id == 8
+
+
+def test_restored_runs_keep_god_pace_changes() -> None:
+    log = EventLog()
+    config = RunConfig(width=16, height=16, agents=2, seed=3, cooldown=10, policy="random")
+    log.append("p", 1.0, "run.created", None, {"config": config.model_dump()})
+    log.append("p", 2.0, "god.pace", 65535, {"cooldown": 2.5, "pixels_per_turn": None})
+    log.append("p", 3.0, "god.pace", 65535, {"cooldown": None, "pixels_per_turn": 7})
+    run = restore_run(log, "p")
+    assert run is not None
+    assert (run.config.cooldown, run.config.pixels_per_turn) == (2.5, 7)
+    assert {a.cooldown for a in run.agents} == {2.5}
