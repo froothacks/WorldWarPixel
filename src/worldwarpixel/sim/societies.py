@@ -101,7 +101,9 @@ class Societies:
             raise SocietyError(f"you moved recently; you can move again in {wait:.0f} s")
         self.members[agent_id] = society_id
         self.last_switch[agent_id] = now
-        self.invites.pop(agent_id, None)
+        pending = self.invites.get(agent_id, {})
+        for src in [k for k, i in pending.items() if i.society == society_id]:
+            del pending[src]
         m = Migration(now, agent_id, src, society_id)
         self.migrations.append(m)
         self.moves += 1
