@@ -9,6 +9,7 @@ path. ``source`` says where a record came from: ``wvs7`` (real respondent) or ``
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Literal
@@ -60,8 +61,11 @@ CSV_COLUMNS = ("source", "country_iso3", "weight", *INT_FIELDS, "ethnic_group")
 
 
 def write_respondents(rows: list[Respondent], path: Path) -> None:
+    """Write atomically (temp file + rename) so a concurrently starting run never reads a
+    half-written pool."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
+    tmp = path.with_name(f".{path.name}.tmp")
+    with tmp.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(CSV_COLUMNS)
         for r in rows:
@@ -70,6 +74,7 @@ def write_respondents(rows: list[Respondent], path: Path) -> None:
                 + ["" if getattr(r, k) is None else getattr(r, k) for k in INT_FIELDS]
                 + [r.ethnic_group]
             )
+    os.replace(tmp, path)
 
 
 def read_respondents(path: Path) -> list[Respondent]:
