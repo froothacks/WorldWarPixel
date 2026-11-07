@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Iterable
+from itertools import takewhile
 
 from worldwarpixel.sim.events import Event, EventLog
 
@@ -51,7 +52,8 @@ def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames:
     state = bytearray(width * height)
     pending: dict[int, int] = {}
     written = 0
-    events = iter(e for e in iter_events(log, run_id) if e.kind in KINDS)
+    relevant = (e for e in iter_events(log, run_id) if e.kind in KINDS)
+    events = takewhile(lambda e: e.ts <= t1, relevant)  # a live run keeps appending past the span
     nxt = next(events, None)
 
     def flush(ts: float) -> None:

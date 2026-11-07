@@ -3,7 +3,7 @@ import struct
 from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import Event, EventLog
 from worldwarpixel.sim.timelapse import build_timelapse
 
 
@@ -51,3 +51,22 @@ def test_timelapse_endpoint() -> None:
         n, w, h = struct.unpack_from("<HHH", r.content, 0)
         assert (w, h) == (32, 16) and 1 <= n <= 3
         client.post(f"/runs/{rid}/stop")
+
+
+def test_events_appended_after_the_span_was_measured_are_ignored() -> None:
+    class GrowingLog(EventLog):
+        """Appends a late pixel the first time the second pass reads."""
+
+        reads = 0
+
+        def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+            self.reads += 1
+            if self.reads == 3:  # first read of the second pass
+                EventLog.append(self, run_id, 99.0, "pixel", 1, {"x": 3, "y": 0, "color": 7})
+            return super().read(run_id, after_id=after_id, limit=limit)
+
+    log = GrowingLog()
+    log.append("r", 1.0, "pixel", 1, {"x": 0, "y": 0, "color": 5})
+    log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 0, "color": 6})
+    frames = _frames(build_timelapse(log, "r", 4, 1, 2))
+    assert all(3 not in deltas for _ts, deltas in frames)
