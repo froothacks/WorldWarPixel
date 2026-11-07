@@ -416,6 +416,7 @@ class LLMPolicy:
         }
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
+        turn_t0 = time.monotonic()
         text = (
             guided_user_prompt(
                 agent,
@@ -454,7 +455,6 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
-        turn_t0 = time.monotonic()
         for round_no in range(MAX_ROUNDS):
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
@@ -470,6 +470,7 @@ class LLMPolicy:
                     extra_body={"chat_template_kwargs": {"enable_thinking": False}},
                 )
             except Exception as e:  # network / API errors are per-turn failures, not crashes
+                _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
                 thoughts.append(f"(model call failed: {type(e).__name__})")

@@ -191,3 +191,12 @@ button.ghost { background: transparent; border-color: transparent; }
 .timelapse-canvas { width: min(80vw, 1024px); image-rendering: pixelated; background: #fff; border: 1px solid var(--border); }
 .timelapse-controls { display: flex; align-items: center; gap: 8px; }
 .timelapse-controls input[type="range"] { flex: 1; }
+
+.narr-events { margin: 4px 0 2px; font-size: 12px; }
+.narr-events summary { cursor: pointer; color: var(--muted, #9aa); }
+.narr-events ul { margin: 4px 0 0; padding-left: 4px; list-style: none; }
+.narr-events li { padding: 1px 0; }
+.ev-kind { display: inline-block; width: 1.2em; text-align: center; }
+.ev-raid .ev-kind { color: #f66; }
+.ev-repair .ev-kind, .ev-finished .ev-kind { color: #6c6; }
+.ev-team .ev-kind { color: #6af; }
