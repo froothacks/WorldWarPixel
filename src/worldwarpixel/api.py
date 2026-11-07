@@ -228,6 +228,12 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
     return [p.to_dict() for p in posts]
 
 
+@router.get("/{run_id}/world")
+async def get_world(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Country nodes plus talk (replies, @mentions) and raid (overpainting) edges."""
+    return manager.get(run_id).world.snapshot()
+
+
 @router.get("/{run_id}/canvas")
 async def get_canvas(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     canvas = manager.get(run_id).canvas
