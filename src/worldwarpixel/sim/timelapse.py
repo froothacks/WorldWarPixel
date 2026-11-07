@@ -27,18 +27,32 @@ def iter_events(log: EventLog, run_id: str) -> Iterable[Event]:
         after = page[-1].id
 
 
+KINDS = ("pixel", "god.clear_canvas")
+
+
+def _time_span(log: EventLog, run_id: str) -> tuple[float, float] | None:
+    t0 = t1 = None
+    for e in iter_events(log, run_id):
+        if e.kind in KINDS:
+            t0 = e.ts if t0 is None else t0
+            t1 = e.ts
+    return None if t0 is None or t1 is None else (t0, t1)
+
+
 def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames: int) -> bytes:
+    """Two passes over the log (span, then deltas) so memory stays O(canvas), not O(events)."""
     frames = max(1, min(frames, MAX_FRAMES))
-    events = [e for e in iter_events(log, run_id) if e.kind in ("pixel", "god.clear_canvas")]
     out = bytearray(struct.pack("<HHH", 0, width, height))
-    if not events:
+    span = _time_span(log, run_id)
+    if span is None:
         return bytes(out)
-    t0, t1 = events[0].ts, events[-1].ts
+    t0, t1 = span
     step = (t1 - t0) / frames if t1 > t0 else 0.0
     state = bytearray(width * height)
     pending: dict[int, int] = {}
     written = 0
-    i = 0
+    events = iter(e for e in iter_events(log, run_id) if e.kind in KINDS)
+    nxt = next(events, None)
 
     def flush(ts: float) -> None:
         nonlocal written
@@ -50,9 +64,9 @@ def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames:
 
     for f in range(frames):
         cutoff = t1 if f == frames - 1 else t0 + step * (f + 1)
-        while i < len(events) and (events[i].ts <= cutoff or f == frames - 1):
-            e = events[i]
-            i += 1
+        while nxt is not None and (nxt.ts <= cutoff or f == frames - 1):
+            e = nxt
+            nxt = next(events, None)
             if e.kind == "god.clear_canvas":
                 for idx, v in enumerate(state):
                     if v:
