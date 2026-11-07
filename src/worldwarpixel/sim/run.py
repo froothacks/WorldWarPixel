@@ -169,6 +169,22 @@ class Run:
         )
         return post.to_dict()
 
+    def god_reply(self, thread_id: int, body: str) -> dict[str, Any]:
+        """Reply in an existing thread as the human; pinned for agents like an announcement."""
+        post = self.board.reply(GOD_ID, thread_id, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        root = self.board.thread(thread_id)[0]
+        self._announcements.append(
+            {
+                "thread_id": thread_id,
+                "title": root.title,
+                "body": body,
+                "ts": post.created_at,
+                "reply": True,
+            }
+        )
+        return post.to_dict()
+
     def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
         """God announcements from the last `window` seconds, newest last, for the observation."""
         cutoff = self._clock() - window
@@ -183,13 +199,20 @@ class Run:
                 replies = len(self.board.thread(a["thread_id"])) - 1
             except (KeyError, IndexError):
                 continue
+            if a.get("reply"):
+                title = (
+                    f'📢 {GOD_NAME} replied in "{a["title"]}": {a["body"]} '
+                    "(answer this in that thread before anything else)"
+                )
+            else:
+                title = (
+                    f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
+                    "(everyone sees this; react however your persona would)"
+                )
             out.append(
                 {
                     "thread_id": a["thread_id"],
-                    "title": (
-                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
-                        "(everyone sees this; react however your persona would)"
-                    ),
+                    "title": title,
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,

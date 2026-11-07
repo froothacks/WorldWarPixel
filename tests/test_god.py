@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import RandomWalkPolicy
+from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import RESYNC
 from worldwarpixel.sim.run import GOD_ID, GOD_NAME, Run, RunConfig
@@ -55,6 +56,13 @@ def test_god_board_and_pace() -> None:
         post = run.god_announce("Hear ye", "The canvas belongs to the brave.")
         assert post["author_id"] == GOD_ID and run.board.threads()
         assert run.board.digest(name_of=run.agent_name)[0]["author"] == GOD_NAME
+        reply = run.god_reply(post["thread_id"], "Prove it: paint a heart at (10, 10).")
+        assert reply["author_id"] == GOD_ID and reply["thread_id"] == post["thread_id"]
+        pinned = run._announcement_digest()
+        assert len(pinned) == 2 and "replied in" in str(pinned[1]["title"])
+        assert "Prove it" in str(pinned[1]["title"])
+        with pytest.raises(BoardError):
+            run.god_reply(999_999, "nobody home")
         board = run.board
         run.god_clear_board()
         assert run.board is board and run.board.threads() == []
@@ -86,6 +94,11 @@ def test_god_endpoints() -> None:
             client.post(f"/runs/{rid}/god/announce", json={"title": "", "body": "x"}).status_code
             == 422
         )
+        tid = r.json()["thread_id"]
+        r = client.post(f"/runs/{rid}/god/reply", json={"thread_id": tid, "body": "More hearts."})
+        assert r.status_code == 201 and r.json()["author_id"] == GOD_ID
+        bad = client.post(f"/runs/{rid}/god/reply", json={"thread_id": 10**6, "body": "x"})
+        assert bad.status_code == 422
         r = client.post(f"/runs/{rid}/god/pace", json={"cooldown": 2.5})
         assert r.status_code == 200 and r.json()["config"]["cooldown"] == 2.5
         assert client.post(f"/runs/{rid}/god/clear-board").status_code == 200

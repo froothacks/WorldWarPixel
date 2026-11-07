@@ -251,6 +251,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title, body }),
     }),
+  godReply: (id: string, threadId: number, body: string) =>
+    request<Post>(`/runs/${id}/god/reply`, {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, body }),
+    }),
   godPace: (
     id: string,
     pace: { cooldown?: number; pixels_per_turn?: number; pixel_interval?: number },
