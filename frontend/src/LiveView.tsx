@@ -164,6 +164,13 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`),
     [agentMap],
   );
+  const agentColor = useCallback(
+    (id: number) => {
+      const a = agentMap.get(id);
+      return a ? (palette[a.color] ?? "#888") : id === GOD_ID ? "#c9a7ff" : "#888";
+    },
+    [agentMap, palette],
+  );
   const lastThought = useMemo(() => {
     const m = new Map<number, string>();
     thoughts.forEach((list, id) => {
@@ -321,6 +328,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             runId={initial.id}
             threads={threads}
             agentName={agentName}
+            agentColor={agentColor}
+            onSelectAgent={setSelected}
             version={boardVersion}
             totalThreads={run.threads}
             open={openThread}
