@@ -109,7 +109,8 @@ def test_old_verdict_does_not_end_a_new_debate() -> None:
         run.stage.lines_per_debate = 1
         run.stage.vote_seconds = 0.01
         await run.start()
-        run.stage.start_debate(1, 2)
+        old_state = run.stage.start_debate(1, 2, "old topic")
+        old_thread_id = old_state["thread_id"]
 
         await wait_for(lambda: run.stage.phase == "voting")
         await wait_for(lambda: any(line["kind"] == "verdict" for line in run.stage.transcript))
@@ -117,7 +118,8 @@ def test_old_verdict_does_not_end_a_new_debate() -> None:
         old_debate = run.stage.debate_id
         run.stage.end_debate()
         run.stage.lines_per_debate = 10
-        run.stage.start_debate(3, 4)
+        new_state = run.stage.start_debate(3, 4, "new topic")
+        new_thread_id = new_state["thread_id"]
         new_debate = run.stage.debate_id
         await asyncio.sleep(0.6)
         phase, debaters, debate_id = (
@@ -131,6 +133,14 @@ def test_old_verdict_does_not_end_a_new_debate() -> None:
         assert phase == "debating"
         assert debaters == [3, 4]
         assert debate_id == new_debate
+        announcements = run.recent_announcements()
+        assert announcements[-1]["thread_id"] == old_thread_id
+        assert "old topic" in announcements[-1]["body"]
+        assert not any(
+            announcement["thread_id"] == new_thread_id
+            and announcement["title"] == "Live debate verdict"
+            for announcement in announcements
+        )
 
     asyncio.run(main())
 

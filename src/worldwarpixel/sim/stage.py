@@ -451,6 +451,8 @@ class Stage:
 
     async def _verdict(self) -> None:
         debate = self.debate_id
+        thread_id = self.thread_id
+        topic = self.topic
         tally = self.tally()
         by_id = self._run.by_id
         a, b = (by_id[i] for i in self.debaters)
@@ -486,11 +488,11 @@ class Stage:
         self._publish("stage.verdict", **result)
         self.stats["debates"] += 1
         await self._play(await self._narrator_line(text, "Narrator", "verdict"))
-        if self.thread_id is not None:
+        if thread_id is not None:
             self._run.pin_announcement(
-                self.thread_id,
+                thread_id,
                 "Live debate verdict",
-                f'On "{self.topic}": {text} (decided by the live audience)'[:600],
+                f'On "{topic}": {text} (decided by the live audience)'[:600],
             )
         if self.debate_id == debate and self.phase == "voting":
             self.end_debate()
