@@ -498,7 +498,6 @@ class Run:
             sink,
             self._clock,
             writer,
-            pending,
             societies=_SocietyAccess(self, agent.id) if self.societies else None,
             vote=lambda thread_id, up: self.agent_vote(agent.id, thread_id, up),
         )
@@ -616,7 +615,6 @@ class Run:
                     self.meet(agent_id, other)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
-            self.dispatcher.observe_action(agent_id, payload)
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
