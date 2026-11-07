@@ -215,19 +215,24 @@ class ToolSet:
         self._check("posts", 1)
         self._own_words(title, body)
         norm = title.strip().casefold()
+        society = self.societies.current() if self.societies else None
         for t in self._board.threads():
+            if self._board.society_of(t.id) not in (None, society):
+                continue
             if (t.title or "").casefold() == norm:
                 raise ToolError(
                     f"a thread titled {title.strip()!r} already exists (thread {t.id}); "
                     "reply in it instead of starting another"
                 )
         try:
-            society = self.societies.current() if self.societies else None
             post = self._board.post_thread(self._agent_id, title, body, self._clock(), society)
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._spend("posts", 1)
-        self._sink("post", post.to_dict())
+        payload = post.to_dict()
+        if society is not None:
+            payload["society"] = society
+        self._sink("post", payload)
         return {"thread_id": post.id, "post_id": post.id}
 
     def reply(self, thread_id: int, body: str, parent_id: int | None = None) -> dict[str, Any]:

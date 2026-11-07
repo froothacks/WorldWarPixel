@@ -314,3 +314,44 @@ def test_memory_keeps_actions_and_mentions_keep_hyphens() -> None:
     socs.invite(3, 1, 0.0)
     socs.join(1, 1, 1.0)
     assert [i.society for i in socs.pending(1, 2.0)] == [2]
+
+
+def test_same_title_allowed_in_other_society_and_archive_keeps_societies() -> None:
+    from worldwarpixel.sim.archive import restore_run
+    from worldwarpixel.sim.run import _SocietyAccess
+    from worldwarpixel.sim.tools import ToolSet
+
+    run = _run()
+    assert run.societies is not None
+    roster = [a.to_dict() for a in run.agents]
+    run._record("run.created", None, {"config": run.config.model_dump(), "agents": roster})
+
+    def tools_for(i: int) -> ToolSet:
+        a = run.agents[i]
+        return ToolSet(
+            run.canvas,
+            run.board,
+            a.id,
+            TurnBudget(posts=2, reads=1),
+            lambda k, p: run._on_write(a.id, k, p),
+            run._clock,
+            societies=_SocietyAccess(run, a.id),
+        )
+
+    first, second = tools_for(0), tools_for(1)
+    assert run.societies.of(run.agents[0].id) != run.societies.of(run.agents[1].id)
+    first.post_thread("hello", "from one society")
+    second.post_thread("hello", "from another")
+    with pytest.raises(ToolError, match="already exists"):
+        first.post_thread("Hello", "again")
+    mover = run.agents[2].id
+    tools_for(2).join_society((run.societies.of(mover) + 1) % 3)
+    tools_for(2).name_society("Night Owls")
+    run.set_murmur(0, "keep it quiet", "keep it quiet")
+
+    restored = restore_run(run.log, "s")
+    assert restored is not None and restored.societies is not None
+    assert restored.societies.members == run.societies.members
+    assert restored.society_summary() == run.society_summary()
+    for s in range(3):
+        assert restored.society_threads(s) == run.society_threads(s)
