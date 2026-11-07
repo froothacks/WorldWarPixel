@@ -103,6 +103,7 @@ class RandomWalkPolicy:
         self._rng = random.Random(seed)
         self._post_chance = post_chance
         self._reacted: set[tuple[int, int]] = set()
+        self._claimed: set[int] = set()
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         rng = self._rng
@@ -169,11 +170,12 @@ class RandomWalkPolicy:
                 tools.reply(tid, body)
                 self._reacted.add((agent.id, tid))
                 return f"Replied in thread {tid}."
-            if rng.random() < 0.2:
+            if agent.id not in self._claimed and rng.random() < 0.2:
                 tools.post_thread(
                     f"{agent.country} claims ({agent.home_x}, {agent.home_y})",
                     "Anyone nearby want to coordinate colours?",
                 )
+                self._claimed.add(agent.id)
                 return "Started a thread to claim my area."
             return "Stayed quiet."
         except ToolError as e:
