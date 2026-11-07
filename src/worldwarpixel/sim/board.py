@@ -118,14 +118,15 @@ class Board:
         return self._posts[last].created_at
 
     def vote(self, thread_id: int, voter: str, value: int) -> int:
-        """Add one viewer click (+1 or -1, as often as they like); returns the score."""
+        """Add a viewer click (+1/-1, repeatable; 0 withdraws theirs); returns the score."""
         if thread_id not in self._replies:
             raise BoardError(f"thread {thread_id} does not exist")
         if value not in (-1, 0, 1):
             raise BoardError("vote must be -1, 0 or 1")
         ballots = self._ballots.setdefault(thread_id, {})
-        ballots[voter] = ballots.get(voter, 0) + value
-        self._votes[thread_id] = self._votes.get(thread_id, 0) + value
+        prev = ballots.get(voter, 0)
+        ballots[voter] = prev + value if value else 0
+        self._votes[thread_id] = self._votes.get(thread_id, 0) + ballots[voter] - prev
         return self._votes[thread_id]
 
     def votes(self, thread_id: int) -> int:

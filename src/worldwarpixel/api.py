@@ -139,7 +139,7 @@ GodDep = Annotated[None, Depends(require_god)]
 
 class ThreadVote(BaseModel):
     voter: str = Field(min_length=1, max_length=64, description="Stable per-browser viewer id")
-    vote: int = Field(ge=-1, le=1, description="+1 up or -1 down; each call adds")
+    vote: int = Field(ge=-1, le=1, description="+1 up or -1 down (each call adds), 0 withdraws")
 
 
 class GodPixels(BaseModel):

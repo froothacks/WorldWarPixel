@@ -67,6 +67,8 @@ def test_votes_shift_recency_order_and_reset_on_clear() -> None:
     assert b.digest()[0]["votes"] == 2
     assert [b.vote(old.id, "a", -1) for _ in range(3)] == [1, 0, -1]
     assert [d["thread_id"] for d in b.digest()] == [new.id, old.id]
+    assert b.vote(old.id, "b", 1) == 0
+    assert b.vote(old.id, "a", 0) == 1
     with pytest.raises(BoardError):
         b.vote(999, "a", 1)
     b.clear()
