@@ -15,6 +15,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
@@ -82,6 +83,7 @@ class Run:
         self.agents = seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
+        self.world = World(self.agents, self.board)
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
@@ -289,10 +291,12 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
+            self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
             owner = int(payload.get("owner", agent_id))
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
+            self.world.observe_post(payload)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
             self.hub.publish("agent.action", agent_id=agent_id, **payload)

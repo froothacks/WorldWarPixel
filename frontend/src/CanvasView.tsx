@@ -8,6 +8,8 @@ interface Props {
   version: number;
   agents: Map<number, Agent>;
   highlightAgent: number | null;
+  /** Indexed by owner id; non-zero entries are lit up like highlightAgent (e.g. one country). */
+  highlightMask?: Uint8Array | null;
   onPickAgent: (agentId: number) => void;
   focus: Region | null;
   /** God-mode brush; when set, dragging paints/erases instead of panning. */
@@ -30,7 +32,17 @@ interface Viewport {
   panY: number;
 }
 
-export default function CanvasView({ store, version, agents, highlightAgent, onPickAgent, focus, tool = null, onPaint }: Props) {
+export default function CanvasView({
+  store,
+  version,
+  agents,
+  highlightAgent,
+  highlightMask = null,
+  onPickAgent,
+  focus,
+  tool = null,
+  onPaint,
+}: Props) {
   const stroke = useRef<{ cells: Map<number, [number, number, number]>; sent: Set<number> } | null>(null);
   const flushTimer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -90,11 +102,12 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     ctx.fillRect(0, 0, el.clientWidth, el.clientHeight);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, vp.panX, vp.panY, store.width * vp.zoom, store.height * vp.zoom);
-    if (highlightAgent !== null) {
+    if (highlightAgent !== null || highlightMask) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
       const { owners, width } = store;
       for (let i = 0; i < owners.length; i++) {
-        if (owners[i] !== highlightAgent) continue;
+        const o = owners[i];
+        if (o !== highlightAgent && !(highlightMask && highlightMask[o])) continue;
         const x = i % width;
         const y = (i - x) / width;
         ctx.fillRect(vp.panX + x * vp.zoom, vp.panY + y * vp.zoom, vp.zoom, vp.zoom);
@@ -111,7 +124,7 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
       ctx.lineWidth = 2;
       ctx.strokeRect(vp.panX + focus.x * vp.zoom, vp.panY + focus.y * vp.zoom, focus.w * vp.zoom, focus.h * vp.zoom);
     }
-  }, [store, version, vp, highlightAgent, size, focus, tool, hover]);
+  }, [store, version, vp, highlightAgent, highlightMask, size, focus, tool, hover]);
 
   const toPixel = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!store || !vp) return null;
