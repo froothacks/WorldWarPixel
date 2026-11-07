@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -111,6 +112,22 @@ ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/config")
+async def health_config() -> dict[str, object]:
+    """Deployment self-check: which env/config values the process sees (no secret values)."""
+    s = get_settings()
+    return {
+        "openai_base_url": s.openai_base_url,
+        "openai_model": s.openai_model,
+        "is_modal_endpoint": s.is_modal_endpoint,
+        "api_key": s.api_key() != "none",
+        "modal_key": bool(s.modal_key.get_secret_value()),
+        "modal_secret": bool(s.modal_secret.get_secret_value()),
+        "god_token": bool(s.god_token.get_secret_value()),
+        "env_keys": sorted(k for k in os.environ if k.startswith(("OPENAI_", "MODAL_", "GOD_"))),
+    }
 
 
 @app.post("/chat")

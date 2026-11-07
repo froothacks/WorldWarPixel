@@ -300,9 +300,6 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "draw_shape paint real pictures a bit at a time: call the same one again each turn until "
         "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
         "borders and backgrounds.\n"
-        "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
-        "them as the most important thing on the board: read them first, reply in that thread "
-        "and act on what they ask before anything else, in whatever way your persona would.\n"
         "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
         "territory changes and finished artwork on this canvas. If one concerns your "
         "country, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
@@ -570,8 +567,9 @@ class LLMPolicy:
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
+                self.stats["last_error"] = str(e)[:200]
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
-                thoughts.append(f"(model call failed: {type(e).__name__})")
+                thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
                 break
             _sample(self._latency["model"], time.monotonic() - call_t0)
             msg = response.choices[0].message

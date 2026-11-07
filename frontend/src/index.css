@@ -387,3 +387,14 @@ button.text:hover { background: none; color: var(--text); }
 .god-reply-label { font-size: 12px; color: var(--accent); white-space: nowrap; }
 .god-reply input { flex: 1; min-width: 140px; }
 .god-reply .error { color: var(--red, #e5484d); flex: 1 1 100%; }
+
+.errbar {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-bottom: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+  padding: 5px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
