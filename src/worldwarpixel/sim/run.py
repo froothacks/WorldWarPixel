@@ -32,20 +32,20 @@ class RunConfig(BaseModel):
     height: int = Field(default=320, ge=16, le=4096)
     agents: int = Field(default=100, ge=1, le=MAX_AGENTS)
     cooldown: float = Field(
-        default=3.0,
+        default=0.5,
         gt=0,
         description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
-        default=0.1,
+        default=0.03,
         ge=0,
         le=5,
         description="Seconds between an agent's successive pixels; 0 paints a whole turn at once",
     )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
-    pixels_per_turn: int = Field(default=40, ge=1, le=1024)
+    pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=10, ge=1, le=1000, description="Turns in flight at once")
+    max_concurrency: int = Field(default=16, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
     narrator_interval: float = Field(
