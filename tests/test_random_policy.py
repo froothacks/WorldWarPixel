@@ -197,3 +197,28 @@ def test_random_policy_failed_claim_update_keeps_old_spot(
 
     assert board.reply_count(thread_id) == 1
     assert "now also holds" in board.thread(thread_id)[-1].body
+
+
+def test_random_policy_reclaims_after_board_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    board = Board()
+    agent = AgentSpec(1, "Priya Raman", "India", 2, 40, 40, 1.0)
+    policy = RandomWalkPolicy(seed=1, post_chance=1.0)
+    monkeypatch.setattr(policy._rng, "random", lambda: 0.0)
+    first_tools, _ = make_tools(board, posts=1, agent_id=agent.id, pixels=1, size=128)
+    first_obs = Observation(1.0, first_tools.budget, 128, 128, [])
+
+    asyncio.run(policy.act(agent, first_tools, first_obs))
+
+    old_thread_id = policy._claims[agent.id][0]
+    board.clear()
+    agent.home_x += CLAIM_MOVE_PX + 5
+    second_tools, _ = make_tools(board, posts=1, agent_id=agent.id, pixels=1, size=128)
+    second_obs = Observation(1.0, second_tools.budget, 128, 128, [])
+
+    asyncio.run(policy.act(agent, second_tools, second_obs))
+
+    claims = [thread for thread in board.threads() if thread.title and "claims" in thread.title]
+    assert len(claims) == 1
+    new_thread_id = claims[0].id
+    assert new_thread_id != old_thread_id
+    assert policy._claims[agent.id][0] == new_thread_id

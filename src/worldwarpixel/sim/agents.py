@@ -123,6 +123,15 @@ class RandomWalkPolicy:
             thought += " " + self._post(agent, tools, obs.board, rng)
         return thought
 
+    def _claim(self, agent: AgentSpec, tools: ToolSet, x: int, y: int) -> str:
+        result = tools.post_thread(
+            f"{agent.country} claims ({x}, {y})",
+            "Anyone nearby want to coordinate colours?",
+        )
+        thread_id = int(str(result["thread_id"]))
+        self._claims[agent.id] = (thread_id, x, y)
+        return "Started a thread to claim my area."
+
     def _post(
         self,
         agent: AgentSpec,
@@ -177,16 +186,16 @@ class RandomWalkPolicy:
                 x, y = agent.home_x, agent.home_y
                 claim = self._claims.get(agent.id)
                 if claim is None:
-                    result = tools.post_thread(
-                        f"{agent.country} claims ({x}, {y})",
-                        "Anyone nearby want to coordinate colours?",
-                    )
-                    thread_id = int(str(result["thread_id"]))
-                    self._claims[agent.id] = (thread_id, x, y)
-                    return "Started a thread to claim my area."
+                    return self._claim(agent, tools, x, y)
                 thread_id, claim_x, claim_y = claim
                 if math.dist((x, y), (claim_x, claim_y)) >= CLAIM_MOVE_PX:
-                    tools.reply(thread_id, f"{agent.country} now also holds ({x}, {y}).")
+                    try:
+                        tools.reply(thread_id, f"{agent.country} now also holds ({x}, {y}).")
+                    except ToolError as e:
+                        if "does not exist" not in str(e):
+                            raise
+                        del self._claims[agent.id]
+                        return self._claim(agent, tools, x, y)
                     self._claims[agent.id] = (thread_id, x, y)
                     return f"Updated my claim in thread {thread_id}."
             return "Stayed quiet."
