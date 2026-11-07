@@ -194,7 +194,6 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
               setPlaying(false);
               setPos(+e.target.value);
             }}
-            disabled={!data}
           />
           <span className="small muted">
             {pos + 1}/{data?.frames.length ?? 0} · +{elapsed}s
