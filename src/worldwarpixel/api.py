@@ -47,9 +47,10 @@ class RunManager:
         return run
 
     async def delete(self, run_id: str) -> None:
-        run = self.get(run_id)
+        run = self.runs.pop(run_id, None)
+        if run is None:
+            raise HTTPException(404, f"run {run_id} not found")
         await run.stop()
-        del self.runs[run_id]
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
