@@ -18,16 +18,23 @@ from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
+MAX_AGENTS = 10_000
+"""Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
+list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
+by one core for the random policy (~100 turns/s)."""
+
+LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown")
+
 
 class RunConfig(BaseModel):
     width: int = Field(default=512, ge=16, le=4096)
     height: int = Field(default=320, ge=16, le=4096)
-    agents: int = Field(default=100, ge=1, le=5000)
+    agents: int = Field(default=100, ge=1, le=MAX_AGENTS)
     cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=40, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
+    max_concurrency: int = Field(default=10, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
     narrator_interval: float = Field(
@@ -316,9 +323,10 @@ class Run:
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
+        """Compact rows for the sidebar; persona text and card come from ``agent_detail``."""
         return [
             {
-                **a.to_dict(),
+                **{k: getattr(a, k) for k in LIST_FIELDS},
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }
