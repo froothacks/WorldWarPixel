@@ -5,6 +5,7 @@ export interface RunConfig {
   cooldown: number;
   jitter: number;
   pixels_per_turn: number;
+  pixel_interval: number;
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
@@ -20,9 +21,10 @@ export const DEFAULT_CONFIG: RunConfig = {
   width: 512,
   height: 320,
   agents: 100,
-  cooldown: 10,
+  cooldown: 3,
   jitter: 0.3,
   pixels_per_turn: 40,
+  pixel_interval: 0.1,
   posts_per_turn: 1,
   max_concurrency: 10,
   seed: null,
@@ -307,7 +309,7 @@ export const api = {
     }),
   godPace: (
     id: string,
-    pace: { cooldown?: number; pixels_per_turn?: number },
+    pace: { cooldown?: number; pixels_per_turn?: number; pixel_interval?: number },
   ) =>
     request<RunSummary>(`/runs/${id}/god/pace`, {
       method: "POST",

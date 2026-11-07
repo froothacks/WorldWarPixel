@@ -164,6 +164,7 @@ class GodAnnouncement(BaseModel):
 class GodPace(BaseModel):
     cooldown: float | None = Field(default=None, ge=0.5, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
+    pixel_interval: float | None = Field(default=None, ge=0, le=5)
 
 
 @router.post("/{run_id}/god/pixels")
@@ -205,7 +206,7 @@ async def god_announce(
 @router.post("/{run_id}/god/pace")
 async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = manager.get(run_id)
-    run.god_set_pace(body.cooldown, body.pixels_per_turn)
+    run.god_set_pace(body.cooldown, body.pixels_per_turn, body.pixel_interval)
     return run.summary()
 
 

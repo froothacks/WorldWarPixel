@@ -29,6 +29,7 @@ CONFIG = RunConfig(
     cooldown=0.01,
     jitter=0,
     pixels_per_turn=4,
+    pixel_interval=0,
     seed=1,
     stage_lines=4,
     stage_vote_seconds=3,

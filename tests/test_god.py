@@ -11,7 +11,14 @@ from worldwarpixel.sim.hub import RESYNC
 from worldwarpixel.sim.run import GOD_ID, GOD_NAME, Run, RunConfig
 
 CONFIG = RunConfig(
-    width=64, height=32, agents=3, cooldown=0.01, jitter=0, pixels_per_turn=4, seed=1
+    width=64,
+    height=32,
+    agents=3,
+    cooldown=0.01,
+    jitter=0,
+    pixels_per_turn=4,
+    seed=1,
+    pixel_interval=0,
 )
 
 
@@ -56,6 +63,8 @@ def test_god_board_and_pace() -> None:
         run.god_set_pace(cooldown=3.0, pixels_per_turn=99)
         assert all(a.cooldown == 3.0 for a in run.agents)
         assert run.config.pixels_per_turn == 99
+        run.god_set_pace(None, None, pixel_interval=0.25)
+        assert run.config.pixel_interval == 0.25
 
     asyncio.run(main())
 
