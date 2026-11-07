@@ -18,8 +18,7 @@ CONFIG = RunConfig(
     jitter=0,
     pixels_per_turn=4,
     seed=1,
-    pixel_interval=0,
-)
+).model_copy(update={"pixel_interval": 0})
 
 
 def test_god_paint_erase_and_clear() -> None:
@@ -71,7 +70,9 @@ def test_god_board_and_pace() -> None:
 
 def test_god_endpoints() -> None:
     with TestClient(app) as client:
-        run = client.post("/runs", json={**CONFIG.model_dump(), "policy": "random"}).json()
+        run = client.post(
+            "/runs", json={**CONFIG.model_dump(), "pixel_interval": 0.05, "policy": "random"}
+        ).json()
         rid = run["id"]
         r = client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 5], [2, 2, 6]]})
         assert r.status_code == 200 and r.json()["placed"] == 2
@@ -88,6 +89,15 @@ def test_god_endpoints() -> None:
         )
         r = client.post(f"/runs/{rid}/god/pace", json={"cooldown": 2.5})
         assert r.status_code == 200 and r.json()["config"]["cooldown"] == 2.5
+        for pixel_interval in (0, 0.01):
+            assert (
+                client.post(
+                    f"/runs/{rid}/god/pace", json={"pixel_interval": pixel_interval}
+                ).status_code
+                == 422
+            )
+        r = client.post(f"/runs/{rid}/god/pace", json={"pixel_interval": 0.05})
+        assert r.status_code == 200 and r.json()["config"]["pixel_interval"] == 0.05
         assert client.post(f"/runs/{rid}/god/clear-board").status_code == 200
         assert client.post(f"/runs/{rid}/god/clear-canvas").status_code == 200
         assert client.get(f"/runs/{rid}/threads").json() == []
@@ -99,9 +109,9 @@ def test_god_endpoints_can_be_locked_with_a_token(monkeypatch: pytest.MonkeyPatc
     get_settings.cache_clear()
     try:
         with TestClient(app) as client:
-            rid = client.post("/runs", json={**CONFIG.model_dump(), "policy": "random"}).json()[
-                "id"
-            ]
+            rid = client.post(
+                "/runs", json={**CONFIG.model_dump(), "pixel_interval": 0.05, "policy": "random"}
+            ).json()["id"]
             assert client.post(f"/runs/{rid}/god/clear-board").status_code == 403
             ok = client.post(f"/runs/{rid}/god/clear-board", headers={"X-God-Token": "s3cret"})
             assert ok.status_code == 200

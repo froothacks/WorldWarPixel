@@ -186,9 +186,9 @@ export default function StartScreen({ onStarted }: Props) {
                 Pixels per turn
                 <input type="number" min={1} max={1024} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
               </label>
-              <label title="Milliseconds between an agent's successive pixels; 0 paints a whole turn at once">
+              <label title="Milliseconds between an agent's successive pixels; minimum 50 ms">
                 Pixel gap (ms)
-                <input type="number" min={0} max={5000} step={10} value={Math.round(cfg.pixel_interval * 1000)} onChange={(e) => set("pixel_interval", +e.target.value / 1000)} />
+                <input type="number" min={50} max={5000} step={10} value={Math.round(cfg.pixel_interval * 1000)} onChange={(e) => set("pixel_interval", +e.target.value / 1000)} />
               </label>
               <label>
                 Posts per turn

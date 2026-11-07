@@ -1,5 +1,8 @@
 import asyncio
 
+import pytest
+from pydantic import ValidationError
+
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT, RESYNC, Hub
@@ -13,8 +16,13 @@ CONFIG = RunConfig(
     jitter=0,
     pixels_per_turn=4,
     seed=1,
-    pixel_interval=0,
-)
+).model_copy(update={"pixel_interval": 0})
+
+
+def test_pixel_interval_has_a_50_ms_minimum_and_default() -> None:
+    assert RunConfig().pixel_interval == 0.05
+    with pytest.raises(ValidationError):
+        RunConfig(pixel_interval=0.01)
 
 
 async def _settle() -> None:
