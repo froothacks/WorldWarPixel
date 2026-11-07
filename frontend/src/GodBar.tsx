@@ -19,7 +19,15 @@ interface Props {
 
 const SIZES = [1, 2, 4, 8, 16];
 
-export default function GodBar({ runId, run, palette, tool, onTool, onRun, onClose }: Props) {
+export default function GodBar({
+  runId,
+  run,
+  palette,
+  tool,
+  onTool,
+  onRun,
+  onClose,
+}: Props) {
   const [color, setColor] = useState(5);
   const [size, setSize] = useState(4);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,23 +57,37 @@ export default function GodBar({ runId, run, palette, tool, onTool, onRun, onClo
   };
 
   const announce = () => {
-    const title = window.prompt("Announcement title (agents will see this thread on the board):");
+    const title = window.prompt(
+      "Announcement title (agents will see this thread on the board):",
+    );
     if (!title) return;
     const body = window.prompt("Message:");
     if (!body) return;
     void act("announce", () => api.godAnnounce(runId, title, body));
   };
-  const pace = (cooldown: number) => void act("pace", () => api.godPace(runId, { cooldown }).then(onRun));
-  const pxPerTurn = (pixels_per_turn: number) => void act("pace", () => api.godPace(runId, { pixels_per_turn }).then(onRun));
+  const pace = (cooldown: number) =>
+    void act("pace", () => api.godPace(runId, { cooldown }).then(onRun));
+  const pxPerTurn = (pixels_per_turn: number) =>
+    void act("pace", () => api.godPace(runId, { pixels_per_turn }).then(onRun));
 
   return (
     <div className="godbar">
-      <strong title="You are the human in the loop. Everything here is visible to the agents.">⚡ God mode</strong>
+      <strong title="You are the human in the loop. Everything here is visible to the agents.">
+        ⚡ God mode
+      </strong>
       <span className="sep" />
-      <button className={tool?.mode === "paint" ? "primary" : ""} onClick={() => pick("paint")} title="Paint on the canvas as The Hand of God">
+      <button
+        className={tool?.mode === "paint" ? "primary" : ""}
+        onClick={() => pick("paint")}
+        title="Paint on the canvas as The Hand of God"
+      >
         Brush
       </button>
-      <button className={tool?.mode === "erase" ? "primary" : ""} onClick={() => pick("erase")} title="Erase pixels back to blank, unowned canvas">
+      <button
+        className={tool?.mode === "erase" ? "primary" : ""}
+        onClick={() => pick("erase")}
+        title="Erase pixels back to blank, unowned canvas"
+      >
         Eraser
       </button>
       <span className="swatches">
@@ -90,29 +112,68 @@ export default function GodBar({ runId, run, palette, tool, onTool, onRun, onClo
         </select>
       </label>
       <span className="sep" />
-      <button onClick={announce} disabled={busy !== null} title="Post a thread the agents will read and react to">
+      <button
+        onClick={announce}
+        disabled={busy !== null}
+        title="Post a thread the agents will read and react to"
+      >
         Announce
+      </button>
+      <button
+        className="ghost"
+        title="Set the X-God-Token for servers that lock god mode (GOD_TOKEN)"
+        onClick={() => {
+          const t = window.prompt(
+            "God token (leave empty to clear):",
+            localStorage.getItem("godToken") ?? "",
+          );
+          if (t === null) return;
+          if (t) localStorage.setItem("godToken", t);
+          else localStorage.removeItem("godToken");
+        }}
+      >
+        🔑
       </button>
       <label className="small" title="Seconds between each agent's turns">
         cooldown {run.config.cooldown}s
-        <input type="range" min={0.5} max={60} step={0.5} value={run.config.cooldown} onChange={(e) => pace(+e.target.value)} />
+        <input
+          type="range"
+          min={0.5}
+          max={60}
+          step={0.5}
+          value={run.config.cooldown}
+          onChange={(e) => pace(+e.target.value)}
+        />
       </label>
       <label className="small" title="Pixels each agent may paint per turn">
         px/turn
-        <input type="number" min={1} max={1024} value={run.config.pixels_per_turn} onChange={(e) => pxPerTurn(+e.target.value)} style={{ width: 64 }} />
+        <input
+          type="number"
+          min={1}
+          max={1024}
+          value={run.config.pixels_per_turn}
+          onChange={(e) => pxPerTurn(+e.target.value)}
+          style={{ width: 64 }}
+        />
       </label>
       <span className="sep" />
       <button
         className="danger"
         disabled={busy !== null}
-        onClick={() => window.confirm("Wipe the whole canvas?") && act("clear", () => api.godClearCanvas(runId).then(onRun))}
+        onClick={() =>
+          window.confirm("Wipe the whole canvas?") &&
+          act("clear", () => api.godClearCanvas(runId).then(onRun))
+        }
       >
         Clear canvas
       </button>
       <button
         className="danger"
         disabled={busy !== null}
-        onClick={() => window.confirm("Delete every thread on the board?") && act("clear", () => api.godClearBoard(runId).then(onRun))}
+        onClick={() =>
+          window.confirm("Delete every thread on the board?") &&
+          act("clear", () => api.godClearBoard(runId).then(onRun))
+        }
       >
         Clear board
       </button>
