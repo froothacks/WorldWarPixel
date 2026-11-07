@@ -192,9 +192,7 @@ class Run:
             "agents": len(self.agents),
             "threads": len(self.board.threads()),
             "clients": self.hub.client_count,
-            "llm": public_stats()
-            if (public_stats := getattr(self.policy, "public_stats", None))
-            else None,
+            "llm": public_stats() if public_stats else None,
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
