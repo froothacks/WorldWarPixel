@@ -15,7 +15,12 @@ const SIZES: [number, number][] = [
 ];
 
 const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
-  { value: "llm", title: "Language model", hint: "Each turn is one call to the configured model." },
+  { value: "llm", title: "Free-for-all", hint: "Language model, no steering. Each turn is one call to the configured model." },
+  {
+    value: "llm-guided",
+    title: "Guided",
+    hint: "Language model with r/place framing, stencil tools and free-spot hints. One call per turn.",
+  },
   { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
 ];
 

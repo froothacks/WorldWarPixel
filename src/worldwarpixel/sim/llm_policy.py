@@ -204,7 +204,10 @@ TOOLS: list[ChatCompletionToolParam] = [
 ]
 
 READ_TOOLS = {"view_canvas", "read_thread"}
+STENCIL_TOOLS = {"draw_flag", "draw_text", "draw_shape"}
+FREE_TOOLS = [t for t in TOOLS if t["function"]["name"] not in STENCIL_TOOLS]
 MAX_ROUNDS = 2
+BOARD_THREADS = 8
 
 
 def palette_legend() -> str:
@@ -212,6 +215,22 @@ def palette_legend() -> str:
 
 
 def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Free-for-all: who you are, what you can do, nothing about what you should do."""
+    return (
+        f"You are {agent.persona}\n\n"
+        f"You share a {width}x{height} pixel canvas (x grows right, y grows down, 0-based) and a "
+        "public message board with many other people. "
+        f"Each turn you may paint up to {pixels} pixels and make up to {posts} post or reply. "
+        f"Colours: {palette_legend()}. Your usual colour is {agent.color} "
+        f"({COLOR_NAMES[agent.color]}). You started near ({agent.home_x}, {agent.home_y}).\n\n"
+        "Each turn you see the canvas and the top threads on the board. "
+        "Do whatever you want.\n\n"
+        "Write one or two short sentences of thought in first person, then use the tools."
+    )
+
+
+def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Opt-in scaffolding: r/place framing, examples, stencil tools and spot hints."""
     return (
         f"You are {agent.persona}\n\n"
         f"You have joined a global r/place-style event: a {width}x{height} shared pixel canvas "
@@ -289,7 +308,29 @@ def pick_threads(
     return head + rng.sample(rest, min(len(rest), k - len(head)))
 
 
-def user_prompt(
+def board_lines(threads: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f'- thread {d["thread_id"]} "{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
+        + (
+            f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
+            if d["latest"]
+            else ""
+        )
+        for d in threads
+    )
+
+
+def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
+    """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
+    board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
+    look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
+    return (
+        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
+        f"{look}\nTop threads on the board:\n{board}"
+    )
+
+
+def guided_user_prompt(
     agent: AgentSpec,
     obs: Observation,
     view: str,
@@ -297,18 +338,7 @@ def user_prompt(
     project: str = "",
 ) -> str:
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
-    board = (
-        "\n".join(
-            f'- thread {d["thread_id"]} "{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
-            + (
-                f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
-                if d["latest"]
-                else ""
-            )
-            for d in threads
-        )
-        or "- (no threads yet; you could start one)"
-    )
+    board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
         f"{view}\n\n{project}Some current threads:\n{board}\n\n"
@@ -344,12 +374,22 @@ def latency_summary(samples: list[float]) -> dict[str, float] | None:
 
 
 class LLMPolicy:
-    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
+    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text.
+
+    By default agents get a neutral prompt and only the basic tools. ``guided=True`` adds the
+    r/place framing, stencil tools, drawing memory and busy/quiet-area hints.
+    """
 
     def __init__(
-        self, client: AsyncOpenAI, model: str, timeout: float = 45.0, vision: bool = True
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 45.0,
+        vision: bool = True,
+        guided: bool = False,
     ) -> None:
         self._client = client
+        self._guided = guided
         self._model = model
         self._timeout = timeout
         self._vision = vision
@@ -365,7 +405,8 @@ class LLMPolicy:
         self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
-        return system_prompt(agent, width, height, pixels, posts)
+        prompt = guided_system_prompt if self._guided else system_prompt
+        return prompt(agent, width, height, pixels, posts)
 
     def public_stats(self) -> dict[str, Any]:
         """Counters plus latency percentiles of the recent model calls and whole turns."""
@@ -376,12 +417,16 @@ class LLMPolicy:
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         turn_t0 = time.monotonic()
-        text = user_prompt(
-            agent,
-            obs,
-            region_view(agent, tools.regions(limit=None), self._rng),
-            self._rng,
-            self._project_note(agent),
+        text = (
+            guided_user_prompt(
+                agent,
+                obs,
+                region_view(agent, tools.regions(limit=None), self._rng),
+                self._rng,
+                self._project_note(agent),
+            )
+            if self._guided
+            else user_prompt(agent, obs, self._vision)
         )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
@@ -402,7 +447,7 @@ class LLMPolicy:
         messages: list[ChatCompletionMessageParam] = [
             {
                 "role": "system",
-                "content": system_prompt(
+                "content": self.describe(
                     agent, obs.canvas_width, obs.canvas_height, obs.budget.pixels, obs.budget.posts
                 ),
             },
@@ -530,7 +575,9 @@ class LLMPolicy:
             a["moved"] = True
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
-        """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
+        """Guided only: once the board is busy, usually hide post_thread so agents reply."""
+        if not self._guided:
+            return FREE_TOOLS
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
             return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
         return TOOLS
@@ -558,6 +605,8 @@ class LLMPolicy:
     ) -> dict[str, Any]:
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
+        if name in STENCIL_TOOLS and not self._guided:
+            raise ToolError(f"unknown tool {name}")
 
         def colour(v: Any) -> int:
             try:

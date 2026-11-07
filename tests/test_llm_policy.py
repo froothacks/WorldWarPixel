@@ -140,6 +140,35 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     )
 
 
+def test_default_prompt_is_neutral_and_offers_only_basic_tools() -> None:
+    agent, tools, obs, _ = _setup()
+    obs.board = [
+        {"thread_id": 7, "title": "newest", "author": "B", "replies": 0, "latest": None},
+        {"thread_id": 3, "title": "older", "author": "C", "replies": 2, "latest": None},
+    ]
+    client = FakeClient([_response("Hm.", [])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    req = client.chat.completions.requests[0]
+    system = req["messages"][0]["content"]
+    user = req["messages"][1]["content"][0]["text"]
+    for steer in ("r/place", "flag", "religio", "alliance", "free spot", "drawing"):
+        assert steer not in system.lower() and steer not in user.lower()
+    assert user.index("thread 7") < user.index("thread 3")
+    assert "view_canvas" in user
+    names = {t["function"]["name"] for t in req["tools"]}
+    assert names.isdisjoint({"draw_flag", "draw_text", "draw_shape"}) and "post_thread" in names
+    guided = LLMPolicy(client, "m", guided=True)  # type: ignore[arg-type]
+    assert "r/place" in guided.describe(agent, 64, 40, 4, 1)
+
+
+def test_stencil_tools_are_rejected_unless_guided() -> None:
+    agent, tools, _, _ = _setup()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    with pytest.raises(ToolError):
+        policy._dispatch(agent, tools, "draw_flag", {"country": "india", "x": 0, "y": 0})
+
+
 def test_follow_up_failure_keeps_completed_actions() -> None:
     agent, tools, obs, events = _setup()
 
@@ -321,7 +350,7 @@ def test_successful_tool_calls_emit_action_events() -> None:
     client = FakeClient(
         [_response("Flag.", [("draw_flag", {"country": "india", "x": 2, "y": 2, "width": 9})])]
     )
-    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    policy = LLMPolicy(client, "m", vision=False, guided=True)  # type: ignore[arg-type]
     asyncio.run(policy.act(agent, tools, obs))
     actions = [p for k, p in events if k == "action"]
     assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
@@ -330,7 +359,7 @@ def test_successful_tool_calls_emit_action_events() -> None:
 
 def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> None:
     canvas, board = Canvas(128, 64), Board()
-    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    policy = LLMPolicy(FakeClient([]), "m", vision=False, guided=True)  # type: ignore[arg-type]
     first = AgentSpec(1, "A", "India", 5, 0, 0, 1.0, "A.")
     second = AgentSpec(2, "B", "Japan", 6, 0, 0, 1.0, "B.")
     flag = {"country": "india", "x": 10, "y": 10, "width": 12}

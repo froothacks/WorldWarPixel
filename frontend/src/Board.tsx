@@ -11,24 +11,51 @@ interface Props {
   totalThreads: number;
   open: number | null;
   onOpen: (threadId: number | null) => void;
+  onVoted: () => void;
   hidden?: boolean;
 }
+
+type MyVotes = Record<number, 1 | -1>;
+
+function loadVotes(runId: string): MyVotes {
+  try {
+    return JSON.parse(localStorage.getItem(`wwp-votes-${runId}`) ?? "{}") as MyVotes;
+  } catch {
+    return {};
+  }
+}
+
+function voterId(): string {
+  let id = localStorage.getItem("wwp-voter");
+  if (!id) {
+    id =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem("wwp-voter", id);
+  }
+  return id;
+}
+
+/** Seconds of recency one net vote is worth; mirrors VOTE_BOOST in sim/board.py. */
+const VOTE_BOOST = 60;
+const rank = (t: ThreadDigest) => t.last_activity + (t.votes ?? 0) * VOTE_BOOST;
 
 type Sort = "active" | "new" | "top";
 
 const SORTS: { key: Sort; label: string; title: string }[] = [
-  { key: "active", label: "Active", title: "Most recent activity first" },
+  { key: "active", label: "Active", title: "Most recent activity first; each net vote moves a thread up or down" },
   { key: "new", label: "New", title: "Newest threads first" },
   { key: "top", label: "Top", title: "Most replies first" },
 ];
 
 const sorters: Record<Sort, (a: ThreadDigest, b: ThreadDigest) => number> = {
-  active: (a, b) => b.last_activity - a.last_activity,
+  active: (a, b) => rank(b) - rank(a),
   new: (a, b) => b.created_at - a.created_at,
   top: (a, b) => b.replies - a.replies || b.last_activity - a.last_activity,
 };
 
-export default function Board({ runId, threads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen, hidden = false }: Props) {
+export default function Board({ runId, threads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen, onVoted, hidden = false }: Props) {
   const now = useNow();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("active");
@@ -37,6 +64,31 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
   const [frozen, setFrozen] = useState<number[] | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listScroll = useRef(0);
+  const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
+  const voteQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const saveVote = (threadId: number, value: 0 | 1 | -1) => {
+    const v = loadVotes(runId);
+    if (value === 0) delete v[threadId];
+    else v[threadId] = value;
+    localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(v));
+    setMyVotes(v);
+  };
+
+  const vote = (threadId: number, dir: 1 | -1) => {
+    const prev = loadVotes(runId)[threadId] ?? 0;
+    const next = prev === dir ? 0 : dir;
+    saveVote(threadId, next);
+    // Send votes one at a time so the server ends up with the last click.
+    voteQueue.current = voteQueue.current.then(() =>
+      api
+        .vote(runId, threadId, voterId(), next)
+        .then(onVoted)
+        .catch(() => {
+          if ((loadVotes(runId)[threadId] ?? 0) === next) saveVote(threadId, prev);
+        }),
+    );
+  };
 
   const isUnread = useCallback(
     (t: ThreadDigest) => t.last_activity > (seen.get(t.thread_id) ?? mountedAt),
@@ -80,7 +132,8 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
     const rows = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>(".thread-row") ?? []);
     if (rows.length === 0) return;
     e.preventDefault();
-    const i = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const current = document.activeElement?.closest(".thread-item")?.querySelector(".thread-row");
+    const i = rows.indexOf(current as HTMLButtonElement);
     const next = e.key === "ArrowDown" ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1);
     rows[next].focus();
   };
@@ -158,8 +211,27 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
         {threads.length === 0 && <p className="muted small pad">No posts yet.</p>}
         {threads.length > 0 && shown.length === 0 && <p className="muted small pad">No threads match “{query}”.</p>}
         {shown.map((t) => (
+          <div key={t.thread_id} className="thread-item">
+          <div className="voter">
+            <button
+              className={`vote ${myVotes[t.thread_id] === 1 ? "on" : ""}`}
+              title="Upvote: move this thread up the board (agents see the board in this order)"
+              aria-label="Upvote"
+              onClick={() => vote(t.thread_id, 1)}
+            >
+              ▲
+            </button>
+            <span className="small">{t.votes ?? 0}</span>
+            <button
+              className={`vote ${myVotes[t.thread_id] === -1 ? "on" : ""}`}
+              title="Downvote: move this thread down the board"
+              aria-label="Downvote"
+              onClick={() => vote(t.thread_id, -1)}
+            >
+              ▼
+            </button>
+          </div>
           <button
-            key={t.thread_id}
             className={`thread-row ${isUnread(t) ? "unread" : ""} ${t.author_id === GOD_ID ? "god" : ""}`}
             onClick={() => openThread(t.thread_id)}
           >
@@ -189,6 +261,7 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
               </span>
             )}
           </button>
+          </div>
         ))}
         {totalThreads > threads.length && (
           <p className="muted small pad center">Showing the {threads.length} most recently active threads.</p>

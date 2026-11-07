@@ -63,12 +63,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         agent_model = settings.agent_model or settings.openai_model
 
         def make_policy(config: RunConfig) -> Policy:
-            if config.policy == "llm":
+            if config.policy in ("llm", "llm-guided"):
                 return LLMPolicy(
                     client,
                     agent_model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision,
+                    guided=config.policy == "llm-guided",
                 )
             return random_policy(config)
 

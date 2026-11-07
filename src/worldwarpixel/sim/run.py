@@ -29,7 +29,10 @@ class RunConfig(BaseModel):
     posts_per_turn: int = Field(default=1, ge=0, le=10)
     max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
     seed: int | None = None
-    policy: Literal["llm", "random"] = "llm"
+    policy: Literal["llm", "llm-guided", "random"] = Field(
+        default="llm",
+        description="llm: free-for-all; llm-guided: adds r/place framing, stencils and hints",
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )
@@ -85,7 +88,7 @@ class Run:
         self._tasks: list[asyncio.Task[None]] = []
         self.narrator = Narrator(
             self,
-            narrator_model if config.policy == "llm" else None,
+            narrator_model if config.policy != "random" else None,
             self._running,
             interval=config.narrator_interval,
             include_image=config.narrator_canvas_image,
@@ -147,6 +150,13 @@ class Run:
         )
         return post.to_dict()
 
+    def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
+        """A viewer's vote on a thread (one per voter); it shifts where the board ranks it."""
+        votes = self.board.vote(thread_id, voter, value)
+        self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
+        self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
+        return votes
+
     def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
         """God announcements from the last `window` seconds, newest last, for the observation."""
         cutoff = self._clock() - window
@@ -164,10 +174,7 @@ class Run:
             out.append(
                 {
                     "thread_id": a["thread_id"],
-                    "title": (
-                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
-                        "(everyone sees this; react however your persona would)"
-                    ),
+                    "title": f"📢 ANNOUNCEMENT: {a['title']} — {a['body']}",
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,

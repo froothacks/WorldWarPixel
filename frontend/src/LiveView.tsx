@@ -108,6 +108,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           });
           break;
         case "post.created":
+        case "thread.voted":
           scheduleThreadRefresh();
           break;
         case "board.cleared":
@@ -328,6 +329,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           totalThreads={run.threads}
           open={openThread}
           onOpen={setOpenThread}
+          onVoted={scheduleThreadRefresh}
         />
         {selectedAgent ? (
           <AgentDrawer
