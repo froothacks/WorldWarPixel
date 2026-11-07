@@ -81,7 +81,7 @@ export default function StartScreen({ onStarted }: Props) {
           </label>
           <label>
             Pixels per turn
-            <input type="number" min={1} max={256} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
+            <input type="number" min={1} max={1024} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
           </label>
           <label>
             Posts per turn

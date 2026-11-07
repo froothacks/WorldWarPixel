@@ -25,7 +25,7 @@ class RunConfig(BaseModel):
     agents: int = Field(default=100, ge=1, le=5000)
     cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
-    pixels_per_turn: int = Field(default=8, ge=1, le=256)
+    pixels_per_turn: int = Field(default=40, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
     max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
     seed: int | None = None
@@ -287,6 +287,8 @@ class Run:
         elif kind == "post":
             self.stats["posts"] += 1
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
+        elif kind == "action":
+            self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
         self.log.append(self.id, self._clock(), kind, agent_id, payload)
@@ -298,6 +300,7 @@ class Run:
     # -- read model ------------------------------------------------------------------------
 
     def summary(self) -> dict[str, Any]:
+        public_stats = getattr(self.policy, "public_stats", None)
         return {
             "id": self.id,
             "state": self.state,
@@ -308,7 +311,7 @@ class Run:
             "agents": len(self.agents),
             "threads": len(self.board.threads()),
             "clients": self.hub.client_count,
-            "llm": getattr(self.policy, "stats", None),
+            "llm": public_stats() if public_stats else None,
             "narrator": dict(self.narrator.stats),
         }
 

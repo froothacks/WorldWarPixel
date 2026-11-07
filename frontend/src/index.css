@@ -130,3 +130,12 @@ button.ghost { background: transparent; border-color: transparent; }
 .swatch { width: 18px; height: 18px; padding: 0; border: 2px solid transparent; border-radius: 3px; }
 .swatch.on { border-color: #fff; box-shadow: 0 0 0 1px #000 inset; }
 .canvas-brush { cursor: crosshair; }
+
+.narr-events { margin: 4px 0 2px; font-size: 12px; }
+.narr-events summary { cursor: pointer; color: var(--muted, #9aa); }
+.narr-events ul { margin: 4px 0 0; padding-left: 4px; list-style: none; }
+.narr-events li { padding: 1px 0; }
+.ev-kind { display: inline-block; width: 1.2em; text-align: center; }
+.ev-raid .ev-kind { color: #f66; }
+.ev-repair .ev-kind, .ev-finished .ev-kind { color: #6c6; }
+.ev-team .ev-kind { color: #6af; }
