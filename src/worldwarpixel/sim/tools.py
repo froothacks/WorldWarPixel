@@ -31,6 +31,16 @@ class TurnBudget:
         }
 
 
+def apply_writes(
+    canvas: Canvas, writes: Sequence[PixelWrite], sink: Callable[[str, dict[str, Any]], None]
+) -> None:
+    """Paint pixels onto the canvas and report each one (with its previous owner) to the sink."""
+    for w in writes:
+        prev = canvas.owner(w.x, w.y)
+        canvas.write(w)
+        sink("pixel", {"x": w.x, "y": w.y, "color": w.color, "prev_owner": prev})
+
+
 class ToolSet:
     """The tools one agent may call during one turn, enforcing that turn's budget."""
 
@@ -42,6 +52,7 @@ class ToolSet:
         budget: TurnBudget,
         sink: EventSink,
         clock: Callable[[], float],
+        writer: Callable[[list[PixelWrite]], None] | None = None,
     ) -> None:
         self._canvas = canvas
         self._board = board
@@ -49,6 +60,7 @@ class ToolSet:
         self.budget = budget
         self._sink = sink
         self._clock = clock
+        self._writer = writer
 
     def _check(self, kind: str, n: int) -> None:
         left = getattr(self.budget, kind)
@@ -61,10 +73,11 @@ class ToolSet:
         setattr(self.budget, kind, getattr(self.budget, kind) - n)
 
     def _write(self, writes: list[PixelWrite]) -> None:
-        for w in writes:
-            prev = self._canvas.owner(w.x, w.y)
-            self._canvas.write(w)
-            self._sink("pixel", {"x": w.x, "y": w.y, "color": w.color, "prev_owner": prev})
+        """Hand accepted pixels to the run's writer (which may drip them out) or paint them now."""
+        if self._writer is not None:
+            self._writer(writes)
+        else:
+            apply_writes(self._canvas, writes, self._sink)
 
     def place_pixels(self, pixels: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
         if not pixels:
