@@ -60,7 +60,12 @@ def _setup() -> tuple[AgentSpec, ToolSet, Observation, list[tuple[str, dict[str,
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentSpec(1, "Priya Raman", "India", 5, 10, 10, 1.0, "Priya Raman, 34, from India.")
     tools = ToolSet(
-        canvas, board, 1, TurnBudget(pixels=4), lambda k, p: events.append((k, p)), lambda: 0.0
+        canvas,
+        board,
+        1,
+        TurnBudget(pixels=4),
+        lambda k, p: events.append((k, p)) if k != "action" else None,  # writes only
+        lambda: 0.0,
     )
     obs = Observation(1.0, tools.budget, 64, 40, [])
     return agent, tools, obs, events
@@ -297,3 +302,21 @@ def test_invented_tool_names_map_onto_real_tools() -> None:
     assert _canonical_tool("reply") == "reply"
     assert _canonical_tool("view_thread") == "read_thread"
     assert _canonical_tool("teleport") == "teleport"
+
+
+def test_successful_tool_calls_emit_action_events() -> None:
+    canvas, board = Canvas(64, 40), Board()
+    events: list[tuple[str, dict[str, Any]]] = []
+    agent = AgentSpec(1, "Priya Raman", "India", 5, 10, 10, 1.0, "Priya.")
+    tools = ToolSet(
+        canvas, board, 1, TurnBudget(pixels=40), lambda k, p: events.append((k, p)), lambda: 0.0
+    )
+    obs = Observation(1.0, tools.budget, 64, 40, [])
+    client = FakeClient(
+        [_response("Flag.", [("draw_flag", {"country": "india", "x": 2, "y": 2, "width": 9})])]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    actions = [p for k, p in events if k == "action"]
+    assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
+    assert actions[0]["args"]["country"] == "india" and actions[0]["result"]["placed"] == 40
