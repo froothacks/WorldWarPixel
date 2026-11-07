@@ -130,7 +130,7 @@ def test_spa_fallback_does_not_swallow_api_404s(
 
     (tmp_path / "index.html").write_text("<html>spa</html>")
     monkeypatch.setattr(app_module, "FRONTEND_DIST", tmp_path)
-    assert asyncio.run(app_module.frontend("some/ui/route")).path == str(tmp_path / "index.html")
+    assert Path(asyncio.run(app_module.frontend("some/ui/route")).path) == tmp_path / "index.html"
     with pytest.raises(HTTPException) as exc:
         asyncio.run(app_module.frontend("runs/nope/unknown"))
     assert exc.value.status_code == 404
