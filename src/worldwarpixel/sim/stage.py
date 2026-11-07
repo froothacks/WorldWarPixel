@@ -318,7 +318,9 @@ class Stage:
                 f"around ({x}, {y})."
             )
         intro += f" {self.topic}"
-        self._interjections.appendleft({"name": "Narrator", "text": intro})
+        self._interjections.appendleft(
+            {"name": "Narrator", "text": intro, "debate_id": self.debate_id}
+        )
         state = self.state(transcript=False)
         self._run.record("stage.debate", None, state)
         self._publish("stage.state", **state)
@@ -327,6 +329,10 @@ class Stage:
 
     def end_debate(self) -> None:
         self._drop_prepared()
+        self._interjections = deque(
+            (item for item in self._interjections if item.get("debate_id") is None),
+            maxlen=self._interjections.maxlen,
+        )
         self.phase = "idle"
         self.debaters = []
         self.vote_ends_at = None

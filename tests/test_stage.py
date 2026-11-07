@@ -145,6 +145,19 @@ def test_old_verdict_does_not_end_a_new_debate() -> None:
     asyncio.run(main())
 
 
+def test_end_debate_discards_queued_intro_but_keeps_audience_interjections() -> None:
+    run = make_run()
+    run.stage._interjections.append({"name": "Audience", "text": "Boo!"})
+    run.stage.start_debate(1, 2)
+
+    assert any("Debate #" in item["text"] for item in run.stage._interjections)
+    run.stage.end_debate()
+
+    assert not any("Debate #" in item["text"] for item in run.stage._interjections)
+    assert list(run.stage._interjections) == [{"name": "Audience", "text": "Boo!"}]
+    assert run.stage._interjections.maxlen == 10
+
+
 def test_reactions_during_playback_reach_a_later_debate_prompt() -> None:
     async def main() -> None:
         model = FakeModel()
