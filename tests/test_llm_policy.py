@@ -266,6 +266,14 @@ def test_paint_stencil_is_progressive_and_skips_matching_pixels() -> None:
     assert fresh().paint_stencil(cells)["placed"] == 1 and canvas.owner(*cells[0][:2]) == 1
 
 
+def test_paint_stencil_paints_colour_changes_before_claiming_blank_cells() -> None:
+    canvas, board = Canvas(64, 64), Board()
+    cells = flag_cells("japan", 0, 0, 24)  # mostly white on a white canvas
+    tools = ToolSet(canvas, board, 1, TurnBudget(pixels=8), lambda k, p: None, lambda: 0.0)
+    tools.paint_stencil(cells)
+    assert sum(1 for x, y, c in cells if c == 5 and canvas.get(x, y) == 5) == 8
+
+
 def test_match_name_handles_sloppy_country_strings() -> None:
     assert _match_name("Flag of India", FLAGS, "usa") == "india"
     assert _match_name("United States", FLAGS, "india") == "usa"
