@@ -12,6 +12,7 @@ import contextlib
 import hmac
 import json
 import logging
+import os
 import time
 import wave
 from dataclasses import dataclass
@@ -165,9 +166,10 @@ def dump_clip(device: Device, pcm: bytes, rate: int) -> None:
     folder = get_settings().voice_dump_dir
     if not folder:
         return
-    path = Path(folder) / f"{device.id}-{time.strftime('%H%M%S')}.wav"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as w:
+    path = Path(folder) / f"{device.id}-{time.strftime('%H%M%S')}-{time.time_ns() % 10**9}.wav"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as f, wave.open(f, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)
