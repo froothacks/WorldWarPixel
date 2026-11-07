@@ -115,3 +115,13 @@ def test_announcements_reach_the_observation_until_they_expire() -> None:
     run.god_announce("Again", "x")
     run.god_clear_board()
     assert run.recent_announcements() == []
+
+
+def test_announcement_is_pinned_in_the_observed_board() -> None:
+    run = Run("g", CONFIG, EventLog(), RandomWalkPolicy(seed=1))
+    run.board.post_thread(0, "Hello", "first", 0.0)
+    post = run.god_announce("Draw hearts", "A heart for every flag.")
+    board = run._announcement_digest() + run.board.digest(name_of=run.agent_name)
+    assert board[0]["thread_id"] == post["thread_id"] and board[0]["author"] == GOD_NAME
+    assert "Draw hearts" in board[0]["title"] and "every flag" in board[0]["title"]
+    assert board[-1]["title"] == "Hello"

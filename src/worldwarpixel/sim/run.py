@@ -153,6 +153,28 @@ class Run:
         self._announcements = [a for a in self._announcements if a["ts"] >= cutoff]
         return self._announcements[-3:]
 
+    def _announcement_digest(self) -> list[dict[str, Any]]:
+        """Recent announcements as pinned board entries, so every prompt version shows them."""
+        out: list[dict[str, Any]] = []
+        for a in self.recent_announcements():
+            try:
+                replies = len(self.board.thread(a["thread_id"])) - 1
+            except (KeyError, IndexError):
+                continue
+            out.append(
+                {
+                    "thread_id": a["thread_id"],
+                    "title": (
+                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
+                        "(everyone sees this; react however your persona would)"
+                    ),
+                    "author": GOD_NAME,
+                    "replies": replies,
+                    "latest": None,
+                }
+            )
+        return out
+
     def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
         """Change how fast agents act; takes effect from each agent's next turn."""
         if cooldown is not None:
@@ -234,8 +256,7 @@ class Run:
             budget=budget,
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
-            board=self.board.digest(name_of=self.agent_name),
-            announcements=self.recent_announcements(),
+            board=self._announcement_digest() + self.board.digest(name_of=self.agent_name),
         )
         self._set_status(agent.id, "thinking")
         async with self._sem:
