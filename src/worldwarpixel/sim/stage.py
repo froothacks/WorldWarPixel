@@ -189,7 +189,14 @@ class Stage:
         self._gates: dict[int, asyncio.Event] = {}
         self._rivalry: Counter[tuple[int, int]] = Counter()
         self._rivalry_at: dict[tuple[int, int], tuple[int, int]] = {}
-        self._prepared: tuple[int, int, asyncio.Task[dict[str, Any]]] | None = None
+        self._prepared: (
+            tuple[
+                int,
+                int,
+                asyncio.Task[tuple[dict[str, Any], Counter[tuple[str, int | None]]]],
+            ]
+            | None
+        ) = None
         self._next_line_id = 1
         self._next_auto_at = 0.0
         self._wake = asyncio.Event()
@@ -400,10 +407,11 @@ class Stage:
         task = self._take_prepared(debate, idx) or asyncio.create_task(
             self._compose(self.debaters[idx % 2])
         )
-        line = await task
+        line, seen = await task
         if self.phase != "debating" or self.debate_id != debate or self._interjections:
             return  # stopped, replaced or interrupted while composing: drop the stale line
         self._emit(line)
+        self._reactions -= seen
         self._spoken += 1
         if self._spoken < self.lines_per_debate:
             nxt = asyncio.create_task(self._compose(self.debaters[self._spoken % 2]))
@@ -454,7 +462,9 @@ class Stage:
         self._emit(line)
         await self._sleep(line["duration"] + self.line_gap)
 
-    def _take_prepared(self, debate: int, idx: int) -> asyncio.Task[dict[str, Any]] | None:
+    def _take_prepared(
+        self, debate: int, idx: int
+    ) -> asyncio.Task[tuple[dict[str, Any], Counter[tuple[str, int | None]]]] | None:
         prepared, self._prepared = self._prepared, None
         if prepared is None:
             return None
@@ -560,13 +570,17 @@ class Stage:
             thought = ""
         return f"{line} {thought}".strip()[:MAX_LINE_CHARS]
 
-    async def _compose(self, speaker_id: int) -> dict[str, Any]:
+    async def _compose(
+        self, speaker_id: int
+    ) -> tuple[dict[str, Any], Counter[tuple[str, int | None]]]:
         by_id = self._run.by_id
         speaker = by_id[speaker_id]
         opponent = by_id[next(d for d in self.debaters if d != speaker_id)]
         text, emotion = "", "defiant"
+        seen: Counter[tuple[str, int | None]] = Counter()
         if self._model is not None:
             try:
+                seen = Counter(self._reactions)
                 messages = cast(list[ChatCompletionMessageParam], self._messages(speaker, opponent))
                 for _ in range(2):  # one retry if the model just echoes an earlier line
                     text, emotion = parse_line(await self._model.complete(messages))
@@ -586,17 +600,20 @@ class Stage:
             f"of a crowd. Speak with a natural accent from {speaker.country}. "
             f"Emotion: {emotion}. Punchy and conversational."
         )
-        return await self._line(
-            "debate",
-            speaker_id,
-            speaker.name,
-            speaker.country,
-            speaker.color,
-            self.debaters.index(speaker_id),
-            text,
-            emotion,
-            voice,
-            instructions,
+        return (
+            await self._line(
+                "debate",
+                speaker_id,
+                speaker.name,
+                speaker.country,
+                speaker.color,
+                self.debaters.index(speaker_id),
+                text,
+                emotion,
+                voice,
+                instructions,
+            ),
+            seen,
         )
 
     async def _narrator_line(self, text: str, name: str, kind: LineKind) -> dict[str, Any]:
@@ -656,7 +673,6 @@ class Stage:
         self.transcript.append(line)
         self.stats["lines"] += 1
         self.stats["audio"] += int(line["audio"])
-        self._reactions.clear()
         self._run.record("stage.line", line["speaker_id"] or None, line)
         self._publish("stage.line", **line)
 

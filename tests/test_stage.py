@@ -127,6 +127,26 @@ def test_old_verdict_does_not_end_a_new_debate() -> None:
     asyncio.run(main())
 
 
+def test_reactions_during_playback_reach_a_later_debate_prompt() -> None:
+    async def main() -> None:
+        model = FakeModel()
+        run = make_run(model, FakeSpeech(seconds=0.2))
+        await run.start()
+        run.stage.start_debate(1, 2)
+        await wait_for(lambda: len(run.stage.transcript) >= 1)
+        assert run.stage.transcript[0]["speaker_id"] == 1
+
+        calls_before_reaction = len(model.calls)
+        run.stage.react("boo", 2)
+        await wait_for(lambda: len(model.calls) >= calls_before_reaction + 2)
+        later_calls = model.calls[calls_before_reaction:]
+        await run.stop()
+
+        assert any("boo" in str(call[-1]["content"]) for call in later_calls)
+
+    asyncio.run(main())
+
+
 def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
     async def main() -> None:
         model, speech = FakeModel(), FakeSpeech()
