@@ -42,7 +42,20 @@ export default function StartScreen({ onStarted }: Props) {
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
-    api.listModels().then(setModels).catch(() => setModels([]));
+    api
+      .listModels()
+      .then((ms) => {
+        setModels(ms);
+        // Fall back to the first available preset when the current choice is unusable
+        // (e.g. a Modal-only server where the gpt-6-luna default has no OpenAI key).
+        setCfg((c) => {
+          if (c.policy !== "llm" || ms.length === 0) return c;
+          if (ms.some((m) => m.id === c.model && m.available)) return c;
+          const first = ms.find((m) => m.available);
+          return first ? { ...c, model: first.id } : c;
+        });
+      })
+      .catch(() => setModels([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>

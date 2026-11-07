@@ -43,14 +43,14 @@ class Settings(BaseSettings):
             "none" if self.is_modal_endpoint else self.openai_api_key.get_secret_value() or "none"
         )
 
+    def modal_headers(self) -> dict[str, str]:
+        """Modal proxy-auth headers whenever the keys exist, whatever the chat endpoint is."""
+        key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
+        return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
+
     def default_headers(self) -> dict[str, str]:
         """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""
-        key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
-        return (
-            {"Modal-Key": key, "Modal-Secret": secret}
-            if key and secret and self.is_modal_endpoint
-            else {}
-        )
+        return self.modal_headers() if self.is_modal_endpoint else {}
 
 
 @lru_cache

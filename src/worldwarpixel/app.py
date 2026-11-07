@@ -66,7 +66,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     api_key="none",
                     base_url=spec.base_url,
                     timeout=settings.request_timeout,
-                    default_headers=settings.default_headers() or None,
+                    # Modal presets authenticate with their own headers, independent of
+                    # OPENAI_BASE_URL (which may point at api.openai.com for other presets).
+                    default_headers=settings.modal_headers() or None,
                 )
             else:
                 client = AsyncOpenAI(
