@@ -305,9 +305,13 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
         "them as the most important thing on the board: read them first, reply in that thread "
         "and act on what they ask before anything else, in whatever way your persona would.\n"
-        "- Give coordinates when you coordinate with others. Prefer replying in an existing "
-        "thread to starting a new one; address people by @Name. Never reuse another thread's "
-        "title; say something of your own.\n"
+        "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
+        "territory changes and finished artwork on this canvas. If one concerns your "
+        "country, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
+        "- Only post when it matters to others: a claim with coordinates, a call for help, "
+        "a threat, a deal, or an answer to someone. No greetings or status chatter. Prefer "
+        "replying in an existing thread to starting a new one; address people by @Name. "
+        "Never reuse another thread's title.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
         "intend; do not describe colour numbers, the image format or the tools."
     )
@@ -349,14 +353,25 @@ def region_view(
 def pick_threads(
     board: list[dict[str, Any]], rng: random.Random, k: int = 6
 ) -> list[dict[str, Any]]:
-    """A few of the most active threads plus a random sample, so agents don't all pile onto one."""
-    head, rest = board[:3], board[3:]
-    return head + rng.sample(rest, min(len(rest), k - len(head)))
+    """Keep important threads first, then mix a couple of recent ones with random choices."""
+    if k <= 0:
+        return []
+    tagged = [entry for entry in board if entry.get("tag")][:k]
+    untagged = [entry for entry in board if not entry.get("tag")]
+    count = min(2, max(0, k - len(tagged)), len(untagged))
+    picked = [*tagged, *untagged[:count]]
+    remaining = untagged[count:]
+    picked.extend(rng.sample(remaining, min(len(remaining), k - len(picked))))
+    return picked
+
+
+TAG_PREFIXES = {"dispatch": "[WORLD NEWS] ", "mention": "[about you] "}
 
 
 def board_lines(threads: list[dict[str, Any]]) -> str:
     return "\n".join(
-        f'- thread {d["thread_id"]} "{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
+        f"{TAG_PREFIXES.get(str(d.get('tag')), '')}- thread {d['thread_id']} "
+        f'"{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
         + (
             f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
             if d["latest"]
@@ -399,14 +414,19 @@ def memory_lines(obs: Observation) -> str:
     return "Your last turns:\n" + "\n".join(f"- {m}" for m in obs.memory) + "\n"
 
 
+def budget_line(agent: AgentSpec, obs: Observation) -> str:
+    b = obs.budget
+    posts = "no posts this turn (you posted recently)" if b.posts == 0 else f"{b.posts} post"
+    return f"Turn for {agent.name}. Budget: {b.pixels} pixels, {posts}, {b.votes} vote.\n"
+
+
 def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
     board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
     look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
     where = "your society's threads" if obs.society else "the board"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post, "
-        f"{obs.budget.votes} vote.\n"
+        f"{budget_line(agent, obs)}"
         f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}"
     )
 
@@ -421,9 +441,7 @@ def guided_user_prompt(
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
     board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post, "
-        f"{obs.budget.votes} vote.\n"
-        f"{view}\n\n{project}Some current threads:\n{board}\n\n"
+        f"{budget_line(agent, obs)}{view}\n\n{project}Some current threads:\n{board}\n\n"
         "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
         "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
         "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
@@ -658,8 +676,12 @@ class LLMPolicy:
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
         """Guided only: once the board is busy, usually hide post_thread so agents reply."""
+        free = FREE_TOOLS + SOCIETY_TOOLS if obs.society else FREE_TOOLS
+        tools = TOOLS if self._guided else free
+        if obs.budget.posts == 0:
+            return [t for t in tools if t["function"]["name"] not in ("post_thread", "reply")]
         if not self._guided:
-            return FREE_TOOLS + SOCIETY_TOOLS if obs.society else FREE_TOOLS
+            return tools
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
             return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
         return TOOLS

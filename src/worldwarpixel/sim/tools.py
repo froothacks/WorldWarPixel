@@ -206,6 +206,10 @@ class ToolSet:
 
     def _own_words(self, *texts: str) -> None:
         """Reject posts that parrot the organiser's pinned 📢 notices instead of answering them."""
+        if any("🗞" in t for t in texts):
+            raise ToolError(
+                "do not copy the 🗞 news; react to it in your own words with reply(thread_id=...)"
+            )
         if any("📢" in t or "ANNOUNCEMENT:" in t for t in texts):
             raise ToolError(
                 "do not copy the 📢 notice; answer it in your own words with reply(thread_id=...)"
@@ -238,6 +242,12 @@ class ToolSet:
     def reply(self, thread_id: int, body: str, parent_id: int | None = None) -> dict[str, Any]:
         self._check("posts", 1)
         self._own_words(body)
+        normalized = " ".join(body.casefold().split())
+        if any(
+            " ".join(post.body.casefold().split()) == normalized
+            for post in self._board.thread(thread_id)[-20:]
+        ):
+            raise ToolError("that was already said in this thread; say something new or stay quiet")
         try:
             post = self._board.reply(self._agent_id, thread_id, body, self._clock(), parent_id)
         except BoardError as e:

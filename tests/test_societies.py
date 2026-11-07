@@ -8,13 +8,13 @@ from starlette.websockets import WebSocketDisconnect
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.devices import parse_tokens
-from worldwarpixel.sim.agents import Observation, RandomWalkPolicy
+from worldwarpixel.sim.agents import AgentSpec, Observation, RandomWalkPolicy
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import SOCIETY_TOOLS, LLMPolicy, user_prompt
 from worldwarpixel.sim.run import Run, RunConfig
 from worldwarpixel.sim.societies import MURMUR_WINDOW, Societies, SocietyError
-from worldwarpixel.sim.tools import ToolError, TurnBudget
+from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
 def test_membership_join_cooldown_and_flow() -> None:
@@ -124,15 +124,36 @@ def test_runs_without_societies_are_unchanged() -> None:
         run.set_murmur(0, "x", "x")
 
 
+class _Poster:
+    async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
+        tools.post_thread(f"{agent.name} says hi", "hello")
+        return "posted"
+
+
 def test_societies_run_end_to_end() -> None:
     async def main() -> None:
-        cfg = RunConfig(width=32, height=32, agents=6, cooldown=0.01, jitter=0, seed=1, societies=2)
-        run = Run("e", cfg, EventLog(), RandomWalkPolicy(seed=1, post_chance=1.0))
+        cfg = RunConfig(
+            width=32,
+            height=32,
+            agents=6,
+            cooldown=0.01,
+            jitter=0,
+            seed=1,
+            societies=2,
+            post_cooldown_turns=0,
+        )
+        run = Run("e", cfg, EventLog(), _Poster())
+
+        def socs() -> set[int | None]:
+            return {run.board.society_of(int(str(d["thread_id"]))) for d in run.board.digest(100)}
+
         await run.start()
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if socs() == {0, 1}:
+                break
+            await asyncio.sleep(0.02)
         await run.stop()
-        socs = {run.board.society_of(d["thread_id"]) for d in run.board.digest(limit=100)}  # type: ignore[arg-type]
-        assert socs == {0, 1}
+        assert socs() == {0, 1}
 
     asyncio.run(main())
 

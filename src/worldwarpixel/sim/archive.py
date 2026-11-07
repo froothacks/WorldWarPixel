@@ -37,7 +37,7 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
                 prev = int(p.get("prev_owner", run.canvas.owner(x, y)))
                 owner = int(p.get("owner", e.agent_id or 0))
                 run.canvas.write(PixelWrite(x, y, int(p["color"]), owner))
-                run.world.observe_pixel(e.agent_id or 0, prev)
+                run.world.observe_pixel(e.agent_id or 0, prev, x, y)
             stats["pixels"] += 1
         elif e.kind == "god.clear_canvas":
             run.canvas.clear()
