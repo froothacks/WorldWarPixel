@@ -12,6 +12,7 @@ interface Props {
   highlightMask?: Uint8Array | null;
   onPickAgent: (agentId: number) => void;
   focus: Region | null;
+  focusScale?: number;
   /** God-mode brush; when set, dragging paints/erases instead of panning. */
   tool?: GodTool | null;
   onPaint?: (pixels: [number, number, number][], erase: boolean) => void;
@@ -40,6 +41,7 @@ export default function CanvasView({
   highlightMask = null,
   onPickAgent,
   focus,
+  focusScale = 0.5,
   tool = null,
   onPaint,
 }: Props) {
@@ -72,13 +74,13 @@ export default function CanvasView({
   // Pan and zoom so a region the narrator pointed at fills about half the viewport.
   useEffect(() => {
     if (!focus || !store || size.w === 0 || size.h === 0) return;
-    const zoom = Math.min(64, Math.max(0.1, Math.min(size.w / focus.w, size.h / focus.h) * 0.5));
+    const zoom = Math.min(64, Math.max(0.1, Math.min(size.w / focus.w, size.h / focus.h) * focusScale));
     const cx = focus.x + focus.w / 2;
     const cy = focus.y + focus.h / 2;
     setVp({ zoom, panX: size.w / 2 - cx * zoom, panY: size.h / 2 - cy * zoom });
     // Only re-run for a new focus request, not when the viewport resizes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus?.nonce, store]);
+  }, [focus?.nonce, focusScale, store]);
 
   useEffect(() => {
     const el = canvasRef.current;

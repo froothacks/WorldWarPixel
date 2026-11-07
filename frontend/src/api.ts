@@ -15,6 +15,7 @@ export interface RunConfig {
   stage_auto: boolean;
   stage_lines: number;
   stage_vote_seconds: number;
+  stage_hold_seconds: number;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -34,6 +35,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   stage_auto: false,
   stage_lines: 6,
   stage_vote_seconds: 20,
+  stage_hold_seconds: 120,
 };
 
 export type RunState = "created" | "running" | "paused" | "stopped";
@@ -194,6 +196,7 @@ export interface Snapshot {
   agents: Agent[];
   threads: ThreadDigest[];
   narrator: NarratorState;
+  stage: StageState;
 }
 
 export type StagePhase = "idle" | "debating" | "voting";
@@ -234,6 +237,14 @@ export interface StageState {
   debate_id: number;
   topic: string;
   region: { x: number; y: number; w: number; h: number } | null;
+  thread_id: number | null;
+  hold: {
+    agent_id: number;
+    region: { x: number; y: number; w: number; h: number };
+    until: number;
+    seconds_left: number;
+  } | null;
+  devices: Record<string, number>;
   debaters: Debater[];
   votes: Record<string, number>;
   vote_ends_at: number | null;
