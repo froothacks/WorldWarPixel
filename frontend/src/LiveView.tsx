@@ -345,7 +345,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           selected={selected}
           lastThought={lastThought}
           onSelect={setSelected}
-          hidden={selectedAgent !== null}
+          hidden={selectedAgent !== undefined}
         />
       </div>
       {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
