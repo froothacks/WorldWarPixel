@@ -98,6 +98,54 @@ class ToolSet:
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 
+    def paint_stencil(self, cells: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
+        """Paint towards a target picture: only cells that differ, in raster order, up to budget.
+
+        Calling again with the same stencil continues (or repairs) it, so big drawings take
+        several turns and a raided drawing can be restored.
+        """
+        # Visible progress first: cells whose colour changes, then same-coloured cells we merely
+        # claim from other agents (or from the blank background).
+        wanted = [
+            (x, y, c)
+            for x, y, c in cells
+            if self._canvas.in_bounds(x, y) and self._canvas.get(x, y) != c
+        ] + [
+            (x, y, c)
+            for x, y, c in cells
+            if self._canvas.in_bounds(x, y)
+            and self._canvas.get(x, y) == c
+            and self._canvas.owner(x, y) != self._agent_id
+        ]
+        if not cells:
+            raise ToolError("the stencil is empty")
+        if not any(self._canvas.in_bounds(x, y) for x, y, _ in cells):
+            raise ToolError("the drawing would be entirely off the canvas")
+        if not wanted:
+            return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
+        if self.budget.pixels <= 0:
+            raise ToolError("no pixel budget left this turn")
+        out = self.place_pixels(wanted[: self.budget.pixels])
+        out.pop("dropped", None)
+        out.pop("note", None)
+        remaining = len(wanted) - int(out["placed"])
+        out.update({"remaining": remaining, "done": remaining == 0})
+        if remaining:
+            out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
+        return out
+
+    def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:
+        """Log a successful tool call as a structured event (for the narrator and replay)."""
+        self._sink("action", {"tool": tool, "args": args, "result": result})
+
+    @property
+    def canvas_size(self) -> tuple[int, int]:
+        return self._canvas.width, self._canvas.height
+
+    def regions(self, limit: int | None = 10) -> list[dict[str, int]]:
+        """Cheap summary of the busiest canvas areas used to build the observation."""
+        return self._canvas.regions(limit)
+
     def png(self, max_side: int = 640) -> tuple[bytes, int]:
         """Free full-canvas image used to build the observation."""
         return self._canvas.to_png(max_side)

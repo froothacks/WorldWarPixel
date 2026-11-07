@@ -171,6 +171,8 @@ button.ghost { background: transparent; border-color: transparent; }
 .prompt pre { white-space: pre-wrap; font-size: 11px; line-height: 1.4; background: #1a1d23; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
 
 .godbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, #2a1f3d, #1b1f2a); flex-wrap: wrap; }
+.godbar .god-announce { display: flex; gap: 6px; align-items: center; flex: 1 1 100%; }
+.godbar .god-announce input { flex: 1; min-width: 120px; }
 .godbar .sep { width: 1px; height: 22px; background: var(--border); }
 .godbar label.small { display: flex; align-items: center; gap: 6px; }
 .godbar input[type="range"] { width: 120px; }
@@ -185,3 +187,12 @@ button.ghost { background: transparent; border-color: transparent; }
 .timelapse-canvas { width: min(80vw, 1024px); image-rendering: pixelated; background: #fff; border: 1px solid var(--border); }
 .timelapse-controls { display: flex; align-items: center; gap: 8px; }
 .timelapse-controls input[type="range"] { flex: 1; }
+
+.narr-events { margin: 4px 0 2px; font-size: 12px; }
+.narr-events summary { cursor: pointer; color: var(--muted, #9aa); }
+.narr-events ul { margin: 4px 0 0; padding-left: 4px; list-style: none; }
+.narr-events li { padding: 1px 0; }
+.ev-kind { display: inline-block; width: 1.2em; text-align: center; }
+.ev-raid .ev-kind { color: #f66; }
+.ev-repair .ev-kind, .ev-finished .ev-kind { color: #6c6; }
+.ev-team .ev-kind { color: #6af; }
