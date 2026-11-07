@@ -87,6 +87,7 @@ class OpenAINarratorModel:
             messages=messages,
             max_tokens=700,
             temperature=0.4,
+            frequency_penalty=0.5,
             timeout=self._timeout,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
@@ -160,7 +161,7 @@ def parse_reply(text: str) -> tuple[str, list[str], list[Any]]:
     """(headline, bullets, raw highlights) from the model's reply; tolerates plain text."""
     data = _extract_json(text)
     if isinstance(data, dict):
-        headline = str(data.get("headline") or "").strip()
+        headline = _tidy_headline(str(data.get("headline") or ""))
         raw_bullets = data.get("bullets")
         bullets = (
             [str(b).strip() for b in raw_bullets if str(b).strip()]
@@ -172,26 +173,41 @@ def parse_reply(text: str) -> tuple[str, list[str], list[Any]]:
             return headline, bullets[:4], highlights if isinstance(highlights, list) else []
     salvaged = _salvage_json(text)
     if salvaged is not None:
-        return salvaged
-    lines = [ln.strip(" -*•\t") for ln in text.splitlines() if ln.strip(" -*•\t")]
+        headline = _tidy_headline(salvaged[0])
+        if headline:
+            return headline, salvaged[1], salvaged[2]
+    if text.strip().startswith("{"):
+        return "(no response)", [], []
+    lines: list[str] = []
+    for line in text.splitlines():
+        cleaned = line.strip(" -*•\t")
+        if cleaned and not re.fullmatch(r'[\s{}\[\],"]+', cleaned):
+            lines.append(cleaned)
     if not lines:
         return "(no response)", [], []
-    return lines[0], lines[1:5], []
+    headline = _tidy_headline(lines[0])
+    return (headline, lines[1:5], []) if headline else ("(no response)", [], [])
 
 
-_JSON_STRING = r'"((?:[^"\\]|\\.)*)"'
+def _tidy_headline(h: str) -> str:
+    headline = next((part.strip() for part in h.split(" | ") if part.strip()), "")
+    headline = " ".join(headline.split())
+    if len(headline) > 160:
+        boundary = headline.rfind(" ", 0, 160)
+        headline = headline[: boundary if boundary > 0 else 160].rstrip() + "…"
+    return headline
 
 
 def _salvage_json(text: str) -> tuple[str, list[str], list[Any]] | None:
     """Pull headline/bullets out of JSON the model truncated or mangled."""
-    m = re.search(r'"headline"\s*:\s*' + _JSON_STRING, text)
+    m = re.search(r'"headline"\s*:\s*"((?:[^"\\]|\\.)*)"?', text)
     if not m:
         return None
     headline = _unescape(m.group(1))
     bullets: list[str] = []
     bm = re.search(r'"bullets"\s*:\s*\[(.*?)(?:\]|$)', text, re.S)
     if bm:
-        for raw in re.findall(_JSON_STRING, bm.group(1)):
+        for raw in re.findall(r'"((?:[^"\\]|\\.)*)"?', bm.group(1)):
             bullet = _unescape(raw).strip()
             if bullet and bullet not in bullets:
                 bullets.append(bullet)
@@ -691,7 +707,8 @@ class Narrator:
         else:
             lines.append("No new posts.")
         if d["previous_headlines"]:
-            lines.append("Your previous headlines: " + " | ".join(d["previous_headlines"]))
+            lines.append("Your previous headlines (do not repeat):")
+            lines += [f"- {headline}" for headline in d["previous_headlines"]]
         return "\n".join(lines)
 
     # -- composing updates -----------------------------------------------------------------

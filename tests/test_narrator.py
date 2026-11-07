@@ -98,7 +98,7 @@ def test_periodic_update_is_logged_published_and_snapshotted() -> None:
         assert run.summary()["narrator"]["updates"] == len(updates)
         # The second update only covers what happened after the first.
         if len(model.calls) > 1:
-            assert "Your previous headlines:" in _prompt_text(model.calls[1])
+            assert "Your previous headlines (do not repeat):" in _prompt_text(model.calls[1])
 
     asyncio.run(main())
 
@@ -275,8 +275,40 @@ def test_parse_reply_salvages_truncated_json() -> None:
     )
     headline, bullets, highlights = parse_reply(text)
     assert headline == "Noise spreads across the grid"
-    assert bullets == ["Agent 12 painted at (5, 5)", "Agent 3 replied in thread 4"]
+    assert bullets == [
+        "Agent 12 painted at (5, 5)",
+        "Agent 3 replied in thread 4",
+        "Agent 7 ov",
+    ]
     assert highlights == []
+
+
+def test_parse_reply_salvages_truncated_repeated_headline() -> None:
+    headline, _, _ = parse_reply(
+        '{"headline": "Rally at (64, 64) | Rally at (64, 64) | Rally at (6'
+    )
+    assert headline == "Rally at (64, 64)"
+
+
+def test_parse_reply_salvages_truncated_final_bullet() -> None:
+    assert parse_reply('{\n"headline": "H", "bullets": ["a", "b') == ("H", ["a", "b"], [])
+
+
+def test_parse_reply_ignores_bare_json_opening_brace() -> None:
+    assert parse_reply("{") == ("(no response)", [], [])
+
+
+def test_parse_reply_truncates_long_headlines() -> None:
+    headline, _, _ = parse_reply(json.dumps({"headline": "word " * 60}))
+    assert len(headline) <= 161 and headline.endswith("…")
+
+
+def test_render_digest_lists_previous_headlines_separately() -> None:
+    run = Run("h", CONFIG, EventLog(), RandomWalkPolicy(seed=1), narrator_model=None)
+    run.narrator.history.extend([{"headline": "First update"}, {"headline": "Second update"}])
+    rendered = run.narrator.render_digest(run.narrator.build_digest())
+    assert "Your previous headlines (do not repeat):\n- First update\n- Second update" in rendered
+    assert "First update | Second update" not in rendered
 
 
 def test_bucket_span_matches_bucket_math_for_odd_sizes() -> None:
