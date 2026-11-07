@@ -234,6 +234,9 @@ async def device_voice(request: Request, device: DeviceDep) -> dict[str, Any]:
             pcm, rate = data, RATE
         if len(pcm) > MAX_SECONDS * rate * 2:
             raise ValueError(f"clip longer than {MAX_SECONDS} s")
+        log.info("voice upload from %s: %s", device.id, clip_stats(pcm, rate))
+        with contextlib.suppress(OSError):
+            dump_clip(device, pcm, rate)
         transcript = await transcribe(request.app, pcm, rate)
         return await speak(request.app, run, device.society, transcript)
     except TranscriptionUnavailable as e:
