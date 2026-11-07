@@ -85,8 +85,6 @@ def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames:
                 if state[idx] != c:
                     state[idx] = c
                     pending[idx] = c
-                elif idx in pending:
-                    pending[idx] = c
         flush(cutoff)
     struct.pack_into("<H", out, 0, written)
     return bytes(out)
