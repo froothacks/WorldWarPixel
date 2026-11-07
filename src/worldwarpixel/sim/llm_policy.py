@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -6,7 +7,7 @@ import re
 import time
 from typing import Any, cast
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import (
     ChatCompletionContentPartParam,
     ChatCompletionMessageParam,
@@ -165,6 +166,8 @@ SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
 READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 MAX_ROUNDS = 2
 PAINT_ROUNDS = 2
+RATE_LIMIT_BACKOFF = (3.0, 8.0)
+"""Seconds (min, max) an agent waits after a 429 so a shared endpoint is not hammered."""
 """Extra model calls in a turn while the agent keeps painting and has pixels left."""
 BOARD_THREADS = 8
 
@@ -494,6 +497,8 @@ class LLMPolicy:
                 self.stats["last_error"] = str(e)[:200]
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
                 thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
+                if isinstance(e, RateLimitError):
+                    await asyncio.sleep(self._rng.uniform(*RATE_LIMIT_BACKOFF))
                 break
             _sample(self._latency["model"], time.monotonic() - call_t0)
             self.stats.pop("last_error", None)

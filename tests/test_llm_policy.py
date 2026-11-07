@@ -450,3 +450,29 @@ def test_reasoning_effort_is_sent_only_when_configured() -> None:
     first, second = client.chat.completions.requests
     assert "reasoning_effort" not in first["extra_body"]
     assert second["extra_body"]["reasoning_effort"] == "low"
+
+
+def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:
+    from openai import RateLimitError
+
+    from worldwarpixel.sim import llm_policy
+
+    agent, tools, obs, _ = _setup()
+    slept: list[float] = []
+
+    async def fake_sleep(s: float) -> None:
+        slept.append(s)
+
+    class Limited(FakeCompletions):
+        async def create(self, **kw: Any) -> Any:
+            err = RateLimitError.__new__(RateLimitError)
+            Exception.__init__(err, "Error code: 429")
+            raise err
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    client = FakeClient([])
+    client.chat.completions = Limited([])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert policy.stats["failures"] == 1 and len(slept) == 1
+    assert llm_policy.RATE_LIMIT_BACKOFF[0] <= slept[0] <= llm_policy.RATE_LIMIT_BACKOFF[1]
