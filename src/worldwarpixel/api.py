@@ -26,7 +26,7 @@ from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
-from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.stage import REACTIONS, SpeechSynth, StageBusy, wav
 from worldwarpixel.sim.timelapse import build_timelapse
 
@@ -199,10 +199,15 @@ class GodAnnouncement(BaseModel):
     body: str = Field(min_length=1, max_length=600)
 
 
+class GodReply(BaseModel):
+    thread_id: int = Field(ge=0)
+    body: str = Field(min_length=1, max_length=600)
+
+
 class GodPace(BaseModel):
     cooldown: float | None = Field(default=None, ge=0.1, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
-    pixel_interval: float | None = Field(default=None, ge=0, le=5)
+    pixel_interval: float | None = Field(default=None, ge=MIN_PIXEL_INTERVAL, le=5)
 
 
 @router.post("/{run_id}/god/pixels")
@@ -228,6 +233,17 @@ async def god_clear_board(run_id: str, manager: ManagerDep, _god: GodDep) -> dic
     run = await manager.fetch(run_id)
     run.god_clear_board()
     return run.summary()
+
+
+@router.post("/{run_id}/god/reply", status_code=201)
+async def god_reply(
+    run_id: str, body: GodReply, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
+    run = manager.get(run_id)
+    try:
+        return run.god_reply(body.thread_id, body.body)
+    except BoardError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/{run_id}/god/announce", status_code=201)

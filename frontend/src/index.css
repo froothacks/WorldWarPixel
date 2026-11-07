@@ -346,7 +346,6 @@ button.text:hover { background: none; color: var(--text); }
 
 .narr-row .narr-headline { border: 0; height: auto; padding: 0; text-align: left; background: none; font: inherit; color: var(--text); }
 .narr-row .narr-headline:disabled { opacity: 1; cursor: default; }
-
 /* Debate ------------------------------------------------------------------------------ */
 html.stage-page, html.stage-page body, html.stage-page #root { min-width: 0; }
 .debate-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; font-size: 12px; }
@@ -418,3 +417,8 @@ html.stage-page, html.stage-page body, html.stage-page #root { min-width: 0; }
   .presenter-text { font-size: 20px; }
   .debate-topic { max-width: 140px; }
 }
+/* God reply box at the bottom of an open thread */
+.god-reply { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--border-strong); background: var(--panel); flex-wrap: wrap; }
+.god-reply-label { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.god-reply input { flex: 1; min-width: 140px; }
+.god-reply .error { color: var(--red, #e5484d); flex: 1 1 100%; }

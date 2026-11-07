@@ -21,6 +21,7 @@ from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
+MIN_PIXEL_INTERVAL = 0.05
 MAX_AGENTS = 10_000
 """Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
@@ -39,10 +40,12 @@ class RunConfig(BaseModel):
         description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
-        default=0.03,
-        ge=0,
+        default=0.05,
+        ge=MIN_PIXEL_INTERVAL,
         le=5,
-        description="Seconds between an agent's successive pixels; 0 paints a whole turn at once",
+        description=(
+            "Seconds between an agent's successive pixels (at least 50 ms so batches animate in)"
+        ),
     )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=200, ge=1, le=1024)
@@ -203,6 +206,22 @@ class Run:
         self._on_write(author_id, "post", post.to_dict())
         return post.to_dict()
 
+    def god_reply(self, thread_id: int, body: str) -> dict[str, Any]:
+        """Reply in an existing thread as the human; pinned for agents like an announcement."""
+        post = self.board.reply(GOD_ID, thread_id, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        root = self.board.thread(thread_id)[0]
+        self._announcements.append(
+            {
+                "thread_id": thread_id,
+                "title": root.title,
+                "body": body,
+                "ts": post.created_at,
+                "reply": True,
+            }
+        )
+        return post.to_dict()
+
     def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
         """God announcements from the last `window` seconds, newest last, for the observation."""
         cutoff = self._clock() - window
@@ -217,13 +236,20 @@ class Run:
                 replies = len(self.board.thread(a["thread_id"])) - 1
             except (KeyError, IndexError):
                 continue
+            if a.get("reply"):
+                title = (
+                    f'📢 {GOD_NAME} replied in "{a["title"]}": {a["body"]} '
+                    "(answer this in that thread before anything else)"
+                )
+            else:
+                title = (
+                    f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
+                    "(everyone sees this; react however your persona would)"
+                )
             out.append(
                 {
                     "thread_id": a["thread_id"],
-                    "title": (
-                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
-                        "(everyone sees this; react however your persona would)"
-                    ),
+                    "title": title,
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,

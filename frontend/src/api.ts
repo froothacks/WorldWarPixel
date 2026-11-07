@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   cooldown: 0.5,
   jitter: 0.3,
   pixels_per_turn: 200,
-  pixel_interval: 0.03,
+  pixel_interval: 0.05,
   posts_per_turn: 1,
   max_concurrency: 16,
   seed: null,
@@ -317,6 +317,11 @@ export const api = {
     request<Post>(`/runs/${id}/god/announce`, {
       method: "POST",
       body: JSON.stringify({ title, body }),
+    }),
+  godReply: (id: string, threadId: number, body: string) =>
+    request<Post>(`/runs/${id}/god/reply`, {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, body }),
     }),
   godPace: (
     id: string,

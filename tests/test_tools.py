@@ -161,3 +161,17 @@ def test_blocked_stencil_skips_held_cells_to_paint_open_cells() -> None:
     assert out["remaining"] == 2 and not out["done"]
     assert [event[1]["x"] for event in events] == [2, 3]
     assert tools._canvas.get(2, 0) == tools._canvas.get(3, 0) == 3
+
+
+def test_posts_must_not_parrot_the_organiser_or_reuse_a_title() -> None:
+    board = Board()
+    tools = ToolSet(Canvas(8, 8), board, 1, TurnBudget(0, 5), lambda k, p: None, lambda: 0.0)
+    tid = tools.post_thread("Hearts everywhere", "Join me at (3, 3).")["thread_id"]
+    with pytest.raises(ToolError, match="already exists"):
+        tools.post_thread("hearts EVERYWHERE", "me too")
+    with pytest.raises(ToolError, match="own words"):
+        tools.post_thread("📢 ANNOUNCEMENT: Hearts", "copying")
+    with pytest.raises(ToolError, match="own words"):
+        tools.reply(tid, "📢 ANNOUNCEMENT: Hearts — paint hearts")
+    assert tools.reply(tid, "On my way.")["post_id"]
+    assert tools.budget.posts == 3, "rejected posts cost nothing"

@@ -240,6 +240,9 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "draw_shape paint real pictures a bit at a time: call the same one again each turn until "
         "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
         "borders and backgrounds.\n"
+        "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
+        "them as the most important thing on the board: read them first, reply in that thread "
+        "and act on what they ask before anything else, in whatever way your persona would.\n"
         "- Give coordinates when you coordinate with others. Prefer replying in an existing "
         "thread to starting a new one; address people by @Name. Never reuse another thread's "
         "title; say something of your own.\n"
@@ -315,7 +318,7 @@ def user_prompt(
         "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
         "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
         "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
-        "new one."
+        "new one. Anything marked 📢 from The Hand of God comes first: answer it and act on it."
     )
 
 
