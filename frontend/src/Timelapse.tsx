@@ -54,6 +54,9 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufRef = useRef<Uint8Array | null>(null);
   const builtRef = useRef(-1);
+  const recRef = useRef<MediaRecorder | null>(null);
+
+  useEffect(() => () => recRef.current?.stop(), []);
 
   useEffect(() => {
     fetch(`/runs/${runId}/timelapse?frames=240`)
@@ -112,6 +115,8 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
       setPos((p) => {
         if (p + 1 >= data.frames.length) {
           setPlaying(false);
+          if (recRef.current)
+            window.setTimeout(() => recRef.current?.stop(), 500);
           return p;
         }
         return p + 1;
@@ -128,20 +133,22 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => chunks.push(e.data);
     rec.onstop = () => {
+      recRef.current = null;
+      setRecording(false);
+      if (!canvasRef.current?.isConnected) return;
       const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `worldwarpixel-${runId}.webm`;
       a.click();
       URL.revokeObjectURL(url);
-      setRecording(false);
     };
+    recRef.current = rec;
     setRecording(true);
+    builtRef.current = -1;
     setPos(0);
     rec.start();
     setPlaying(true);
-    const total = (data.frames.length / fps) * 1000 + 500;
-    window.setTimeout(() => rec.stop(), total);
   };
 
   const frame = data?.frames[pos];
@@ -168,14 +175,18 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
         </header>
         <canvas ref={canvasRef} className="timelapse-canvas" />
         <div className="timelapse-controls">
-          <button onClick={() => setPlaying(!playing)} disabled={!data}>
+          <button
+            onClick={() => setPlaying(!playing)}
+            disabled={!data || recording}
+          >
             {playing ? "Pause" : "Play"}
           </button>
-          <button onClick={() => setPos(0)} disabled={!data}>
+          <button onClick={() => setPos(0)} disabled={!data || recording}>
             ⏮
           </button>
           <input
             type="range"
+            disabled={!data || recording}
             min={0}
             max={Math.max(0, (data?.frames.length ?? 1) - 1)}
             value={pos}
