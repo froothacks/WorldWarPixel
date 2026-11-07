@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -52,7 +53,9 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with AsyncOpenAI(
-        api_key="none",  # required by the SDK; Modal auth uses default_headers
+        # The endpoint auth goes through default_headers (Modal proxy); api_key only
+        # matters for bearer-authenticated endpoints like real OpenAI.
+        api_key=os.environ.get("OPENAI_API_KEY") or "none",
         base_url=settings.openai_base_url,
         timeout=settings.request_timeout,
         default_headers=settings.default_headers() or None,
