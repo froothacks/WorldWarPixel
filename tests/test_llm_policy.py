@@ -16,6 +16,7 @@ from worldwarpixel.sim.llm_policy import (
     _track_position,
     pick_threads,
     system_prompt,
+    user_prompt,
 )
 from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
@@ -257,8 +258,44 @@ def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
 def test_pick_threads_mixes_top_and_random_sample() -> None:
     board = [{"thread_id": i} for i in range(10)]
     picked = pick_threads(board, random.Random(1), k=6)
-    assert [d["thread_id"] for d in picked[:3]] == [0, 1, 2]
+    assert [d["thread_id"] for d in picked[:2]] == [0, 1]
     assert len(picked) == 6 and len({d["thread_id"] for d in picked}) == 6
+
+
+def test_pick_threads_keeps_tagged_entries_before_recent_and_random_threads() -> None:
+    board: list[dict[str, Any]] = [
+        {"thread_id": 0, "tag": "dispatch"},
+        {"thread_id": 1},
+        {"thread_id": 2, "tag": "announcement"},
+        {"thread_id": 3},
+        {"thread_id": 4, "tag": "mention"},
+        {"thread_id": 5},
+        {"thread_id": 6},
+    ]
+    picked = pick_threads(board, random.Random(1), k=5)
+    assert [entry["thread_id"] for entry in picked[:3]] == [0, 2, 4]
+    assert [entry["thread_id"] for entry in picked[3:5]] == [1, 3]
+
+
+def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
+    agent, _, obs, _ = _setup()
+    obs.board = [
+        {
+            "thread_id": 7,
+            "title": "⚔️ India vs Japan",
+            "author": "World News",
+            "replies": 0,
+            "latest": {"author": "World News", "body": "India and Japan are at war."},
+            "tag": "dispatch",
+        }
+    ]
+    obs.budget.posts = 0
+    prompt = user_prompt(agent, obs, "canvas")
+    assert "[WORLD NEWS] - thread 7" in prompt
+    assert "Budget: 4 pixels, no posts this turn (you posted recently)." in prompt
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    names = [tool["function"]["name"] for tool in policy._tools_for(obs)]
+    assert "post_thread" not in names and "reply" not in names
 
 
 def test_flag_cells_have_expected_layout() -> None:

@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
+from worldwarpixel.sim.agents import AgentSpec
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import Board, Post
+from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_SNAPSHOT
 from worldwarpixel.sim.run import RunConfig
@@ -119,3 +121,26 @@ def test_restored_runs_keep_god_pace_changes() -> None:
         0.5,
     )
     assert {a.cooldown for a in run.agents} == {2.5}
+
+
+def test_dispatch_posts_restore_with_the_world_news_author() -> None:
+    log = EventLog()
+    config = RunConfig(width=16, height=16, agents=1, seed=3, policy="random")
+    agent = AgentSpec(1, "Priya Raman", "India", 2, 0, 0, 1.0)
+    log.append(
+        "dispatch",
+        1.0,
+        "run.created",
+        None,
+        {"config": config.model_dump(), "agents": [agent.to_dict()]},
+    )
+    post = Post(1, DISPATCH_ID, 1, None, "⚔️ India vs Japan", "India is holding.", 2.0)
+    log.append("dispatch", 2.0, "post", DISPATCH_ID, post.to_dict())
+
+    run = restore_run(log, "dispatch")
+
+    assert run is not None
+    assert run.agent_name(DISPATCH_ID) == DISPATCH_NAME
+    assert run.board.threads() == [post]
+    assert run.world.snapshot()["edges"] == []
+    run.narrator.observe_write(DISPATCH_ID, "post", post.to_dict())

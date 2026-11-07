@@ -15,7 +15,7 @@ import { PixelStore } from "./pixelStore";
 import GodBar, { type GodTool } from "./GodBar";
 import DebateBar from "./DebateBar";
 import { useDebate, useStageAudio } from "./debate";
-import { GOD_ID, GOD_NAME } from "./api";
+import { DISPATCH_ID, DISPATCH_NAME, GOD_ID, GOD_NAME } from "./api";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
@@ -193,13 +193,23 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   );
   const agentName = useCallback(
     (id: number) =>
-      id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`),
+      id === DISPATCH_ID
+        ? DISPATCH_NAME
+        : id === GOD_ID
+          ? GOD_NAME
+          : (agentMap.get(id)?.name ?? `agent ${id}`),
     [agentMap],
   );
   const agentColor = useCallback(
     (id: number) => {
       const a = agentMap.get(id);
-      return a ? (palette[a.color] ?? "#888") : id === GOD_ID ? "#c9a7ff" : "#888";
+      return a
+        ? (palette[a.color] ?? "#888")
+        : id === DISPATCH_ID
+          ? "#e0b341"
+          : id === GOD_ID
+            ? "#c9a7ff"
+            : "#888";
     },
     [agentMap, palette],
   );
