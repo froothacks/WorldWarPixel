@@ -102,6 +102,9 @@ def test_tool_calls_are_executed_and_summarised() -> None:
         "no_tools": 0,
         "failures": 0,
     }
+    latency = policy.public_stats()["latency"]
+    assert latency["model"]["n"] == 1 and latency["turn"]["n"] == 1
+    assert 0 <= latency["turn"]["p50"] <= latency["turn"]["max"]
     req = client.chat.completions.requests[0]
     assert req["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
     parts = req["messages"][1]["content"]

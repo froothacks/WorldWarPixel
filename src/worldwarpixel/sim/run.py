@@ -181,6 +181,7 @@ class Run:
     # -- read model ------------------------------------------------------------------------
 
     def summary(self) -> dict[str, Any]:
+        public_stats = getattr(self.policy, "public_stats", None)
         return {
             "id": self.id,
             "state": self.state,
@@ -191,7 +192,9 @@ class Run:
             "agents": len(self.agents),
             "threads": len(self.board.threads()),
             "clients": self.hub.client_count,
-            "llm": getattr(self.policy, "stats", None),
+            "llm": public_stats()
+            if (public_stats := getattr(self.policy, "public_stats", None))
+            else None,
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
