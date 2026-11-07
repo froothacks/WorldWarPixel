@@ -314,7 +314,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           tool={god ? tool : null}
           onPaint={paint}
         />
-        {selectedAgent ? (
+        {selectedAgent && (
           <AgentDrawer
             runId={initial.id}
             agent={selectedAgent}
@@ -323,19 +323,19 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             pixelsOwned={pixelsOwned}
             onClose={() => setSelected(null)}
           />
-        ) : (
-          <Board
-            runId={initial.id}
-            threads={threads}
-            agentName={agentName}
-            agentColor={agentColor}
-            onSelectAgent={setSelected}
-            version={boardVersion}
-            totalThreads={run.threads}
-            open={openThread}
-            onOpen={setOpenThread}
-          />
         )}
+        <Board
+          runId={initial.id}
+          threads={threads}
+          agentName={agentName}
+          agentColor={agentColor}
+          onSelectAgent={setSelected}
+          version={boardVersion}
+          totalThreads={run.threads}
+          open={openThread}
+          onOpen={setOpenThread}
+          hidden={!!selectedAgent}
+        />
       </div>
       {timelapse && (
         <Timelapse

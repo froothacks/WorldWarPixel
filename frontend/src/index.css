@@ -77,6 +77,7 @@ button.ghost { background: transparent; border-color: transparent; }
 .board-header, .drawer-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .drawer-header .ghost { margin-left: auto; }
 .board { position: relative; }
+.board[hidden] { display: none; }
 .board-header > * { white-space: nowrap; }
 .board-header .mark-read { margin-left: auto; padding: 2px 6px; color: var(--muted); }
 .board-header .mark-read:hover { color: var(--text); }

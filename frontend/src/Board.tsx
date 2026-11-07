@@ -11,6 +11,7 @@ interface Props {
   totalThreads: number;
   open: number | null;
   onOpen: (threadId: number | null) => void;
+  hidden?: boolean;
 }
 
 type Sort = "active" | "new" | "top";
@@ -27,7 +28,7 @@ const sorters: Record<Sort, (a: ThreadDigest, b: ThreadDigest) => number> = {
   top: (a, b) => b.replies - a.replies || b.last_activity - a.last_activity,
 };
 
-export default function Board({ runId, threads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen }: Props) {
+export default function Board({ runId, threads, agentName, agentColor, onSelectAgent, version, totalThreads, open, onOpen, hidden = false }: Props) {
   const now = useNow();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("active");
@@ -84,7 +85,7 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
 
   if (open !== null) {
     return (
-      <aside className="board">
+      <aside className="board" hidden={hidden}>
         <ThreadView
           key={open}
           runId={runId}
@@ -97,13 +98,14 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
           onSelectAgent={onSelectAgent}
           onSeen={markSeen}
           onBack={() => onOpen(null)}
+          active={!hidden}
         />
       </aside>
     );
   }
 
   return (
-    <aside className="board">
+    <aside className="board" hidden={hidden}>
       <header className="board-header">
         <strong>Message board</strong>
         <span className="muted small">
@@ -205,6 +207,7 @@ interface ThreadViewProps {
   onSelectAgent: (id: number) => void;
   onSeen: (id: number, ts: number) => void;
   onBack: () => void;
+  active: boolean;
 }
 
 interface Node {
@@ -212,12 +215,12 @@ interface Node {
   children: Node[];
 }
 
-function ThreadView({ runId, threadId, digest, version, now, agentName, agentColor, onSelectAgent, onSeen, onBack }: ThreadViewProps) {
+function ThreadView({ runId, threadId, digest, version, now, agentName, agentColor, onSelectAgent, onSeen, onBack, active }: ThreadViewProps) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [missing, setMissing] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const [fresh, setFresh] = useState<Set<number>>(() => new Set());
-  const [below, setBelow] = useState(0);
+  const [pending, setPending] = useState<number[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const known = useRef<Set<number> | null>(null);
   const atBottom = useRef(false);
@@ -234,10 +237,7 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
         known.current = new Set(p.map((x) => x.id));
         if (prev) {
           const added = p.filter((x) => !prev.has(x.id)).map((x) => x.id);
-          if (added.length) {
-            setFresh(new Set(added));
-            if (!atBottom.current) setBelow((n) => n + added.length);
-          }
+          if (added.length) setFresh(new Set(added));
         }
         setPosts(p);
         setMissing(false);
@@ -255,10 +255,18 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && atBottom.current && known.current && posts && posts.length > 1 && fresh.size) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [posts, fresh]);
+    if (!el || fresh.size === 0) return;
+    if (atBottom.current) el.scrollTop = el.scrollHeight;
+    // Whatever new reply still isn't on screen (e.g. nested above the viewport) gets a jump target.
+    const raf = requestAnimationFrame(() => {
+      const offscreen = [...fresh].filter((id) => {
+        const node = postNode(el, id);
+        return node !== null && !isVisible(el, node);
+      });
+      if (offscreen.length) setPending((p) => [...p, ...offscreen.filter((id) => !p.includes(id))]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [fresh]);
 
   useEffect(() => {
     if (fresh.size === 0) return;
@@ -267,13 +275,14 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
   }, [fresh]);
 
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (e.key === "Escape" && tag !== "INPUT" && tag !== "TEXTAREA") onBack();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack]);
+  }, [onBack, active]);
 
   const tree = useMemo(() => {
     if (!posts?.length) return null;
@@ -290,13 +299,26 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
     const el = scrollRef.current;
     if (!el) return;
     atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    if (atBottom.current) setBelow(0);
+    setPending((p) => {
+      const left = p.filter((id) => {
+        const node = postNode(el, id);
+        return node !== null && !isVisible(el, node);
+      });
+      return left.length === p.length ? p : left;
+    });
   };
 
-  const jumpToBottom = () => {
+  const jumpToNext = () => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    setBelow(0);
+    if (!el) return;
+    const nodes = Array.from(el.querySelectorAll<HTMLElement>("[data-post]"));
+    const target = nodes.find((n) => pending.includes(Number(n.dataset.post)));
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPending((p) => p.filter((id) => id !== Number(target.dataset.post)));
+    } else {
+      setPending([]);
+    }
   };
 
   const toggle = (id: number) =>
@@ -358,9 +380,9 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           </>
         )}
       </div>
-      {below > 0 && (
-        <button className="new-below" onClick={jumpToBottom}>
-          {below} new {below === 1 ? "reply" : "replies"} ↓
+      {pending.length > 0 && (
+        <button className="new-below" onClick={jumpToNext} title="Jump to the next new reply you haven't seen">
+          {pending.length} new {pending.length === 1 ? "reply" : "replies"}
         </button>
       )}
     </>
@@ -388,7 +410,7 @@ function Reply({ node, depth, parentAuthor, now, collapsed, fresh, onToggle, age
   const flattened = depth >= MAX_INDENT;
   return (
     <div className={`reply ${flattened ? "flat" : ""}`}>
-      <div className={`reply-card ${fresh.has(post.id) ? "fresh" : ""} ${post.author_id === GOD_ID ? "god" : ""}`}>
+      <div data-post={post.id} className={`reply-card ${fresh.has(post.id) ? "fresh" : ""} ${post.author_id === GOD_ID ? "god" : ""}`}>
         <PostHead post={post} now={now} agentName={agentName} agentColor={agentColor} onSelectAgent={onSelectAgent}>
           {flattened && parentAuthor && <span className="reply-to">↳ {parentAuthor}</span>}
         </PostHead>
@@ -454,6 +476,16 @@ function PostHead({
       </span>
     </div>
   );
+}
+
+function postNode(container: HTMLElement, id: number): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`[data-post="${id}"]`);
+}
+
+function isVisible(container: HTMLElement, node: HTMLElement): boolean {
+  const c = container.getBoundingClientRect();
+  const r = node.getBoundingClientRect();
+  return r.bottom > c.top && r.top < c.bottom;
 }
 
 function Dot({ color }: { color: string }) {
