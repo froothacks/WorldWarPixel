@@ -326,6 +326,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
         </div>
       </header>
+      {llm?.last_error && (
+        <div className="errbar" role="alert">
+          Model calls failing ({llm.failures}): {llm.last_error}
+        </div>
+      )}
       <div className="live-grid">
         <section className="stage">
           {god ? (
