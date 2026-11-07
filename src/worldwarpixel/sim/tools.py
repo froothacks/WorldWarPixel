@@ -97,6 +97,32 @@ class ToolSet:
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 
+    def paint_stencil(self, cells: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
+        """Paint towards a target picture: only cells that differ, in raster order, up to budget.
+
+        Calling again with the same stencil continues (or repairs) it, so big drawings take
+        several turns and a raided drawing can be restored.
+        """
+        wanted = [
+            (x, y, c)
+            for x, y, c in cells
+            if self._canvas.in_bounds(x, y) and self._canvas.get(x, y) != c
+        ]
+        if not cells:
+            raise ToolError("the stencil is empty")
+        if not wanted:
+            return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
+        if self.budget.pixels <= 0:
+            raise ToolError("no pixel budget left this turn")
+        out = self.place_pixels(wanted[: self.budget.pixels])
+        out.pop("dropped", None)
+        out.pop("note", None)
+        remaining = len(wanted) - int(out["placed"])
+        out.update({"remaining": remaining, "done": remaining == 0})
+        if remaining:
+            out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
+        return out
+
     @property
     def canvas_size(self) -> tuple[int, int]:
         return self._canvas.width, self._canvas.height

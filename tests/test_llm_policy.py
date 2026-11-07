@@ -6,7 +6,14 @@ from typing import Any
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
-from worldwarpixel.sim.llm_policy import LLMPolicy, _parse_pixel_list, pick_threads, system_prompt
+from worldwarpixel.sim.llm_policy import (
+    LLMPolicy,
+    _match_name,
+    _parse_pixel_list,
+    pick_threads,
+    system_prompt,
+)
+from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolSet, TurnBudget
 
 
@@ -222,3 +229,41 @@ def test_pick_threads_mixes_top_and_random_sample() -> None:
     picked = pick_threads(board, random.Random(1), k=6)
     assert [d["thread_id"] for d in picked[:3]] == [0, 1, 2]
     assert len(picked) == 6 and len({d["thread_id"] for d in picked}) == 6
+
+
+def test_flag_cells_have_expected_layout() -> None:
+    cells = {(x, y): c for x, y, c in flag_cells("india", 10, 20, 30)}
+    assert cells[(10, 20)] == 6 and cells[(10, 39)] == 10  # orange top, green bottom
+    assert cells[(25, 30)] == 13  # dark blue disc in the centre
+    assert len(cells) == 30 * 20
+
+
+def test_text_cells_render_letters() -> None:
+    cells = text_cells("HI", 0, 0, 5)
+    assert all(c == 5 for _, _, c in cells)
+    assert (0, 0, 5) in cells and (1, 0, 5) not in cells  # H has a gap in the top row
+    assert max(x for x, _, _ in cells) == 6  # second glyph starts at x=4
+
+
+def test_paint_stencil_is_progressive_and_skips_matching_pixels() -> None:
+    canvas, board = Canvas(32, 32), Board()
+    cells = shape_cells("heart", 0, 0, 5, 3)
+
+    def fresh() -> ToolSet:
+        return ToolSet(canvas, board, 1, TurnBudget(pixels=10), lambda k, p: None, lambda: 0.0)
+
+    tools = fresh()
+    first = tools.paint_stencil(cells)
+    assert first["placed"] == 10 and first["remaining"] == len(cells) - 10 and not first["done"]
+    for _ in range(10):
+        out = fresh().paint_stencil(cells)
+        if out["done"]:
+            break
+    assert all(canvas.get(x, y) == c for x, y, c in cells)
+    assert fresh().paint_stencil(cells)["placed"] == 0
+
+
+def test_match_name_handles_sloppy_country_strings() -> None:
+    assert _match_name("Flag of India", FLAGS, "usa") == "india"
+    assert _match_name("United States", FLAGS, "india") == "usa"
+    assert _match_name("Narnia", FLAGS, "japan") == "japan"
