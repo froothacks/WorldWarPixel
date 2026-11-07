@@ -11,6 +11,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -23,6 +24,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.timelapse import build_timelapse
 
 
 class RunManager:
@@ -246,6 +248,20 @@ async def get_events(
         {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
         for e in events
     ]
+
+
+@router.get("/{run_id}/timelapse")
+async def get_timelapse(
+    run_id: str,
+    manager: ManagerDep,
+    frames: Annotated[int, Query(ge=1, le=600)] = 120,
+) -> Response:
+    """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
+    run = manager.get(run_id)
+    data = await asyncio.to_thread(
+        build_timelapse, manager.log, run_id, run.canvas.width, run.canvas.height, frames
+    )
+    return Response(content=data, media_type="application/octet-stream")
 
 
 class NarratorQuestion(BaseModel):
