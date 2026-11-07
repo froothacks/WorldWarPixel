@@ -93,8 +93,10 @@ def start() -> modal.Sandbox:
 
 def backup(sb: modal.Sandbox) -> None:
     p = sb.exec("python", "/app/deploy/serve.py", "backup", timeout=600)
-    p.wait()
+    code = p.wait()
     print(p.stdout.read(), p.stderr.read(), end="")
+    if code != 0:
+        raise RuntimeError(f"backup exited with {code}; sandbox left running")
 
 
 def stop(sb: modal.Sandbox) -> None:
