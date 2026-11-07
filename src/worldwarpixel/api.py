@@ -50,8 +50,10 @@ class RunManager:
         run = self.runs.pop(run_id, None)
         if run is None:
             raise HTTPException(404, f"run {run_id} not found")
-        await run.stop()
-        run.hub.close_all()
+        try:
+            await run.stop()
+        finally:
+            run.hub.close_all()
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
