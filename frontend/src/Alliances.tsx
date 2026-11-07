@@ -214,7 +214,8 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
       </header>
       <p className="muted small pad legend">
         <span style={{ color: STROKE.allies }}>— talk</span> (replies, @mentions) <span style={{ color: STROKE.rivals }}>— raids</span> (painting over
-        each other) <span style={{ color: STROKE.tense }}>— both</span>. Node size is population. Click a country to light up its land.
+        each other) <span style={{ color: STROKE.tense }}>— mixed</span> (colour follows whichever dominates). Node size is population. Click a country to light up
+        its land.
       </p>
       <div className="graph" ref={wrap}>
         {error && <p className="muted small pad">{error}</p>}
@@ -250,7 +251,7 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
             return (
               <g key={name} className="node" opacity={dim ? 0.35 : 1} onClick={() => onHighlight(highlight === name ? null : name)}>
                 <circle cx={n.x} cy={n.y} r={r} fill={colorOf.get(name) ?? "#888"} stroke={highlight === name ? "#fff" : "#0b0b0c"} strokeWidth={highlight === name ? 2 : 1} />
-                <text x={n.x} y={n.y + r + 11} textAnchor="middle">
+                <text x={n.x} y={n.y + r + 11} textAnchor={n.x < 50 ? "start" : n.x > size.w - 50 ? "end" : "middle"}>
                   {name}
                 </text>
                 <title>
