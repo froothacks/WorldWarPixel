@@ -314,7 +314,7 @@ class LLMPolicy:
             self.stats["tool_errors"] += 1
             return f"error: bad arguments ({e})"
         actions.append(_summarise(name, args, result))
-        _track_position(agent, name, args)
+        _track_position(agent, name, args, result)
         return json.dumps(result)
 
     @staticmethod
@@ -338,10 +338,13 @@ class LLMPolicy:
         raise ToolError(f"unknown tool {name}")
 
 
-def _track_position(agent: AgentSpec, name: str, args: dict[str, Any]) -> None:
+def _track_position(
+    agent: AgentSpec, name: str, args: dict[str, Any], result: dict[str, Any]
+) -> None:
     """Remember where the agent last painted so the next crop follows it."""
-    if name == "place_pixels" and args.get("pixels"):
-        last = args["pixels"][-1]
+    placed = int(result.get("placed", 0))
+    if name == "place_pixels" and args.get("pixels") and placed:
+        last = args["pixels"][min(placed, len(args["pixels"])) - 1]
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
     elif name == "fill_rect":
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
