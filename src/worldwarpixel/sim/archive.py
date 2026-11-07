@@ -66,7 +66,8 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
 def archived_summaries(log: EventLog, skip: set[str]) -> list[dict[str, Any]]:
     """``Run.summary``-shaped rows for logged runs not in ``skip``, without replaying them."""
     rows = []
-    for run_id, first_ts, pixels, posts, turns, deleted, config in log.run_totals():
+    for row in log.run_totals(REJECTED):
+        run_id, first_ts, pixels, posts, turns, errors, updates, answers, deleted, config = row
         if run_id in skip or deleted or config is None:
             continue
         cfg = RunConfig.model_validate(json.loads(config)).model_dump()
@@ -77,12 +78,12 @@ def archived_summaries(log: EventLog, skip: set[str]) -> list[dict[str, Any]]:
                 "config": cfg,
                 "created_at": first_ts,
                 "started_at": first_ts,
-                "stats": {"pixels": pixels, "posts": posts, "turns": turns, "errors": 0},
+                "stats": {"pixels": pixels, "posts": posts, "turns": turns, "errors": errors},
                 "agents": cfg["agents"],
                 "threads": 0,
                 "clients": 0,
                 "llm": None,
-                "narrator": {"updates": 0, "answers": 0, "failures": 0},
+                "narrator": {"updates": updates, "answers": answers, "failures": 0},
             }
         )
     return rows

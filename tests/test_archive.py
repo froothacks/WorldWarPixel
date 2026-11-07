@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
-from worldwarpixel.sim.archive import restore_run
+from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import Board, Post
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_SNAPSHOT
@@ -76,8 +76,14 @@ def test_unknown_and_legacy_runs() -> None:
     config = RunConfig(width=16, height=16, agents=2, seed=3, policy="random")
     log.append("old", 1.0, "run.created", None, {"config": config.model_dump()})
     log.append("old", 2.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
+    log.append("old", 3.0, "agent.thought", 1, {"thought": "Tool call rejected: bad json"})
+    log.append("old", 4.0, "agent.thought", 2, {"thought": "Painting a sun"})
+    log.append("old", 5.0, "narrator.update", None, {"kind": "update", "text": "Hi"})
+    log.append("old", 6.0, "narrator.update", None, {"kind": "answer", "text": "Yes"})
     run = restore_run(log, "old")
     assert run is not None and run.state == "stopped" and len(run.agents) == 2
+    [listed] = archived_summaries(log, set())
+    assert listed["stats"] == run.stats and listed["narrator"] == run.narrator.stats
     assert run.canvas.get(2, 3) == 4 and run.canvas.owner(2, 3) == 1
     assert run.stats["pixels"] == 1 and run.created_at == 1.0
 
