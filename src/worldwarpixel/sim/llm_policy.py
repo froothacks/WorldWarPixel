@@ -660,9 +660,11 @@ def _text_tool_calls(content: str) -> tuple[str, list[ChatCompletionMessageFunct
         args: dict[str, Any] = {}
         for key, value in _XML_ARG_RE.findall(body):
             try:
-                args[key] = json.loads(value)
+                parsed = json.loads(value)
             except json.JSONDecodeError:
-                args[key] = value
+                parsed = None
+            numeric = isinstance(parsed, int | float) and not isinstance(parsed, bool)
+            args[key] = parsed if numeric or isinstance(parsed, list | dict) else value
         calls.append(
             ChatCompletionMessageFunctionToolCall(
                 id=f"text{len(calls)}",

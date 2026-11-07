@@ -486,10 +486,12 @@ def test_tool_calls_left_in_text_are_parsed_and_run() -> None:
         "<arg_value>1,1,3 2,1,3</arg_value></tool_call>"
         "<tool_call>reply<arg_key>thread_id</arg_key><arg_value>4</arg_value>"
         "<arg_key>body</arg_key><arg_value>cut off mid"
+        "<tool_call>post_thread<arg_key>body</arg_key><arg_value>true</arg_value></tool_call>"
     )
     assert text == "Painting. "
     assert [(c.function.name, json.loads(c.function.arguments)) for c in calls] == [
-        ("place_pixels", {"pixels": "1,1,3 2,1,3"})
+        ("place_pixels", {"pixels": "1,1,3 2,1,3"}),
+        ("post_thread", {"body": "true"}),
     ]
 
     agent, tools, obs, _ = _setup()
