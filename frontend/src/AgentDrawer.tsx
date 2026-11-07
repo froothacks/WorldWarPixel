@@ -46,17 +46,16 @@ function formatValue(v: string | number | string[] | null): string {
 
 export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixelsOwned, onClose }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failedId, setFailedId] = useState<number | null>(null);
 
   // Refetch whenever a new live thought arrives so position / history stay current.
   const liveCount = liveThoughts.length;
   const latestTs = liveThoughts[0]?.ts ?? 0;
   useEffect(() => {
     let cancelled = false;
-    setFailed(false);
     api.agent(runId, agent.id)
       .then((d) => !cancelled && setDetail(d))
-      .catch(() => !cancelled && setFailed(true));
+      .catch(() => !cancelled && setFailedId(agent.id));
     return () => {
       cancelled = true;
     };
@@ -64,6 +63,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
 
   const seen = new Set<number>();
   const fresh = detail?.id === agent.id ? detail : null;
+  const failed = !fresh && failedId === agent.id;
   const history = fresh?.thoughts ?? [];
   // The snapshot's agent list is static; the detail fetch has where the agent is painting now.
   const pos = fresh ?? agent;
