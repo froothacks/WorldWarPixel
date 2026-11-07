@@ -32,8 +32,12 @@ def test_god_paint_erase_and_clear() -> None:
         assert run.canvas.get(2, 1) == 0 and run.canvas.owner(2, 1) == 0
         assert q.get_nowait() == RESYNC
         assert run.agent_name(GOD_ID) == GOD_NAME
-        kinds = [e.kind for e in run.log.read("g")]
+        events = run.log.read("g")
+        kinds = [e.kind for e in events]
         assert kinds.count("pixel") == 3 and "god.paint" in kinds
+        erased = [e for e in events if e.kind == "pixel" and e.payload["color"] == 0]
+        assert erased and erased[-1].agent_id == GOD_ID
+        assert erased[-1].payload["prev_owner"] == GOD_ID and erased[-1].payload["owner"] == 0
 
     asyncio.run(main())
 

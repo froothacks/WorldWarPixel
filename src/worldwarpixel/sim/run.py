@@ -110,15 +110,18 @@ class Run:
         if bad:
             raise ValueError(f"colour {bad[0]} is not in 0..{len(PALETTE) - 1}")
         n = 0
-        for x, y, color in batch:
-            if not self.canvas.in_bounds(x, y):
-                continue
-            c, owner = (0, 0) if erase else (int(color), GOD_ID)
-            self.canvas.write(PixelWrite(x, y, c, owner))
-            self._on_write(owner, "pixel", {"x": x, "y": y, "color": c})
-            n += 1
-        if n:
-            self._record("god.paint", GOD_ID, {"pixels": n, "erase": erase})
+        with self.log.batch():
+            for x, y, color in batch:
+                if not self.canvas.in_bounds(x, y):
+                    continue
+                prev = self.canvas.owner(x, y)
+                c, owner = (0, 0) if erase else (int(color), GOD_ID)
+                self.canvas.write(PixelWrite(x, y, c, owner))
+                payload = {"x": x, "y": y, "color": c, "prev_owner": prev, "owner": owner}
+                self._on_write(GOD_ID, "pixel", payload)
+                n += 1
+            if n:
+                self._record("god.paint", GOD_ID, {"pixels": n, "erase": erase})
         return n
 
     def god_clear_canvas(self) -> None:
@@ -245,7 +248,8 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
-            self.hub.push_pixel(payload["x"], payload["y"], payload["color"], agent_id)
+            owner = int(payload.get("owner", agent_id))
+            self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
