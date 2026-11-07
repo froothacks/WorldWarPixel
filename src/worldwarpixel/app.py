@@ -64,7 +64,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         def make_policy(config: RunConfig) -> Policy:
             if config.policy == "llm":
-                return LLMPolicy(client, agent_model, timeout=settings.request_timeout)
+                return LLMPolicy(
+                    client,
+                    agent_model,
+                    timeout=settings.request_timeout,
+                    vision=settings.agent_vision,
+                )
             return random_policy(config)
 
         app.state.runs = RunManager(

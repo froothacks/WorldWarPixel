@@ -23,11 +23,11 @@ def make(budget: TurnBudget | None = None) -> tuple[ToolSet, list[tuple[str, dic
 def test_pixel_budget_is_enforced_per_turn() -> None:
     tools, events = make(TurnBudget(pixels=3))
     assert tools.place_pixels([(0, 0, 1), (1, 0, 1)]) == {"placed": 2, "pixels_left": 1}
-    with pytest.raises(ToolError, match="budget exceeded"):
-        tools.place_pixels([(2, 0, 1), (3, 0, 1)])
-    assert len(events) == 2
-    tools.place_pixels([(2, 0, 1)])
-    assert tools.budget.pixels == 0
+    res = tools.place_pixels([(2, 0, 1), (3, 0, 1)])
+    assert res["placed"] == 1 and res["dropped"] == 1 and tools.budget.pixels == 0
+    assert len(events) == 3
+    with pytest.raises(ToolError, match="no pixel budget"):
+        tools.place_pixels([(4, 0, 1)])
 
 
 def test_fill_rect_charges_every_cell() -> None:

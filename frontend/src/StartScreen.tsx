@@ -5,7 +5,13 @@ interface Props {
   onStarted: (run: RunSummary) => void;
 }
 
-const SIZES = [128, 256, 512, 1024];
+const SIZES: [number, number][] = [
+  [256, 160],
+  [512, 320],
+  [768, 480],
+  [1024, 640],
+  [512, 512],
+];
 
 export default function StartScreen({ onStarted }: Props) {
   const [cfg, setCfg] = useState<RunConfig>(DEFAULT_CONFIG);
@@ -56,9 +62,16 @@ export default function StartScreen({ onStarted }: Props) {
           </label>
           <label>
             Canvas
-            <select value={cfg.width} onChange={(e) => { set("width", +e.target.value); set("height", +e.target.value); }}>
-              {SIZES.map((s) => (
-                <option key={s} value={s}>{s} × {s}</option>
+            <select
+              value={`${cfg.width}x${cfg.height}`}
+              onChange={(e) => {
+                const [w, h] = e.target.value.split("x").map(Number);
+                set("width", w);
+                set("height", h);
+              }}
+            >
+              {SIZES.map(([w, h]) => (
+                <option key={`${w}x${h}`} value={`${w}x${h}`}>{w} × {h}</option>
               ))}
             </select>
           </label>

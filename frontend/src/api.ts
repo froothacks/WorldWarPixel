@@ -15,7 +15,7 @@ export interface RunConfig {
 
 export const DEFAULT_CONFIG: RunConfig = {
   width: 512,
-  height: 512,
+  height: 320,
   agents: 100,
   cooldown: 10,
   jitter: 0.3,

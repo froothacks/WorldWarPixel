@@ -1,9 +1,14 @@
+import base64
 import json
 import logging
 from typing import Any, cast
 
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+from openai.types.chat import (
+    ChatCompletionContentPartParam,
+    ChatCompletionMessageParam,
+    ChatCompletionToolParam,
+)
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.tools import ToolError, ToolSet
@@ -130,7 +135,7 @@ TOOLS: list[ChatCompletionToolParam] = [
 
 READ_TOOLS = {"view_canvas", "read_thread"}
 MAX_ROUNDS = 2
-VIEW = 16
+VIEW = 32
 
 
 def palette_legend() -> str:
@@ -145,18 +150,34 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         f"Each turn you may paint up to {pixels} pixels and make {posts} post or reply. "
         f"Colours: {palette_legend()}. "
         f"Your usual colour is {agent.color} ({COLOR_NAMES[agent.color]}). "
-        f"Your home spot is ({agent.home_x}, {agent.home_y}).\n\n"
-        "Act like yourself: build something, defend it, team up or argue with others on the board. "
-        "Draw simple recognisable shapes a few pixels at a time near your home or your team. "
-        "Each turn: write one or two sentences about what you notice and intend (this is shown to "
-        "viewers as your thought), then call tools. Keep posts short and in character."
+        f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
+        "Each turn you see the whole canvas as an image plus a zoomed text crop around where you "
+        "last painted. Act like yourself: build something, defend it, team up or argue with "
+        "others on the board.\n\n"
+        "Rules of thumb:\n"
+        f"- Use your whole pixel budget every turn ({pixels} pixels): one place_pixels call with "
+        f"{pixels} adjacent pixels, or fill_rect, extending something you or your allies started.\n"
+        "- Draw simple recognisable things (flags, letters, hearts, animals, borders) rather than "
+        "scattered dots.\n"
+        "- Prefer replying in an existing thread to starting a new one; start a thread only for a "
+        "real plan or dispute. Address people by @Name.\n"
+        "- Your thought is one or two short sentences in first person about what you see and "
+        "intend; do not describe the hex grid or the tools."
     )
 
 
-def local_view(obs: Observation, agent: AgentSpec, rows: list[str]) -> str:
+def crop_origin(obs: Observation, agent: AgentSpec) -> tuple[int, int]:
     x0 = max(0, min(agent.home_x - VIEW // 2, obs.canvas_width - VIEW))
     y0 = max(0, min(agent.home_y - VIEW // 2, obs.canvas_height - VIEW))
-    header = f"Canvas around your home, top-left ({x0}, {y0}), one hex digit per pixel:"
+    return x0, y0
+
+
+def local_view(obs: Observation, agent: AgentSpec, rows: list[str]) -> str:
+    x0, y0 = crop_origin(obs, agent)
+    header = (
+        f"Zoomed {VIEW}x{VIEW} crop around where you last painted, top-left ({x0}, {y0}), "
+        "one hex digit per pixel (row = y, column = x):"
+    )
     return header + "\n" + "\n".join(rows)
 
 
@@ -172,26 +193,47 @@ def user_prompt(agent: AgentSpec, obs: Observation, view: str) -> str:
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
         f"{view}\n\nMost active threads:\n{board}\n\n"
-        "Say what you're thinking in one or two sentences, then call tools."
+        "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
+        "budget. If a thread above interests you, answer it with reply(thread_id=..., body=...) "
+        "rather than starting a new one."
     )
 
 
 class LLMPolicy:
     """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
 
-    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 45.0) -> None:
+    def __init__(
+        self, client: AsyncOpenAI, model: str, timeout: float = 45.0, vision: bool = True
+    ) -> None:
         self._client = client
         self._model = model
         self._timeout = timeout
+        self._vision = vision
         self.stats = {"calls": 0, "tool_calls": 0, "tool_errors": 0, "no_tools": 0, "failures": 0}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
         return system_prompt(agent, width, height, pixels, posts)
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
-        x0 = max(0, min(agent.home_x - VIEW // 2, obs.canvas_width - VIEW))
-        y0 = max(0, min(agent.home_y - VIEW // 2, obs.canvas_height - VIEW))
+        x0, y0 = crop_origin(obs, agent)
         rows = tools.peek(x0, y0, VIEW, VIEW)
+        text = user_prompt(agent, obs, local_view(obs, agent, rows))
+        content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
+        if self._vision:
+            png, scale = tools.png()
+            note = (
+                f"Image: the whole {obs.canvas_width}x{obs.canvas_height} canvas"
+                + (f", downscaled {scale}x (multiply image coords by {scale})" if scale > 1 else "")
+                + "."
+            )
+            content.insert(0, {"type": "text", "text": note})
+            content.insert(
+                1,
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()},
+                },
+            )
         messages: list[ChatCompletionMessageParam] = [
             {
                 "role": "system",
@@ -199,7 +241,7 @@ class LLMPolicy:
                     agent, obs.canvas_width, obs.canvas_height, obs.budget.pixels, obs.budget.posts
                 ),
             },
-            {"role": "user", "content": user_prompt(agent, obs, local_view(obs, agent, rows))},
+            {"role": "user", "content": content},
         ]
         thoughts: list[str] = []
         actions: list[str] = []
@@ -219,7 +261,8 @@ class LLMPolicy:
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 self.stats["failures"] += 1
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
-                return f"(model call failed: {type(e).__name__})"
+                thoughts.append(f"(model call failed: {type(e).__name__})")
+                break
             msg = response.choices[0].message
             if msg.content:
                 thoughts.append(msg.content.strip())
@@ -244,7 +287,7 @@ class LLMPolicy:
                     continue
                 self.stats["tool_calls"] += 1
                 name = call.function.name
-                result = self._execute(tools, name, call.function.arguments, actions)
+                result = self._execute(agent, tools, name, call.function.arguments, actions)
                 used_read |= name in READ_TOOLS
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             if not used_read:
@@ -254,7 +297,9 @@ class LLMPolicy:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
         return thought or "(no response)"
 
-    def _execute(self, tools: ToolSet, name: str, raw_args: str, actions: list[str]) -> str:
+    def _execute(
+        self, agent: AgentSpec, tools: ToolSet, name: str, raw_args: str, actions: list[str]
+    ) -> str:
         try:
             args: dict[str, Any] = json.loads(raw_args or "{}")
         except json.JSONDecodeError:
@@ -270,6 +315,7 @@ class LLMPolicy:
             self.stats["tool_errors"] += 1
             return f"error: bad arguments ({e})"
         actions.append(_summarise(name, args, result))
+        _track_position(agent, name, args, result)
         return json.dumps(result)
 
     @staticmethod
@@ -291,6 +337,18 @@ class LLMPolicy:
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
         raise ToolError(f"unknown tool {name}")
+
+
+def _track_position(
+    agent: AgentSpec, name: str, args: dict[str, Any], result: dict[str, Any]
+) -> None:
+    """Remember where the agent last painted so the next crop follows it."""
+    placed = int(result.get("placed", 0))
+    if name == "place_pixels" and args.get("pixels") and placed:
+        last = args["pixels"][min(placed, len(args["pixels"])) - 1]
+        agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
+    elif name == "fill_rect":
+        agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 
 
 def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
