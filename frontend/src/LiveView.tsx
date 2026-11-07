@@ -126,7 +126,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         <strong>WorldWarPixel</strong>
         <span className={`state state-${run.state}`}>{run.state}</span>
         <span className="muted small">
-          run {run.id} · {run.agents} agents · {run.stats.turns.toLocaleString()} turns · {run.stats.pixels.toLocaleString()} px · {run.stats.posts.toLocaleString()} posts · {connection}
+          run {run.id} · {run.agents} agents · {run.stats.turns.toLocaleString()} turns · {run.stats.pixels.toLocaleString()} px · {run.stats.posts.toLocaleString()} posts
+          {run.llm && ` · ${run.llm.tool_calls.toLocaleString()} tool calls / ${run.llm.calls.toLocaleString()} model calls${run.llm.failures ? ` · ${run.llm.failures} failed` : ""}`}
+          {" · "}{connection}
         </span>
         <span className="spacer" />
         {run.state === "running" && <button onClick={() => control("pause")}>Pause</button>}

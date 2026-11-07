@@ -96,3 +96,7 @@ button.ghost { background: transparent; border-color: transparent; }
 .narrator-body p { margin: 0; }
 .narrator-ask { display: flex; gap: 8px; }
 .narrator-ask input { flex: 1; }
+.persona { font-style: italic; }
+.prompt { padding: 0 12px; }
+.prompt summary { cursor: pointer; }
+.prompt pre { white-space: pre-wrap; font-size: 11px; line-height: 1.4; background: #1a1d23; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 6px 0 0; max-height: 220px; overflow: auto; }

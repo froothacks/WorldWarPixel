@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import secrets
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import (
@@ -13,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
-from worldwarpixel.sim.agents import RandomWalkPolicy
+from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.run import Run, RunConfig
@@ -22,9 +23,15 @@ from worldwarpixel.sim.run import Run, RunConfig
 class RunManager:
     """Holds the in-memory runs of this process; the event log persists what they did."""
 
-    def __init__(self, log: EventLog, max_active_runs: int = 4) -> None:
+    def __init__(
+        self,
+        log: EventLog,
+        max_active_runs: int = 4,
+        make_policy: Callable[[RunConfig], Policy] | None = None,
+    ) -> None:
         self.log = log
         self.max_active_runs = max_active_runs
+        self.make_policy = make_policy or random_policy
         self.runs: dict[str, Run] = {}
 
     def active(self) -> list[Run]:
@@ -34,7 +41,7 @@ class RunManager:
         if len(self.active()) >= self.max_active_runs:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
-        policy = RandomWalkPolicy(seed=config.seed if config.seed is not None else 0)
+        policy = self.make_policy(config)
         run = Run(run_id, config, self.log, policy)
         self.runs[run_id] = run
         await run.start()
@@ -58,6 +65,10 @@ class RunManager:
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
         self.log.close()
+
+
+def random_policy(config: RunConfig) -> Policy:
+    return RandomWalkPolicy(seed=config.seed if config.seed is not None else 0)
 
 
 def get_manager(request: Request) -> RunManager:

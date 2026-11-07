@@ -8,6 +8,7 @@ export interface RunConfig {
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
+  policy: "llm" | "random";
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -20,6 +21,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   posts_per_turn: 1,
   max_concurrency: 10,
   seed: null,
+  policy: "llm",
 };
 
 export type RunState = "created" | "running" | "paused" | "stopped";
@@ -29,6 +31,14 @@ export interface RunStats {
   posts: number;
   turns: number;
   errors: number;
+}
+
+export interface LLMStats {
+  calls: number;
+  tool_calls: number;
+  tool_errors: number;
+  no_tools: number;
+  failures: number;
 }
 
 export interface RunSummary {
@@ -41,6 +51,7 @@ export interface RunSummary {
   agents: number;
   threads: number;
   clients: number;
+  llm: LLMStats | null;
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -60,10 +71,12 @@ export interface Agent {
   cooldown: number;
   status: AgentStatus;
   last_thought: Thought | null;
+  persona: string;
 }
 
 export interface AgentDetail extends Agent {
   thoughts: Thought[];
+  system_prompt: string | null;
 }
 
 export interface ThreadDigest {

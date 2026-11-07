@@ -28,6 +28,7 @@ class RunConfig(BaseModel):
     posts_per_turn: int = Field(default=1, ge=0, le=10)
     max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
     seed: int | None = None
+    policy: Literal["llm", "random"] = "llm"
 
 
 class Run:
@@ -188,6 +189,7 @@ class Run:
             "agents": len(self.agents),
             "threads": len(self.board.threads()),
             "clients": self.hub.client_count,
+            "llm": getattr(self.policy, "stats", None),
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
@@ -204,10 +206,23 @@ class Run:
         agent = self.by_id.get(agent_id)
         if agent is None:
             return None
+        describe = getattr(self.policy, "describe", None)
+        prompt = (
+            describe(
+                agent,
+                self.canvas.width,
+                self.canvas.height,
+                self.config.pixels_per_turn,
+                self.config.posts_per_turn,
+            )
+            if describe
+            else None
+        )
         return {
             **agent.to_dict(),
             "status": self.status[agent_id],
             "thoughts": list(self.thoughts[agent_id]),
+            "system_prompt": prompt,
         }
 
     def snapshot(self) -> dict[str, Any]:

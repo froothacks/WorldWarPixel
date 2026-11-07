@@ -12,7 +12,15 @@ from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.hub import FRAME_PIXELS, FRAME_SNAPSHOT
 
-SMALL = {"width": 32, "height": 16, "agents": 3, "cooldown": 0.01, "jitter": 0, "seed": 7}
+SMALL = {
+    "width": 32,
+    "height": 16,
+    "agents": 3,
+    "cooldown": 0.01,
+    "jitter": 0,
+    "seed": 7,
+    "policy": "random",
+}
 
 
 @pytest.fixture
@@ -46,7 +54,8 @@ def test_run_lifecycle(client: TestClient) -> None:
     assert events[0]["kind"] == "run.created"
     assert client.get(f"/runs/{run_id}/events", params={"limit": -1}).status_code == 422
     assert client.get(f"/runs/{run_id}/events", params={"limit": 99999}).status_code == 422
-    assert client.get(f"/runs/{run_id}/agents/1").json()["name"] == "Agent 1"
+    agent = client.get(f"/runs/{run_id}/agents/1").json()
+    assert agent["id"] == 1 and agent["name"] and agent["persona"]
     assert client.get(f"/runs/{run_id}/agents/9").status_code == 404
     assert client.get("/runs/nope").status_code == 404
 
