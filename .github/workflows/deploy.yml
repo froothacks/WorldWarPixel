@@ -1,7 +1,7 @@
 name: Deploy
 
-# After CI passes on main (or on demand), rebuild the image, replace the Modal sandbox and
-# redeploy the keeper job + stable URL. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo
+# After CI passes for a push to main (or on demand), rebuild the image, replace the Modal sandbox
+# and redeploy the keeper job + stable URL. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo
 # secrets; app settings live in the `worldwarpixel` Modal secret, not here.
 on:
   workflow_run:
@@ -16,21 +16,35 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only pushes to this repo's main: a fork PR from a branch named main also matches `branches`.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
     steps:
-      - if: env.MODAL_TOKEN_ID == '' || env.MODAL_TOKEN_SECRET == ''
-        run: echo "::notice::MODAL_TOKEN_ID / MODAL_TOKEN_SECRET not set; skipping deploy"
-      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+          ref: main
+      - id: gate
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::notice::MODAL_TOKEN_ID / MODAL_TOKEN_SECRET not set; skipping deploy"
+          elif [ -n "$TESTED_SHA" ] && [ "$TESTED_SHA" != "$(git rev-parse HEAD)" ]; then
+            # main moved on; the CI run for the newer commit deploys instead (no rollbacks).
+            echo "::notice::$TESTED_SHA is no longer main's head; skipping deploy"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.go == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+      - if: steps.gate.outputs.go == 'true'
         run: uv run --with modal==1.6.3 python deploy/modal_app.py launch
-      - if: env.MODAL_TOKEN_ID != '' && env.MODAL_TOKEN_SECRET != ''
+      - if: steps.gate.outputs.go == 'true'
         run: uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
