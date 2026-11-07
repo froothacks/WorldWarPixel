@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import PALETTE, Canvas
+from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
@@ -36,6 +36,12 @@ class RunConfig(BaseModel):
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
+
+
+GOD_ID = 65535
+"""Owner id for pixels and posts made by the human viewer in god mode."""
+GOD_NAME = "The Hand of God"
+MAX_GOD_PIXELS = 50_000
 
 
 class Run:
@@ -90,8 +96,55 @@ class Run:
         return {a.id: a for a in self.agents}
 
     def agent_name(self, agent_id: int) -> str:
+        if agent_id == GOD_ID:
+            return GOD_NAME
         agent = self.by_id.get(agent_id)
         return agent.name if agent else f"agent {agent_id}"
+
+    # -- god mode (the human viewer intervening) ------------------------------------------
+
+    def god_paint(self, pixels: list[tuple[int, int, int]], erase: bool = False) -> int:
+        """Paint (or erase to blank, unowned) pixels as the human; returns how many landed."""
+        n = 0
+        for x, y, color in pixels[:MAX_GOD_PIXELS]:
+            if not self.canvas.in_bounds(x, y):
+                continue
+            c, owner = (0, 0) if erase else (color, GOD_ID)
+            self.canvas.write(PixelWrite(x, y, c, owner))
+            self.stats["pixels"] += 1
+            self.hub.push_pixel(x, y, c, owner)
+            n += 1
+        if n:
+            self._record("god.paint", GOD_ID, {"pixels": n, "erase": erase})
+        return n
+
+    def god_clear_canvas(self) -> None:
+        self.canvas.clear()
+        self._record("god.clear_canvas", GOD_ID, {})
+        self.hub.resync()
+        self.hub.publish("canvas.cleared")
+
+    def god_clear_board(self) -> None:
+        self.board = Board()
+        self._record("god.clear_board", GOD_ID, {})
+        self.hub.publish("board.cleared")
+
+    def god_announce(self, title: str, body: str) -> dict[str, Any]:
+        """Post a thread as the human; agents see it on the board like any other thread."""
+        post = self.board.post_thread(GOD_ID, title, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        return post.to_dict()
+
+    def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
+        """Change how fast agents act; takes effect from each agent's next turn."""
+        if cooldown is not None:
+            for agent in self.agents:
+                agent.cooldown = cooldown
+            self.config.cooldown = cooldown
+        if pixels_per_turn is not None:
+            self.config.pixels_per_turn = pixels_per_turn
+        self._record("god.pace", GOD_ID, {"cooldown": cooldown, "pixels_per_turn": pixels_per_turn})
+        self.hub.publish("run.state", state=self.state, stats=self.stats)
 
     # -- lifecycle -------------------------------------------------------------------------
 

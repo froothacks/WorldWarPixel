@@ -16,6 +16,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
+from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
@@ -119,6 +120,57 @@ async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = manager.get(run_id)
     await run.stop()
+    return run.summary()
+
+
+class GodPixels(BaseModel):
+    pixels: list[tuple[int, int, int]] = Field(max_length=50_000)
+    erase: bool = False
+
+
+class GodAnnouncement(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=600)
+
+
+class GodPace(BaseModel):
+    cooldown: float | None = Field(default=None, ge=0.5, le=600)
+    pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
+
+
+@router.post("/{run_id}/god/pixels")
+async def god_pixels(run_id: str, body: GodPixels, manager: ManagerDep) -> dict[str, Any]:
+    run = manager.get(run_id)
+    return {"placed": run.god_paint(body.pixels, body.erase)}
+
+
+@router.post("/{run_id}/god/clear-canvas")
+async def god_clear_canvas(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    run = manager.get(run_id)
+    run.god_clear_canvas()
+    return run.summary()
+
+
+@router.post("/{run_id}/god/clear-board")
+async def god_clear_board(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    run = manager.get(run_id)
+    run.god_clear_board()
+    return run.summary()
+
+
+@router.post("/{run_id}/god/announce", status_code=201)
+async def god_announce(run_id: str, body: GodAnnouncement, manager: ManagerDep) -> dict[str, Any]:
+    run = manager.get(run_id)
+    try:
+        return run.god_announce(body.title, body.body)
+    except BoardError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@router.post("/{run_id}/god/pace")
+async def god_pace(run_id: str, body: GodPace, manager: ManagerDep) -> dict[str, Any]:
+    run = manager.get(run_id)
+    run.god_set_pace(body.cooldown, body.pixels_per_turn)
     return run.summary()
 
 
