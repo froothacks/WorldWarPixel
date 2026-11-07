@@ -102,6 +102,7 @@ class RandomWalkPolicy:
     def __init__(self, seed: int, post_chance: float = 0.05) -> None:
         self._rng = random.Random(seed)
         self._post_chance = post_chance
+        self._reacted: set[tuple[int, int]] = set()
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         rng = self._rng
@@ -118,19 +119,62 @@ class RandomWalkPolicy:
             thought += " " + self._post(agent, tools, obs.board, rng)
         return thought
 
-    @staticmethod
     def _post(
-        agent: AgentSpec, tools: ToolSet, board: Sequence[dict[str, Any]], rng: random.Random
+        self,
+        agent: AgentSpec,
+        tools: ToolSet,
+        board: Sequence[dict[str, Any]],
+        rng: random.Random,
     ) -> str:
         try:
-            if board and rng.random() < 0.7:
-                tid = int(str(board[rng.randrange(len(board))]["thread_id"]))
-                tools.reply(tid, f"{agent.country} here, we're building near my corner.")
+            news = [
+                d
+                for d in board
+                if d.get("tag") == "dispatch"
+                and agent.country in d.get("countries", [])
+                and (agent.id, int(str(d["thread_id"]))) not in self._reacted
+            ]
+            if news:
+                thread = news[0]
+                tid = int(str(thread["thread_id"]))
+                x, y = agent.home_x, agent.home_y
+                other = next(
+                    (
+                        country
+                        for country in thread.get("countries", [])
+                        if country != agent.country
+                    ),
+                    "our rivals",
+                )
+                match thread.get("kind"):
+                    case "war":
+                        body = rng.choice(
+                            [
+                                f"{agent.country} is not backing down near ({x}, {y}).",
+                                f"Allies of {agent.country}: help us hold ({x}, {y})!",
+                                f"{agent.country} will accept a truce if {other} stops at "
+                                f"({x}, {y}).",
+                            ]
+                        )
+                    case "talk":
+                        body = (
+                            f"{agent.country} agrees. Let's keep building together near ({x}, {y})."
+                        )
+                    case "territory":
+                        body = f"{agent.country} is coming for that top spot from ({x}, {y})."
+                    case "art":
+                        body = f"Nice work. {agent.country} will leave it alone."
+                    case _:
+                        return "Stayed quiet."
+                tools.reply(tid, body)
+                self._reacted.add((agent.id, tid))
                 return f"Replied in thread {tid}."
-            tools.post_thread(
-                f"{agent.country} claims ({agent.home_x}, {agent.home_y})",
-                "Anyone nearby want to coordinate colours?",
-            )
-            return "Started a thread to claim my area."
+            if rng.random() < 0.2:
+                tools.post_thread(
+                    f"{agent.country} claims ({agent.home_x}, {agent.home_y})",
+                    "Anyone nearby want to coordinate colours?",
+                )
+                return "Started a thread to claim my area."
+            return "Stayed quiet."
         except ToolError as e:
             return f"Post failed: {e}"

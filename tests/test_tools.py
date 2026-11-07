@@ -115,3 +115,14 @@ def test_posts_must_not_parrot_the_organiser_or_reuse_a_title() -> None:
         tools.reply(tid, "📢 ANNOUNCEMENT: Hearts — paint hearts")
     assert tools.reply(tid, "On my way.")["post_id"]
     assert tools.budget.posts == 3, "rejected posts cost nothing"
+
+
+def test_duplicate_replies_and_world_news_copy_are_rejected_without_spending_budget() -> None:
+    tools, _ = make(TurnBudget(posts=4))
+    thread_id = tools.post_thread("A plan", "Hold this corner.")["thread_id"]
+    tools.reply(thread_id, "Let's hold the line.")
+    with pytest.raises(ToolError, match="already said in this thread"):
+        tools.reply(thread_id, "  LET'S  HOLD \n THE   LINE. ")
+    with pytest.raises(ToolError, match="do not copy the 🗞 news"):
+        tools.reply(thread_id, "🗞 A and B are talking")
+    assert tools.budget.posts == 2

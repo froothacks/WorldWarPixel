@@ -20,10 +20,11 @@ def test_raids_count_cross_country_overpainting_only() -> None:
     world = World(AGENTS, Board())
     world.observe_pixel(1, 0)  # blank
     world.observe_pixel(1, 2)  # own country
-    world.observe_pixel(1, 3)  # India paints over China
+    world.observe_pixel(1, 3, 7, 9)  # India paints over China
     world.observe_pixel(3, 1)  # China paints back
     world.observe_pixel(3, 1)
     world.observe_pixel(65535, 1)  # god is not a country
+    assert world.raid_at[(0, 1)] == (7, 9)
     snap = world.snapshot()
     india = next(n for n in snap["nodes"] if n["country"] == "India")
     assert india == {"country": "India", "agents": 2, "pixels": 3, "posts": 0}
