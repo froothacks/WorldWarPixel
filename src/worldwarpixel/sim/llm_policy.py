@@ -261,7 +261,7 @@ class LLMPolicy:
                     messages=messages,
                     tools=TOOLS,
                     tool_choice="auto",
-                    max_tokens=400,
+                    max_tokens=700,
                     temperature=0.8,
                     timeout=self._timeout,
                     extra_body={"chat_template_kwargs": {"enable_thinking": False}},
