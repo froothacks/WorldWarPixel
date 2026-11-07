@@ -89,6 +89,10 @@ class ToolSet:
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 
+    def png(self, max_side: int = 640) -> tuple[bytes, int]:
+        """Free full-canvas image used to build the observation."""
+        return self._canvas.to_png(max_side)
+
     def peek(self, x: int, y: int, w: int, h: int) -> list[str]:
         """Free read used to build the observation; does not touch the view budget."""
         return self._canvas.view(x, y, w, h)

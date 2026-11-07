@@ -30,3 +30,17 @@ def test_rejects_bad_coordinates_and_colors() -> None:
         c.write(PixelWrite(0, 0, len(PALETTE), 1))
     with pytest.raises(ValueError):
         Canvas(0, 4)
+
+
+def test_png_export_downsamples() -> None:
+    c = Canvas(1300, 700)
+    c.write(PixelWrite(0, 0, 5, 1))
+    png, scale = c.to_png(max_side=640)
+    assert scale == 3
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    import struct
+
+    w, h = struct.unpack(">II", png[16:24])
+    assert (w, h) == (434, 234)
+    small, scale1 = Canvas(64, 32).to_png()
+    assert scale1 == 1 and struct.unpack(">II", small[16:24]) == (64, 32)

@@ -20,7 +20,7 @@ RunState = Literal["created", "running", "paused", "stopped"]
 
 class RunConfig(BaseModel):
     width: int = Field(default=512, ge=16, le=4096)
-    height: int = Field(default=512, ge=16, le=4096)
+    height: int = Field(default=320, ge=16, le=4096)
     agents: int = Field(default=100, ge=1, le=5000)
     cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
