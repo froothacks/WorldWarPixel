@@ -355,6 +355,6 @@ class Run:
             "run": self.summary(),
             "palette": list(PALETTE),
             "agents": self.agent_list(),
-            "threads": self.board.digest(limit=50, name_of=self.agent_name),
+            "threads": self.board.listing(limit=50, name_of=self.agent_name),
             "narrator": self.narrator.state(),
         }

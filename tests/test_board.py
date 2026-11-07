@@ -25,6 +25,22 @@ def test_digest_orders_by_latest_activity() -> None:
     assert digest[1]["latest"] is None
 
 
+def test_listing_adds_viewer_fields() -> None:
+    b = Board()
+    t = b.post_thread(1, "t", "x", now=1.0)
+    b.reply(2, t.id, "a", now=2.0)
+    b.reply(1, t.id, "b", now=5.0)
+    quiet = b.post_thread(3, "quiet", "y", now=3.0)
+    listing = b.listing(name_of=lambda i: f"a{i}")
+    assert [e["thread_id"] for e in listing] == [t.id, quiet.id]
+    first = listing[0]
+    assert first["author_id"] == 1 and first["created_at"] == 1.0
+    assert first["last_activity"] == 5.0 and first["participants"] == 2
+    assert first["latest"] == {"author": "a1", "author_id": 1, "body": "b"}
+    assert listing[1]["latest"] is None and listing[1]["participants"] == 1
+    assert "author_id" not in b.digest()[0]
+
+
 def test_validation() -> None:
     b = Board(max_body=5)
     with pytest.raises(BoardError):

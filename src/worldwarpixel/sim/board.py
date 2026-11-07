@@ -126,5 +126,25 @@ class Board:
             )
         return out
 
+    def listing(
+        self, limit: int = 100, name_of: Callable[[int], str] = lambda i: f"agent {i}"
+    ) -> list[dict[str, object]]:
+        """`digest` plus the ids and timestamps a viewer needs to sort, filter and mark unread."""
+        out = self.digest(limit=limit, name_of=name_of)
+        for entry in out:
+            root = self._posts[entry["thread_id"]]  # type: ignore[index]
+            replies = [self._posts[i] for i in self._replies[root.id]]
+            entry["author_id"] = root.author_id
+            entry["created_at"] = root.created_at
+            entry["last_activity"] = self.last_activity(root.id)
+            entry["participants"] = len({root.author_id, *(p.author_id for p in replies)})
+            if replies:
+                entry["latest"] = {
+                    "author": name_of(replies[-1].author_id),
+                    "author_id": replies[-1].author_id,
+                    "body": replies[-1].body,
+                }
+        return out
+
     def mentions_in(self, text: str) -> list[str]:
         return MENTION_RE.findall(text)
