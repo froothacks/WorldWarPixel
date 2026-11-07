@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+from collections.abc import Iterable
 from typing import Any, cast
 
 from openai import AsyncOpenAI
@@ -14,6 +15,7 @@ from openai.types.chat import (
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
+from worldwarpixel.sim.stencils import FLAGS, SHAPES, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
 log = logging.getLogger(__name__)
@@ -78,6 +80,70 @@ TOOLS: list[ChatCompletionToolParam] = [
                     "color": {"type": "integer", "minimum": 0, "maximum": 15},
                 },
                 "required": ["x", "y", "w", "h", "color"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draw_flag",
+            "description": (
+                "Paint a simplified national flag with its top-left corner at (x, y). Paints as "
+                "many pixels as your budget allows; call it again next turn with the same "
+                "arguments to continue or repair it. Known flags: " + ", ".join(FLAGS) + "."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "country": {"type": "string"},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "width": {"type": "integer", "minimum": 6, "maximum": 96},
+                },
+                "required": ["country", "x", "y", "width"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draw_text",
+            "description": (
+                "Write a short word or slogan in 3x5 pixel letters starting at (x, y); each "
+                "letter is 4*scale pixels wide and 5*scale tall. Progressive like draw_flag."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "maxLength": 24},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
+                    "scale": {"type": "integer", "minimum": 1, "maximum": 4},
+                },
+                "required": ["text", "x", "y", "color"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draw_shape",
+            "description": (
+                "Paint a pixel-art shape (about 7*scale pixels) with top-left at (x, y). "
+                "Progressive like draw_flag. Shapes: " + ", ".join(SHAPES) + "."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "shape": {"type": "string"},
+                    "x": {"type": "integer"},
+                    "y": {"type": "integer"},
+                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
+                    "color2": {"type": "integer", "minimum": 0, "maximum": 15},
+                    "scale": {"type": "integer", "minimum": 1, "maximum": 4},
+                },
+                "required": ["shape", "x", "y", "color"],
             },
         },
     },
@@ -169,9 +235,10 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "you side with or against, and pursue it over many turns. Each turn you see the whole "
         "canvas as an image plus a short list of the busiest areas with their coordinates.\n\n"
         "Practical notes:\n"
-        f"- Use your whole pixel budget every turn ({pixels} pixels), usually one place_pixels "
-        "call with adjacent pixels or one fill_rect, so your work grows into something "
-        "recognisable rather than scattered dots.\n"
+        f"- Use your whole pixel budget every turn ({pixels} pixels). draw_flag, draw_text and "
+        "draw_shape paint real pictures a bit at a time: call the same one again each turn until "
+        "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
+        "borders and backgrounds.\n"
         "- Give coordinates when you coordinate with others. Prefer replying in an existing "
         "thread to starting a new one; address people by @Name.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
@@ -203,7 +270,11 @@ def pick_threads(
 
 
 def user_prompt(
-    agent: AgentSpec, obs: Observation, view: str, rng: random.Random | None = None
+    agent: AgentSpec,
+    obs: Observation,
+    view: str,
+    rng: random.Random | None = None,
+    project: str = "",
 ) -> str:
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
     board = (
@@ -220,10 +291,11 @@ def user_prompt(
     )
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
-        f"{view}\n\nSome current threads:\n{board}\n\n"
-        "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
-        "budget on whatever you are pursuing. If a thread above matters to you, answer it with "
-        "reply(thread_id=..., body=...) rather than starting a new one."
+        f"{view}\n\n{project}Some current threads:\n{board}\n\n"
+        "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
+        "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
+        "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
+        "new one."
     )
 
 
@@ -238,6 +310,7 @@ class LLMPolicy:
         self._timeout = timeout
         self._vision = vision
         self._rng = random.Random()
+        self._projects: dict[int, tuple[str, dict[str, Any], int]] = {}
         self.stats: dict[str, Any] = {
             "calls": 0,
             "tool_calls": 0,
@@ -250,7 +323,9 @@ class LLMPolicy:
         return system_prompt(agent, width, height, pixels, posts)
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
-        text = user_prompt(agent, obs, region_view(agent, tools.regions()), self._rng)
+        text = user_prompt(
+            agent, obs, region_view(agent, tools.regions()), self._rng, self._project_note(agent)
+        )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
             png, scale = tools.png()
@@ -340,6 +415,11 @@ class LLMPolicy:
             return "error: arguments were not valid JSON"
         try:
             result = self._dispatch(agent, tools, name, args)
+            if name in ("draw_flag", "draw_text", "draw_shape"):
+                if result.get("done"):
+                    self._projects.pop(agent.id, None)
+                else:
+                    self._projects[agent.id] = (name, args, int(result.get("remaining", 0)))
         except ToolError as e:
             self.stats["tool_errors"] += 1
             self._note_error(f"{name}: {e}")
@@ -352,6 +432,18 @@ class LLMPolicy:
         actions.append(_summarise(name, args, result))
         _track_position(agent, name, args, result)
         return json.dumps(result)
+
+    def _project_note(self, agent: AgentSpec) -> str:
+        if agent.id not in self._projects:
+            return ""
+        name, args, remaining = self._projects[agent.id]
+        keep = ("country", "text", "shape", "x", "y", "width", "color", "scale")
+        shown = {k: v for k, v in args.items() if k in keep}
+        return (
+            f"Your unfinished drawing: {name}({json.dumps(shown)}), about {remaining} px left; "
+            "call it again with exactly these arguments to continue, unless you have changed "
+            "your mind.\n\n"
+        )
 
     def _note_error(self, text: str) -> None:
         """Keep the last few tool errors so run summaries show what the model gets wrong."""
@@ -384,6 +476,27 @@ class LLMPolicy:
                 a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
                 a["w"], a["h"] = min(int(a["w"]), w - a["x"]), min(int(a["h"]), h - a["y"])
                 return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], colour(a["color"]))
+            case "draw_flag":
+                a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
+                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
+                a["width"] = min(max(int(a.get("width", 24)), 6), 96)
+                return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
+            case "draw_text":
+                a["text"] = str(a["text"])[:24]
+                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
+                a["color"] = colour(a.get("color"))
+                a["scale"] = min(max(int(a.get("scale", 1)), 1), 4)
+                return tools.paint_stencil(
+                    text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
+                )
+            case "draw_shape":
+                a["shape"] = _match_name(str(a.get("shape", "")), SHAPES, "heart")
+                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
+                a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
+                a["scale"] = min(max(int(a.get("scale", 1)), 1), 4)
+                return tools.paint_stencil(
+                    shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
+                )
             case "post_thread":
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
@@ -423,6 +536,36 @@ def _pixel_fields(p: Any) -> dict[str, Any]:
     return {"x": p["x"], "y": p["y"], "color": p.get("color", "default")}
 
 
+_ALIASES = {
+    "united_states": "usa",
+    "america": "usa",
+    "us": "usa",
+    "britain": "uk",
+    "united_kingdom": "uk",
+    "england": "uk",
+    "korea": "south_korea",
+    "dr_congo": "congo",
+    "czech_republic": "czechia",
+    "rainbow": "pride",
+    "united_nations": "un",
+}
+
+
+def _match_name(raw: str, options: Iterable[str], default: str) -> str:
+    """Map sloppy model strings ("United States", "Flag of India") onto a known key."""
+    key = re.sub(r"[^a-z]+", "_", raw.lower()).strip("_")
+    opts = list(options)
+    if key in opts:
+        return key
+    for k, v in _ALIASES.items():
+        if f"_{k}_" in f"_{key}_" and v in opts:
+            return v
+    for o in opts:
+        if f"_{o}_" in f"_{key}_" or (len(key) > 3 and key in o):
+            return o
+    return default if default in opts else opts[0]
+
+
 def _clamp(v: Any, size: int) -> int:
     return min(max(int(v), 0), size - 1)
 
@@ -435,7 +578,7 @@ def _track_position(
     if name == "place_pixels" and args.get("pixels") and placed:
         last = args["pixels"][min(placed, len(args["pixels"])) - 1]
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
-    elif name == "fill_rect":
+    elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 
 
@@ -447,6 +590,13 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             return f"placed {result.get('placed', 0)} px{first}"
         case "fill_rect":
             return f"filled {args['w']}x{args['h']} at ({args['x']}, {args['y']})"
+        case "draw_flag" | "draw_text" | "draw_shape":
+            what = args.get("country") or args.get("text") or args.get("shape")
+            tail = "done" if result.get("done") else f"{result.get('remaining')} px to go"
+            return (
+                f"{name.removeprefix('draw_')} {what!r} at ({args['x']}, {args['y']}): "
+                f"+{result.get('placed', 0)} px, {tail}"
+            )
         case "post_thread":
             return f"posted thread {result.get('thread_id')}"
         case "reply":
