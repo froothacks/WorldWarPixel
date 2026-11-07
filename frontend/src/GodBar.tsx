@@ -125,11 +125,11 @@ export default function GodBar({
         onClick={() => {
           const t = window.prompt(
             "God token (leave empty to clear):",
-            localStorage.getItem("godToken") ?? "",
+            sessionStorage.getItem("godToken") ?? "",
           );
           if (t === null) return;
-          if (t) localStorage.setItem("godToken", t);
-          else localStorage.removeItem("godToken");
+          if (t) sessionStorage.setItem("godToken", t);
+          else sessionStorage.removeItem("godToken");
         }}
       >
         🔑

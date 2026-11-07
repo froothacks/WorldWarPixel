@@ -152,7 +152,7 @@ export interface Snapshot {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("godToken");
+  const token = sessionStorage.getItem("godToken");
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
