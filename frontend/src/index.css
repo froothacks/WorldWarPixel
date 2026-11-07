@@ -74,6 +74,7 @@ button.text:hover { background: none; color: var(--text); }
 .status { font-size: 11px; color: var(--faint); flex: none; }
 .status-thinking { color: var(--blue); }
 .status-acting { color: var(--green); }
+.status-painting { color: var(--green); }
 
 /* Start screen */
 .start { height: 100%; display: grid; grid-template-columns: minmax(380px, 5fr) minmax(520px, 6fr); }
