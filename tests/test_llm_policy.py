@@ -295,4 +295,5 @@ def test_invented_tool_names_map_onto_real_tools() -> None:
     assert _canonical_tool("draw_image") == "view_canvas"
     assert _canonical_tool("see_canvas") == "view_canvas"
     assert _canonical_tool("reply") == "reply"
+    assert _canonical_tool("view_thread") == "read_thread"
     assert _canonical_tool("teleport") == "teleport"
