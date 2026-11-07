@@ -86,7 +86,7 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     off.getContext("2d")!.putImageData(store.image, 0, 0);
     const ctx = el.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#101014";
+    ctx.fillStyle = "#0b0b0c";
     ctx.fillRect(0, 0, el.clientWidth, el.clientHeight);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, vp.panX, vp.panY, store.width * vp.zoom, store.height * vp.zoom);
@@ -107,7 +107,7 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
       ctx.strokeRect(vp.panX + (hover.x - half) * vp.zoom, vp.panY + (hover.y - half) * vp.zoom, tool.size * vp.zoom, tool.size * vp.zoom);
     }
     if (focus) {
-      ctx.strokeStyle = "#4f8cff";
+      ctx.strokeStyle = "#ff6b3d";
       ctx.lineWidth = 2;
       ctx.strokeRect(vp.panX + focus.x * vp.zoom, vp.panY + focus.y * vp.zoom, focus.w * vp.zoom, focus.h * vp.zoom);
     }

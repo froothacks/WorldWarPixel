@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, DEFAULT_CONFIG, type RunConfig, type RunSummary } from "./api";
+import PixelField from "./PixelField";
 
 interface Props {
   onStarted: (run: RunSummary) => void;
@@ -12,6 +13,19 @@ const SIZES: [number, number][] = [
   [1024, 640],
   [512, 512],
 ];
+
+const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
+  { value: "llm", title: "Language model", hint: "Each turn is one call to the configured model." },
+  { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
+];
+
+function ago(ts: number): string {
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
 
 export default function StartScreen({ onStarted }: Props) {
   const [cfg, setCfg] = useState<RunConfig>(DEFAULT_CONFIG);
@@ -37,95 +51,146 @@ export default function StartScreen({ onStarted }: Props) {
     }
   };
 
-  const callsPerMin = Math.round((cfg.agents * 60) / cfg.cooldown);
-  const pxPerMin = callsPerMin * cfg.pixels_per_turn;
+  const turnsPerMin = Math.round((cfg.agents * 60) / cfg.cooldown);
+  const pxPerMin = turnsPerMin * cfg.pixels_per_turn;
+  const brain = BRAINS.find((b) => b.value === cfg.policy) ?? BRAINS[0];
+  const runs = [...existing].sort((a, b) => b.created_at - a.created_at);
 
   return (
     <div className="start">
-      <header className="start-header">
-        <h1>WorldWarPixel</h1>
-        <p>A swarm of agents sharing one canvas and one message board.</p>
-      </header>
-      <div className="start-grid">
-        <section className="panel">
-          <h2>New run</h2>
-          <label>
-            Agents brain
-            <select value={cfg.policy} onChange={(e) => set("policy", e.target.value as RunConfig["policy"])}>
-              <option value="llm">LLM (configured endpoint)</option>
-              <option value="random">Random walk (no LLM, free)</option>
-            </select>
-          </label>
-          <label>
-            Agents
-            <input type="number" min={1} max={5000} value={cfg.agents} onChange={(e) => set("agents", +e.target.value)} />
-          </label>
-          <label>
-            Canvas
-            <select
-              value={`${cfg.width}x${cfg.height}`}
-              onChange={(e) => {
-                const [w, h] = e.target.value.split("x").map(Number);
-                set("width", w);
-                set("height", h);
-              }}
-            >
-              {SIZES.map(([w, h]) => (
-                <option key={`${w}x${h}`} value={`${w}x${h}`}>{w} × {h}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Cooldown (s)
-            <input type="number" min={0.1} step={0.5} value={cfg.cooldown} onChange={(e) => set("cooldown", +e.target.value)} />
-          </label>
-          <label>
-            Pixels per turn
-            <input type="number" min={1} max={1024} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
-          </label>
-          <label>
-            Posts per turn
-            <input type="number" min={0} max={10} value={cfg.posts_per_turn} onChange={(e) => set("posts_per_turn", +e.target.value)} />
-          </label>
-          <label>
-            Max turns in flight
-            <input type="number" min={1} max={500} value={cfg.max_concurrency} onChange={(e) => set("max_concurrency", +e.target.value)} />
-          </label>
-          <label>
-            Narrator update (s)
-            <input type="number" min={5} max={3600} step={5} value={cfg.narrator_interval} onChange={(e) => set("narrator_interval", +e.target.value)} />
-          </label>
-          <label>
-            Seed (optional)
-            <input type="number" value={cfg.seed ?? ""} placeholder="random" onChange={(e) => set("seed", e.target.value === "" ? null : +e.target.value)} />
-          </label>
-          <p className="muted">
-            About {callsPerMin.toLocaleString()} turns/min and up to {pxPerMin.toLocaleString()} px/min.
-            {cfg.policy === "llm" ? " Each turn is one model call." : " No model calls; agents paint random blobs."}
+      <aside className="start-hero">
+        <PixelField />
+        <div className="hero-copy">
+          <h1>WorldWarPixel</h1>
+          <p>
+            Give a crowd of agents one shared canvas and one message board, then see what they draw, who they team up
+            with and what they fight over.
           </p>
-          {error && <p className="error">{error}</p>}
-          <button className="primary" onClick={start} disabled={busy}>
-            {busy ? "Starting…" : "Start simulation"}
-          </button>
-        </section>
-        <section className="panel">
-          <h2>Runs on this server</h2>
-          {existing.length === 0 && <p className="muted">None yet.</p>}
-          <ul className="run-list">
-            {existing.map((r) => (
-              <li key={r.id}>
-                <button onClick={() => onStarted(r)}>
-                  <span className={`state state-${r.state}`}>{r.state}</span>
-                  <span className="mono">{r.id}</span>
-                  <span className="muted">
-                    {r.config.width}×{r.config.height} · {r.agents} agents · {r.stats.pixels.toLocaleString()} px
-                  </span>
+        </div>
+      </aside>
+
+      <main className="start-main">
+        <section className="setup">
+          <h2>New simulation</h2>
+
+          <div className="field">
+            <span className="field-label">Agents</span>
+            <div className="segmented">
+              {BRAINS.map((b) => (
+                <button key={b.value} type="button" className={cfg.policy === b.value ? "on" : ""} onClick={() => set("policy", b.value)}>
+                  {b.title}
                 </button>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+            <span className="hint">{brain.hint}</span>
+          </div>
+
+          <label className="field">
+            <span className="field-label">How many</span>
+            <div className="agent-count">
+              <input
+                type="range"
+                min={1}
+                max={500}
+                value={Math.min(cfg.agents, 500)}
+                onChange={(e) => set("agents", +e.target.value)}
+              />
+              <input type="number" min={1} max={5000} value={cfg.agents} onChange={(e) => set("agents", +e.target.value)} />
+            </div>
+          </label>
+
+          <div className="field">
+            <span className="field-label">Canvas</span>
+            <div className="sizes">
+              {SIZES.map(([w, h]) => {
+                const on = cfg.width === w && cfg.height === h;
+                return (
+                  <button
+                    key={`${w}x${h}`}
+                    type="button"
+                    className={`size ${on ? "on" : ""}`}
+                    onClick={() => {
+                      set("width", w);
+                      set("height", h);
+                    }}
+                  >
+                    <span className="size-box" style={{ width: (w / 1024) * 36, height: (h / 1024) * 36 }} />
+                    <span>
+                      {w}×{h}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <details className="advanced">
+            <summary>Advanced</summary>
+            <div className="advanced-grid">
+              <label>
+                Cooldown (s)
+                <input type="number" min={0.1} step={0.5} value={cfg.cooldown} onChange={(e) => set("cooldown", +e.target.value)} />
+              </label>
+              <label>
+                Pixels per turn
+                <input type="number" min={1} max={1024} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
+              </label>
+              <label>
+                Posts per turn
+                <input type="number" min={0} max={10} value={cfg.posts_per_turn} onChange={(e) => set("posts_per_turn", +e.target.value)} />
+              </label>
+              <label>
+                Turns in flight
+                <input type="number" min={1} max={500} value={cfg.max_concurrency} onChange={(e) => set("max_concurrency", +e.target.value)} />
+              </label>
+              <label>
+                Narrator every (s)
+                <input type="number" min={5} max={3600} step={5} value={cfg.narrator_interval} onChange={(e) => set("narrator_interval", +e.target.value)} />
+              </label>
+              <label>
+                Seed
+                <input type="number" value={cfg.seed ?? ""} placeholder="random" onChange={(e) => set("seed", e.target.value === "" ? null : +e.target.value)} />
+              </label>
+            </div>
+          </details>
+
+          <div className="launch">
+            <span className="estimate">
+              About {turnsPerMin.toLocaleString()} turns and {pxPerMin.toLocaleString()} pixels a minute
+            </span>
+            <button className="primary" onClick={start} disabled={busy}>
+              {busy ? "Starting…" : "Start simulation"}
+            </button>
+          </div>
+          {error && <p className="error">{error}</p>}
         </section>
-      </div>
+
+        <section className="recent">
+          <h2>
+            Recent runs <span className="count">{runs.length || ""}</span>
+          </h2>
+          {runs.length === 0 ? (
+            <p className="faint">Runs you start will show up here.</p>
+          ) : (
+            <ul className="run-list">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  <button onClick={() => onStarted(r)}>
+                    <span className={`state state-${r.state}`}>{r.state}</span>
+                    <span className="mono run-id">{r.id}</span>
+                    <span className="run-meta">
+                      {r.agents} {r.config.policy === "random" ? "random" : "LLM"} agents · {r.config.width}×{r.config.height} ·{" "}
+                      {r.stats.pixels.toLocaleString()} px
+                    </span>
+                    <span className="run-when">{ago(r.created_at)}</span>
+                    <span className="run-open">Open →</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

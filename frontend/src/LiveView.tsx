@@ -233,99 +233,91 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     [initial.id],
   );
 
+  const llm = run.llm;
+  const turnLatency = llm?.latency?.turn;
+  const llmTitle = llm
+    ? `${llm.tool_calls.toLocaleString()} tool calls / ${llm.calls.toLocaleString()} model calls${llm.failures ? ` · ${llm.failures} failed` : ""}` +
+      (turnLatency ? ` · turn p50 ${turnLatency.p50.toFixed(2)}s / p95 ${turnLatency.p95.toFixed(2)}s` : "")
+    : undefined;
+  const live = connection === "live";
+
   return (
     <div className="live">
-      <div className="top">
-        <header className="topbar">
-          <button className="ghost" onClick={onLeave}>
-            ← Runs
-          </button>
-          <strong>WorldWarPixel</strong>
+      <header className="topbar">
+        <button className="brand" onClick={onLeave} title="Back to all runs">
+          WorldWarPixel
+        </button>
+        <span className="crumb">
+          <span className="slash">/</span>
+          <span className="mono">{run.id}</span>
           <span className={`state state-${run.state}`}>{run.state}</span>
-          <span className="muted small">
-            run {run.id} · {run.agents} agents ·{" "}
-            {run.stats.turns.toLocaleString()} turns ·{" "}
-            {run.stats.pixels.toLocaleString()} px ·{" "}
-            {run.stats.posts.toLocaleString()} posts
-            {run.llm &&
-              ` · ${run.llm.tool_calls.toLocaleString()} tool calls / ${run.llm.calls.toLocaleString()} model calls${run.llm.failures ? ` · ${run.llm.failures} failed` : ""}`}
-            {run.llm?.latency?.turn &&
-              ` · turn p50 ${run.llm.latency.turn.p50.toFixed(2)} s / p95 ${run.llm.latency.turn.p95.toFixed(2)} s`}
-            {" · "}
-            {connection}
-          </span>
-          <span className="spacer" />
+        </span>
+        <dl className="stats" title={llmTitle}>
+          <Stat k="agents" v={run.agents} />
+          <Stat k="turns" v={run.stats.turns} />
+          <Stat k="px" v={run.stats.pixels} />
+          <Stat k="posts" v={run.stats.posts} />
+          {llm && <Stat k="calls" v={llm.calls} className="opt" />}
+          {turnLatency && <Stat k="p50" v={`${turnLatency.p50.toFixed(2)}s`} className="opt" />}
+          {llm && llm.failures > 0 && <Stat k="failed" v={llm.failures} className="bad" />}
+        </dl>
+        <span className="spacer" />
+        <span className={`conn ${live ? "conn-on" : ""}`} title={connection}>
+          {live ? "● live" : connection.startsWith("disconnected") ? "○ offline" : "○ connecting"}
+        </span>
+        <div className="actions">
           <button
-            className={god ? "primary" : ""}
+            className={god ? "on" : ""}
             onClick={() => {
               setGod(!god);
               if (god) setTool(null);
             }}
             title="Intervene: paint, erase, clear, announce, change the pace"
           >
-            ⚡ God mode
+            God mode
           </button>
-          <button
-            onClick={() => setTimelapse(true)}
-            title="Replay the canvas history so far"
-          >
-            ⏱ Timelapse
+          <button onClick={() => setTimelapse(true)} title="Replay the canvas history so far">
+            Timelapse
           </button>
-          {run.state === "running" && (
-            <button onClick={() => control("pause")}>Pause</button>
-          )}
-          {run.state === "paused" && (
-            <button onClick={() => control("resume")}>Resume</button>
-          )}
+          {run.state === "running" && <button onClick={() => control("pause")}>Pause</button>}
+          {run.state === "paused" && <button onClick={() => control("resume")}>Resume</button>}
           {run.state !== "stopped" && (
             <button className="danger" onClick={() => control("stop")}>
               Stop
             </button>
           )}
-        </header>
-        {god && (
-          <GodBar
-            runId={initial.id}
-            run={run}
-            palette={palette}
-            tool={tool}
-            onTool={setTool}
-            onRun={setRun}
-            onClose={() => {
-              setGod(false);
-              setTool(null);
-            }}
-          />
-        )}
-      </div>
+        </div>
+      </header>
       <div className="live-grid">
-        <AgentList
-          agents={agents}
-          palette={palette}
-          selected={selected}
-          lastThought={lastThought}
-          onSelect={setSelected}
-        />
-        <CanvasView
-          store={store}
-          version={version}
-          agents={agentMap}
-          highlightAgent={selected}
-          onPickAgent={setSelected}
-          focus={focus}
-          tool={god ? tool : null}
-          onPaint={paint}
-        />
-        {selectedAgent && (
-          <AgentDrawer
-            runId={initial.id}
-            agent={selectedAgent}
-            palette={palette}
-            liveThoughts={thoughts.get(selectedAgent.id) ?? []}
-            pixelsOwned={pixelsOwned}
-            onClose={() => setSelected(null)}
+        <section className="stage">
+          {god ? (
+            <GodBar
+              runId={initial.id}
+              run={run}
+              palette={palette}
+              tool={tool}
+              onTool={setTool}
+              onRun={setRun}
+              onClose={() => {
+                setGod(false);
+                setTool(null);
+              }}
+            />
+          ) : (
+            <span />
+          )}
+          <CanvasView
+            store={store}
+            version={version}
+            agents={agentMap}
+            highlightAgent={selected}
+            onPickAgent={setSelected}
+            focus={focus}
+            tool={god ? tool : null}
+            onPaint={paint}
           />
-        )}
+          <NarratorDock narrator={narrator} paused={run.state !== "running"} onHighlight={onHighlight} onAsk={ask} />
+        </section>
         <Board
           runId={initial.id}
           threads={threads}
@@ -336,24 +328,30 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           totalThreads={run.threads}
           open={openThread}
           onOpen={setOpenThread}
-          hidden={!!selectedAgent}
         />
+        {selectedAgent ? (
+          <AgentDrawer
+            runId={initial.id}
+            agent={selectedAgent}
+            palette={palette}
+            liveThoughts={thoughts.get(selectedAgent.id) ?? []}
+            pixelsOwned={pixelsOwned}
+            onClose={() => setSelected(null)}
+          />
+        ) : (
+          <AgentList agents={agents} palette={palette} selected={selected} lastThought={lastThought} onSelect={setSelected} />
+        )}
       </div>
-      {timelapse && (
-        <Timelapse
-          runId={initial.id}
-          palette={palette}
-          onClose={() => setTimelapse(false)}
-        />
-      )}
-      <NarratorDock
-        narrator={narrator}
-        paused={run.state !== "running"}
-        stats={run.stats}
-        threads={run.threads}
-        onHighlight={onHighlight}
-        onAsk={ask}
-      />
+      {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
+    </div>
+  );
+}
+
+function Stat({ k, v, className = "" }: { k: string; v: number | string; className?: string }) {
+  return (
+    <div className={`stat ${className}`}>
+      <dt>{k}</dt>
+      <dd>{typeof v === "number" ? v.toLocaleString() : v}</dd>
     </div>
   );
 }

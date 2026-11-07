@@ -72,13 +72,15 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
 
   return (
     <aside className="drawer">
-      <header className="drawer-header">
+      <header className="panel-head">
         <span className="swatch" style={{ background: palette[agent.color] ?? "#888" }} />
         <strong>{agent.name}</strong>
         <span className={`status status-${agent.status}`}>{agent.status}</span>
-        <button className="ghost" onClick={onClose}>Close</button>
+        <button className="ghost" onClick={onClose}>
+          ← all agents
+        </button>
       </header>
-      <div className="drawer-body" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+      <div className="drawer-body">
         <dl className="facts">
           <dt>Country</dt><dd>{agent.country}</dd>
           <dt>Position</dt><dd>({pos.home_x}, {pos.home_y})</dd>
@@ -106,7 +108,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
             </dl>
           </details>
         )}
-        <p className="muted small">Its pixels are highlighted on the canvas.</p>
+        <p className="faint small">Pixels highlighted on the canvas.</p>
         {fresh?.system_prompt && (
           <details className="prompt">
             <summary className="muted small">System prompt</summary>
@@ -118,7 +120,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
           {thoughts.length === 0 && <p className="muted small">No turns yet.</p>}
           {thoughts.map((t) => (
             <div key={t.ts} className="thought">
-              <span className="muted small">{new Date(t.ts * 1000).toLocaleTimeString()}</span>
+              <span className="faint small mono">{new Date(t.ts * 1000).toLocaleTimeString([], { hour12: false })}</span>
               <p>{t.thought}</p>
             </div>
           ))}

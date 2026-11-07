@@ -76,19 +76,19 @@ export default function GodBar({
 
   return (
     <div className="godbar">
-      <strong title="You are the human in the loop. Everything here is visible to the agents.">
-        ⚡ God mode
-      </strong>
+      <span className="label" title="You are the human in the loop. Everything here is visible to the agents.">
+        God mode
+      </span>
       <span className="sep" />
       <button
-        className={tool?.mode === "paint" ? "primary" : ""}
+        className={tool?.mode === "paint" ? "on" : ""}
         onClick={() => pick("paint")}
         title="Paint on the canvas as The Hand of God"
       >
         Brush
       </button>
       <button
-        className={tool?.mode === "erase" ? "primary" : ""}
+        className={tool?.mode === "erase" ? "on" : ""}
         onClick={() => pick("erase")}
         title="Erase pixels back to blank, unowned canvas"
       >
@@ -117,6 +117,7 @@ export default function GodBar({
       </label>
       <span className="sep" />
       <button
+        className={announcing ? "on" : ""}
         onClick={() => setAnnouncing(!announcing)}
         disabled={busy !== null}
         title="Post a thread the agents will read and react to"
@@ -148,7 +149,7 @@ export default function GodBar({
             Post as The Hand of God
           </button>
           <button type="button" className="ghost" onClick={() => setAnnouncing(false)}>
-            ✕
+            cancel
           </button>
         </form>
       )}
@@ -165,7 +166,7 @@ export default function GodBar({
           else sessionStorage.removeItem("godToken");
         }}
       >
-        🔑
+        token
       </button>
       <label className="small" title="Seconds between each agent's turns">
         cooldown {run.config.cooldown}s
@@ -212,7 +213,7 @@ export default function GodBar({
       </button>
       <span className="spacer" />
       <button className="ghost" onClick={onClose}>
-        ✕
+        done
       </button>
     </div>
   );
