@@ -148,7 +148,7 @@ interface ItemProps {
 function UpdateItem({ update: u, open, onToggle, onHighlight }: ItemProps) {
   const time = new Date(u.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   const events = u.kind === "update" ? (u.events ?? []) : [];
-  const hasDetail = u.bullets.length > 0 || events.length > 0 || u.question !== null;
+  const hasDetail = u.bullets.length > 0 || events.length > 0 || u.question !== null || u.highlights.length > 0;
   return (
     <div className={`narr-item ${u.kind} ${open ? "open" : ""}`}>
       <div className="narr-row">
@@ -157,12 +157,13 @@ function UpdateItem({ update: u, open, onToggle, onHighlight }: ItemProps) {
         <button type="button" className="narr-headline" onClick={onToggle} disabled={!hasDetail} title={open ? "Collapse" : "Expand"}>
           {u.headline}
         </button>
-        {u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
+        {!open && u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
         {hasDetail && <span className="narr-toggle">{open ? "−" : "+"}</span>}
       </div>
       {open && (
         <div className="narr-detail">
           {u.question && <div className="narr-question">{u.question}</div>}
+          {u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
           {u.bullets.length > 0 && (
             <ul className="narr-bullets">
               {u.bullets.map((b, i) => (
