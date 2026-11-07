@@ -269,6 +269,8 @@ class Narrator:
         self._sleep = sleep
         self.history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self.stats = {"updates": 0, "answers": 0, "failures": 0}
+        self.rivalry: Counter[tuple[int, int]] = Counter()
+        self.rivalry_at: dict[tuple[int, int], tuple[int, int]] = {}
         self.next_update_at: float | None = None
         self._window = Window(clock())
         self._projects: dict[int, dict[str, Any]] = {}
@@ -320,6 +322,10 @@ class Narrator:
             w.regions[(rx, ry)] += 1
             prev = int(payload.get("prev_owner") or 0)
             x, y = int(payload["x"]), int(payload["y"])
+            agent_count = len(self._run.agents)
+            if prev != agent_id and 1 <= agent_id <= agent_count and 1 <= prev <= agent_count:
+                self.rivalry[(agent_id, prev)] += 1
+                self.rivalry_at[(agent_id, prev)] = (x, y)
             if prev == 0:
                 w.claimed_blank += 1
             elif prev != agent_id:

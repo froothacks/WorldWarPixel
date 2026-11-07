@@ -3,14 +3,16 @@ import json
 import struct
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import RandomWalkPolicy
+from worldwarpixel.sim.canvas import PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.run import GOD_ID, Run, RunConfig
 from worldwarpixel.sim.stage import (
@@ -60,12 +62,18 @@ class FakeSpeech:
         return b"\x00\x00" * int(self.sample_rate * self.seconds)
 
 
-def make_run(model: Any = None, speech: Any = None, config: RunConfig = CONFIG) -> Run:
+def make_run(
+    model: Any = None,
+    speech: Any = None,
+    config: RunConfig = CONFIG,
+    clock: Any = time.time,
+) -> Run:
     run = Run(
         "s",
         config.model_copy(update={"policy": "llm"}) if model else config,
         EventLog(),
         RandomWalkPolicy(seed=1),
+        clock=clock,
         narrator_model=model,
         speech=speech,
     )
@@ -133,8 +141,9 @@ def test_reactions_during_playback_reach_a_later_debate_prompt() -> None:
         run = make_run(model, FakeSpeech(seconds=0.2))
         await run.start()
         run.stage.start_debate(1, 2)
-        await wait_for(lambda: len(run.stage.transcript) >= 1)
-        assert run.stage.transcript[0]["speaker_id"] == 1
+        await wait_for(lambda: any(line["kind"] == "debate" for line in run.stage.transcript))
+        assert run.stage.transcript[0]["kind"] == "narrator"
+        assert run.stage.transcript[1]["speaker_id"] == 1
 
         calls_before_reaction = len(model.calls)
         run.stage.react("boo", 2)
@@ -156,6 +165,7 @@ def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
         await run.start()
         state = run.stage.start_debate(1, 2, "Who owns the top-left?")
         assert state["phase"] == "debating" and [d["id"] for d in state["debaters"]] == [1, 2]
+        assert state["thread_id"] is not None
         with pytest.raises(StageBusy):
             run.stage.start_debate()
         await wait_for(lambda: run.stage.phase == "voting")
@@ -170,6 +180,12 @@ def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
         await run.stop()
 
         lines = list(run.stage.transcript)
+        intro = lines[0]
+        assert intro["kind"] == "narrator" and intro["name"] == "Narrator"
+        assert intro["text"].startswith(
+            f"Debate #1: {run.by_id[1].name} of {run.by_id[1].country} "
+            f"versus {run.by_id[2].name} of {run.by_id[2].country}."
+        )
         debate = [ln for ln in lines if ln["kind"] == "debate"]
         assert [ln["speaker_id"] for ln in debate] == [1, 2, 1, 2]
         assert [ln["podium"] for ln in debate] == [0, 1, 0, 1]
@@ -178,12 +194,19 @@ def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
         verdict = lines[-1]
         assert verdict["kind"] == "verdict" and verdict["podium"] is None
         assert "3 votes to 0" in verdict["text"]
-        # Rebuttals see the debate so far; the opening line does not.
-        assert "You open the debate." in str(model.calls[0][-1]["content"])
+        # Rebuttals see the narrator's introduction and the debate so far.
+        assert "Debate #1:" in str(model.calls[0][-1]["content"])
         assert "Line number 1!" in str(model.calls[1][-1]["content"])
-        # Every agent hears the verdict through a pinned announcement.
-        threads = run.board.listing(limit=10, name_of=run.agent_name)
-        assert any(t["author_id"] == GOD_ID and "verdict" in str(t["title"]) for t in threads)
+        thread = run.board.thread(state["thread_id"])
+        assert thread[0].author_id == GOD_ID
+        debate_replies = [post for post in thread[1:] if post.body == debate[0]["text"]]
+        assert debate_replies and debate_replies[0].author_id == debate[0]["speaker_id"]
+        verdict_reply = next(post for post in thread[1:] if verdict["text"] in post.body)
+        assert verdict_reply.author_id == GOD_ID
+        assert any(
+            item["thread_id"] == state["thread_id"] and item["title"] == "Live debate verdict"
+            for item in run.recent_announcements()
+        )
         assert run.stage.stats["debates"] == 1
 
         types = []
@@ -223,13 +246,24 @@ def test_narrator_interjection_is_spoken_next_and_debaters_hear_it() -> None:
         run = make_run(model, FakeSpeech(seconds=0.1))
         await run.start()
         run.stage.start_debate(1, 2)
-        await wait_for(lambda: len(run.stage.transcript) >= 1)
+        await wait_for(lambda: any(ln["kind"] == "debate" for ln in run.stage.transcript))
         run.stage.narrate("  Brazil just  painted over everyone!  ", "Megan")
         run.stage.react("boo", 2)
-        await wait_for(lambda: any(ln["kind"] == "narrator" for ln in run.stage.transcript))
-        await wait_for(lambda: run.stage.transcript[-1]["kind"] == "debate")
+        await wait_for(
+            lambda: any(
+                ln["text"] == "Brazil just painted over everyone!" for ln in run.stage.transcript
+            )
+        )
+        await wait_for(
+            lambda: (
+                run.stage.transcript[-1]["kind"] == "debate"
+                and run.stage.transcript[-2]["text"] == "Brazil just painted over everyone!"
+            )
+        )
         await run.stop()
-        narr = next(ln for ln in run.stage.transcript if ln["kind"] == "narrator")
+        narr = next(
+            ln for ln in run.stage.transcript if ln["text"] == "Brazil just painted over everyone!"
+        )
         assert narr["name"] == "Megan" and narr["text"] == "Brazil just painted over everyone!"
         idx = list(run.stage.transcript).index(narr)
         assert run.stage.transcript[idx - 1]["kind"] == "debate"
@@ -246,25 +280,89 @@ def test_narrator_interjection_is_spoken_next_and_debaters_hear_it() -> None:
 def test_rivals_are_the_pair_that_overwrote_each_other_most() -> None:
     run = make_run()
     for i in range(5):
-        run.stage.observe_write(3, "pixel", {"x": 10 + i, "y": 12, "prev_owner": 5})
-    run.stage.observe_write(5, "pixel", {"x": 40, "y": 4, "prev_owner": 3})
-    run.stage.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": 2})
-    run.stage.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": GOD_ID})
-    run.stage.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": 0})
+        run.narrator.observe_write(3, "pixel", {"x": 10 + i, "y": 12, "prev_owner": 5})
+    run.narrator.observe_write(5, "pixel", {"x": 40, "y": 4, "prev_owner": 3})
+    run.narrator.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": 2})
+    run.narrator.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": GOD_ID})
+    run.narrator.observe_write(1, "pixel", {"x": 1, "y": 1, "prev_owner": 0})
+    assert run.narrator.rivalry[(3, 5)] == 5
+    assert run.narrator.rivalry[(5, 3)] == 1
     a, b, topic, region = run.stage.pick_rivals()
     assert (a, b) == (3, 5)
     assert "(14, 12)" in topic and region == {"x": 0, "y": 0, "w": 48, "h": 48}
+    assert run.narrator.rivalry[(3, 5)] == 2
+
+
+def test_verdict_holds_its_region_against_other_agents_until_expiry() -> None:
+    async def main() -> None:
+        now = [100.0]
+        config = CONFIG.model_copy(update={"stage_hold_seconds": 5})
+        run = make_run(
+            speech=FakeSpeech(),
+            config=config,
+            clock=lambda: now[0],
+        )
+
+        class FixedPolicy:
+            async def act(self, agent: Any, tools: Any, obs: Any) -> str:
+                pixels = {
+                    1: [(10, 10, 5)],
+                    2: [(11, 11, 6), (30, 20, 7)],
+                }.get(agent.id, [])
+                tools.place_pixels(pixels)
+                return "painted"
+
+        run.policy = FixedPolicy()
+        run.stage.start_debate(1, 2)
+        run.stage.region = {"x": 10, "y": 10, "w": 10, "h": 10}
+        run.stage.phase = "voting"
+        run.stage.vote("viewer", 1)
+
+        async def no_wait(_: float) -> None:
+            return None
+
+        run.stage._sleep = no_wait
+        await run.stage._verdict()
+        verdict = next(line for line in run.stage.transcript if line["kind"] == "verdict")
+        assert "holds that ground for 5s." in verdict["text"]
+        assert run.stage.hold_state() == {
+            "agent_id": 1,
+            "region": {"x": 10, "y": 10, "w": 10, "h": 10},
+            "until": 105.0,
+            "seconds_left": 5,
+        }
+
+        await run._turn(run.by_id[1], 0)
+        await run._turn(run.by_id[2], 0)
+        assert run.canvas.owner(10, 10) == 1
+        assert run.canvas.owner(11, 11) == 0
+        assert run.canvas.owner(30, 20) == 2
+
+        run._running.set()
+        pending = {(12, 12): (8, 3)}
+        queue: asyncio.Queue[PixelWrite] = asyncio.Queue()
+        queue.put_nowait(PixelWrite(12, 12, 8, 3))
+        painter = asyncio.create_task(run._painter(run.by_id[3], queue, pending))
+        await asyncio.sleep(0.01)
+        painter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await painter
+        assert run.canvas.owner(12, 12) == 0 and (12, 12) not in pending
+
+        now[0] += 6
+        assert run.stage.hold_state() is None
+        await run._turn(run.by_id[2], 0)
+        assert run.canvas.owner(11, 11) == 2
+
+    asyncio.run(main())
 
 
 def test_fallback_lines_without_model_or_speech() -> None:
     async def main() -> None:
         run = make_run()
         run.thoughts[1].append({"ts": 0, "thought": "Defending my flag. [draw_flag at (3, 4)]"})
-        await run.start()
         run.stage.start_debate(1, 2)
-        await wait_for(lambda: len(run.stage.transcript) >= 1)
-        await run.stop()
-        line = run.stage.transcript[0]
+        line, _ = await run.stage._compose(1)
         assert line["audio"] is False and line["duration"] >= 2.0
         assert "Defending my flag." in line["text"] and "draw_flag" not in line["text"]
 
@@ -283,9 +381,11 @@ def test_echoed_lines_are_retried_then_replaced() -> None:
         run = make_run(model, FakeSpeech())
         await run.start()
         run.stage.start_debate(1, 2)
-        await wait_for(lambda: len(run.stage.transcript) >= 2)
+        await wait_for(
+            lambda: len([line for line in run.stage.transcript if line["kind"] == "debate"]) >= 2
+        )
         await run.stop()
-        first, second = run.stage.transcript[0], run.stage.transcript[1]
+        first, second = [line for line in run.stage.transcript if line["kind"] == "debate"][:2]
         assert first["text"] == "The canvas is mine and you know it."
         assert second["text"] != first["text"]
         assert run.stage.stats["repeats"] >= 2 and len(model.calls) >= 3
@@ -351,7 +451,12 @@ def test_stage_api(client: TestClient) -> None:
         msg = ws.receive_json()
         assert msg["type"] == "stage.state" and msg["phase"] == "debating"
         line = ws.receive_json()
-        assert line["type"] == "stage.line" and line["speaker_id"] == 1 and not line["audio"]
+        assert (
+            line["type"] == "stage.line"
+            and line["speaker_id"] == 0
+            and line["kind"] == "narrator"
+            and not line["audio"]
+        )
 
     vote = client.post(f"/runs/{run_id}/stage/vote", json={"voter": "x", "agent_id": 2})
     assert vote.json()["votes"] == {"1": 0, "2": 1}
@@ -370,6 +475,49 @@ def test_stage_api(client: TestClient) -> None:
     stopped = client.post(f"/runs/{run_id}/stage/stop").json()
     assert stopped["phase"] == "idle" and stopped["auto"] is False
     assert client.get(f"/runs/{run_id}").json()["stage"]["debate_id"] == 1
+
+
+def test_stage_frame_endpoint_returns_rgb565_with_debater_highlight(client: TestClient) -> None:
+    run_id = client.post(
+        "/runs",
+        json={"width": 16, "height": 16, "agents": 3, "cooldown": 600, "policy": "random"},
+    ).json()["id"]
+    run = cast(FastAPI, client.app).state.runs.get(run_id)
+    run.stage.start_debate(1, 2)
+    run.stage.region = {"x": 0, "y": 0, "w": 2, "h": 1}
+    run.canvas.write(PixelWrite(0, 0, 5, 1))
+    run.canvas.write(PixelWrite(1, 0, 6, 3))
+
+    response = client.get(f"/runs/{run_id}/stage/frame?w=32&h=16&podium=0")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["x-width"] == "32" and response.headers["x-height"] == "16"
+    assert len(response.content) == 32 * 16 * 2
+    assert struct.unpack_from("<H", response.content, (8 * 32 + 8) * 2)[0] == 0xE000
+    assert struct.unpack_from("<H", response.content, (8 * 32 + 24) * 2)[0] == 0x59C0
+
+
+def test_stage_websocket_filters_podium_lines_and_tracks_devices(client: TestClient) -> None:
+    run_id = client.post(
+        "/runs",
+        json={"width": 32, "height": 16, "agents": 2, "cooldown": 600, "policy": "random"},
+    ).json()["id"]
+    run = cast(FastAPI, client.app).state.runs.get(run_id)
+    with client.websocket_connect(f"/runs/{run_id}/stage/ws?podium=0&narrator=1") as ws:
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "stage.snapshot"
+        assert snapshot["devices"] == {"0": 1, "1": 0}
+        run.stage._publish("stage.line", id=1, podium=1, kind="debate", text="other podium")
+        run.stage._publish("stage.line", id=2, podium=0, kind="debate", text="this podium")
+        run.stage._publish("stage.line", id=3, podium=None, kind="narrator", text="host")
+        run.stage._publish("stage.verdict", debate_id=1, winner_id=1)
+        podium_line = ws.receive_json()
+        narrator_line = ws.receive_json()
+        verdict = ws.receive_json()
+        assert podium_line["id"] == 2 and podium_line["type"] == "stage.line"
+        assert narrator_line["id"] == 3 and narrator_line["type"] == "stage.line"
+        assert verdict["type"] == "stage.verdict"
+    assert run.stage.state()["devices"] == {"0": 0, "1": 0}
 
 
 def test_stage_audio_endpoint() -> None:

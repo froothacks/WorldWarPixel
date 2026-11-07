@@ -10,6 +10,7 @@ is announced to every agent through the board.
 import asyncio
 import contextlib
 import logging
+import math
 import random
 import re
 import struct
@@ -37,6 +38,7 @@ LineKind = Literal["debate", "narrator", "verdict"]
 
 SAMPLE_RATE = 24_000
 """OpenAI `pcm` speech is 24 kHz signed 16-bit little-endian mono."""
+GOD_ID = 65535
 NARRATOR_ID = 0
 NARRATOR_VOICE = "verse"
 VOICES_FEMALE = ("coral", "nova", "shimmer", "sage")
@@ -145,6 +147,7 @@ class Stage:
         auto: bool = False,
         lines_per_debate: int = 6,
         vote_seconds: float = 20.0,
+        hold_seconds: float = 120.0,
         break_seconds: float = 15.0,
         line_gap: float = 1.2,
         clock: Callable[[], float] = time.time,
@@ -157,6 +160,7 @@ class Stage:
         self.auto = auto
         self.lines_per_debate = lines_per_debate
         self.vote_seconds = vote_seconds
+        self.hold_seconds = hold_seconds
         self.break_seconds = break_seconds
         self.line_gap = line_gap
         self._clock = clock
@@ -168,6 +172,11 @@ class Stage:
         self.debaters: list[int] = []
         self.topic = ""
         self.region: dict[str, int] | None = None
+        self.thread_id: int | None = None
+        self.devices: Counter[int] = Counter()
+        self.hold: dict[str, Any] | None = None
+        self._picked_rivalry_count = 0
+        self._picked_rivalry_at = (0, 0)
         self.vote_ends_at: float | None = None
         self.transcript: deque[dict[str, Any]] = deque(maxlen=MAX_TRANSCRIPT)
         self.stats = {
@@ -187,8 +196,6 @@ class Stage:
         self._interjections: deque[dict[str, Any]] = deque(maxlen=10)
         self._audio: dict[int, bytes] = {}
         self._gates: dict[int, asyncio.Event] = {}
-        self._rivalry: Counter[tuple[int, int]] = Counter()
-        self._rivalry_at: dict[tuple[int, int], tuple[int, int]] = {}
         self._prepared: (
             tuple[
                 int,
@@ -221,16 +228,6 @@ class Stage:
 
     # -- hooks from the run ----------------------------------------------------------------
 
-    def observe_write(self, agent_id: int, kind: str, payload: dict[str, Any]) -> None:
-        """Track who paints over whom; the top pair is the next debate."""
-        if kind != "pixel":
-            return
-        prev = int(payload.get("prev_owner") or 0)
-        n = len(self._run.agents)
-        if prev and prev != agent_id and 1 <= agent_id <= n and 1 <= prev <= n:
-            self._rivalry[(agent_id, prev)] += 1
-            self._rivalry_at[(agent_id, prev)] = (int(payload["x"]), int(payload["y"]))
-
     async def gate(self, agent_id: int) -> None:
         """Debaters take a canvas turn only after each line they speak."""
         ev = self._gates.get(agent_id)
@@ -246,11 +243,13 @@ class Stage:
         """The pair that overwrote each other most (both directions), else two strangers."""
         by_id = self._run.by_id
         pairs: Counter[tuple[int, int]] = Counter()
-        for (a, b), n in self._rivalry.items():
+        for (a, b), n in self._run.narrator.rivalry.items():
             pairs[(min(a, b), max(a, b))] += n
         if pairs:
-            (a, b), _ = pairs.most_common(1)[0]
-            at = self._rivalry_at.get((a, b)) or self._rivalry_at.get((b, a)) or (0, 0)
+            (a, b), self._picked_rivalry_count = pairs.most_common(1)[0]
+            rivalry_at = self._run.narrator.rivalry_at
+            at = rivalry_at.get((a, b)) or rivalry_at.get((b, a)) or (0, 0)
+            self._picked_rivalry_at = at
             x, y = at
             half = 24
             region = {
@@ -259,11 +258,13 @@ class Stage:
                 "w": half * 2,
                 "h": half * 2,
             }
-            for k in list(self._rivalry):
-                self._rivalry[k] //= 2
-                if not self._rivalry[k]:
-                    del self._rivalry[k]
+            for k in list(self._run.narrator.rivalry):
+                self._run.narrator.rivalry[k] //= 2
+                if not self._run.narrator.rivalry[k]:
+                    del self._run.narrator.rivalry[k]
             return a, b, f"Who owns the canvas around ({x}, {y})?", region
+        self._picked_rivalry_count = 0
+        self._picked_rivalry_at = (0, 0)
         agents = list(by_id.values())
         if len(agents) < 2:
             raise StageBusy("a debate needs at least two agents")
@@ -299,6 +300,25 @@ class Stage:
         self._votes.clear()
         self._reactions.clear()
         self._gates = {a: asyncio.Event(), b: asyncio.Event()}
+        self.thread_id = None
+        agent_a, agent_b = by_id[a], by_id[b]
+        title = f"Live debate #{self.debate_id}: {agent_a.name} vs {agent_b.name}"
+        body = f"{self.topic} Reply here to weigh in; the live audience picks the winner."
+        with contextlib.suppress(BoardError):
+            thread = self._run.god_announce(title[: self._run.board.max_title], body)
+            self.thread_id = int(thread["thread_id"])
+        intro = (
+            f"Debate #{self.debate_id}: {agent_a.name} of {agent_a.country} "
+            f"versus {agent_b.name} of {agent_b.country}."
+        )
+        if region is not None:
+            x, y = self._picked_rivalry_at
+            intro += (
+                f" They have painted over each other {self._picked_rivalry_count} times "
+                f"around ({x}, {y})."
+            )
+        intro += f" {self.topic}"
+        self._interjections.appendleft({"name": "Narrator", "text": intro})
         state = self.state(transcript=False)
         self._run.record("stage.debate", None, state)
         self._publish("stage.state", **state)
@@ -319,6 +339,14 @@ class Stage:
         self._next_auto_at = min(self._next_auto_at, self._clock() + 1.0)
         self._publish("stage.state", **self.state(transcript=False))
         self._wake.set()
+
+    def device_connected(self, podium: int) -> None:
+        self.devices[podium] += 1
+        self._publish("stage.state", **self.state(transcript=False))
+
+    def device_disconnected(self, podium: int) -> None:
+        self.devices[podium] = max(0, self.devices[podium] - 1)
+        self._publish("stage.state", **self.state(transcript=False))
 
     # -- audience --------------------------------------------------------------------------
 
@@ -440,6 +468,14 @@ class Stage:
                 f"The crowd has spoken: {winner.name} of {winner.country} beats {loser.name} "
                 f"of {loser.country}, {hi} vote{'' if hi == 1 else 's'} to {lo}!"
             )
+            hold_seconds = self.hold_seconds
+            if self.region is not None and hold_seconds > 0:
+                self.hold = {
+                    "agent_id": winner.id,
+                    "region": dict(self.region),
+                    "until": self._clock() + hold_seconds,
+                }
+                text += f" {winner.name} holds that ground for {hold_seconds:g}s."
         result = {
             "debate_id": self.debate_id,
             "votes": tally,
@@ -448,13 +484,14 @@ class Stage:
         }
         self._run.record("stage.verdict", None, result)
         self._publish("stage.verdict", **result)
-        with contextlib.suppress(BoardError):
-            self._run.god_announce(
+        self.stats["debates"] += 1
+        await self._play(await self._narrator_line(text, "Narrator", "verdict"))
+        if self.thread_id is not None:
+            self._run.pin_announcement(
+                self.thread_id,
                 "Live debate verdict",
                 f'On "{self.topic}": {text} (decided by the live audience)'[:600],
             )
-        self.stats["debates"] += 1
-        await self._play(await self._narrator_line(text, "Narrator", "verdict"))
         if self.debate_id == debate and self.phase == "voting":
             self.end_debate()
 
@@ -674,6 +711,11 @@ class Stage:
         self.stats["lines"] += 1
         self.stats["audio"] += int(line["audio"])
         self._run.record("stage.line", line["speaker_id"] or None, line)
+        if self.thread_id is not None:
+            author_id = int(line["speaker_id"]) if line["kind"] == "debate" else GOD_ID
+            body = line["text"] if line["kind"] == "debate" else f"{line['name']}: {line['text']}"
+            with contextlib.suppress(BoardError):
+                self._run.post_reply(author_id, self.thread_id, body)
         self._publish("stage.line", **line)
 
     def _publish(self, type_: str, **data: Any) -> None:
@@ -698,6 +740,66 @@ class Stage:
     def audio(self, line_id: int) -> bytes | None:
         return self._audio.get(line_id)
 
+    def blocks(self, agent_id: int, x: int, y: int) -> bool:
+        hold = self.hold
+        if (
+            hold is None
+            or agent_id == hold["agent_id"]
+            or agent_id == GOD_ID
+            or agent_id not in self._run.by_id
+            or hold["until"] <= self._clock()
+        ):
+            return False
+        region = cast(dict[str, int], hold["region"])
+        return (
+            region["x"] <= x < region["x"] + region["w"]
+            and region["y"] <= y < region["y"] + region["h"]
+        )
+
+    def hold_state(self) -> dict[str, Any] | None:
+        hold = self.hold
+        if hold is None or hold["until"] <= self._clock():
+            return None
+        return {
+            **hold,
+            "seconds_left": math.ceil(hold["until"] - self._clock()),
+        }
+
+    def frame(self, width: int, height: int) -> bytes:
+        """Render the current debate region (or canvas) as letterboxed RGB565 pixels."""
+        canvas = self._run.canvas
+        if self.region is None:
+            sx, sy, source_w, source_h = 0, 0, canvas.width, canvas.height
+        else:
+            sx, sy, source_w, source_h = (
+                self.region["x"],
+                self.region["y"],
+                self.region["w"],
+                self.region["h"],
+            )
+        scale = min(width / source_w, height / source_h)
+        dest_w = max(1, round(source_w * scale))
+        dest_h = max(1, round(source_h * scale))
+        offset_x = (width - dest_w) // 2
+        offset_y = (height - dest_h) // 2
+        output = bytearray(width * height * 2)
+        debaters = set(self.debaters)
+        for dy in range(dest_h):
+            source_y = sy + min(source_h - 1, int(dy * source_h / dest_h))
+            for dx in range(dest_w):
+                source_x = sx + min(source_w - 1, int(dx * source_w / dest_w))
+                if not canvas.in_bounds(source_x, source_y):
+                    continue
+                index = source_y * canvas.width + source_x
+                color = int(canvas.pixels[index])
+                red, green, blue = (int(PALETTE[color][i : i + 2], 16) for i in (1, 3, 5))
+                if canvas.owners[index] not in debaters:
+                    red, green, blue = int(red * 0.4), int(green * 0.4), int(blue * 0.4)
+                rgb565 = ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3)
+                target = ((offset_y + dy) * width + offset_x + dx) * 2
+                struct.pack_into("<H", output, target, rgb565)
+        return bytes(output)
+
     def state(self, transcript: bool = True) -> dict[str, Any]:
         by_id = self._run.by_id
         out: dict[str, Any] = {
@@ -706,6 +808,9 @@ class Stage:
             "debate_id": self.debate_id,
             "topic": self.topic,
             "region": self.region,
+            "thread_id": self.thread_id,
+            "hold": self.hold_state(),
+            "devices": {"0": self.devices[0], "1": self.devices[1]},
             "debaters": [
                 {
                     "id": a,

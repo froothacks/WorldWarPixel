@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import secrets
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -347,6 +348,23 @@ async def get_stage(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     return manager.get(run_id).stage.state()
 
 
+@router.get("/{run_id}/stage/frame")
+async def stage_frame(
+    run_id: str,
+    manager: ManagerDep,
+    w: int = Query(default=320, ge=16, le=800),
+    h: int = Query(default=240, ge=16, le=800),
+    podium: int = Query(default=0, ge=0, le=1),
+) -> Response:
+    """A nearest-neighbour RGB565 preview of the active debate region."""
+    frame = manager.get(run_id).stage.frame(w, h)
+    return Response(
+        frame,
+        media_type="application/octet-stream",
+        headers={"X-Width": str(w), "X-Height": str(h)},
+    )
+
+
 @router.post("/{run_id}/stage/start")
 async def start_debate(
     run_id: str, body: StageStart, manager: ManagerDep, _god: GodDep
@@ -452,20 +470,52 @@ async def stage_socket(websocket: WebSocket, run_id: str) -> None:
         await websocket.close(code=4004, reason="run not found")
         return
     await websocket.accept()
+    podium_raw = websocket.query_params.get("podium")
+    podium: int | None = None
+    if podium_raw is not None:
+        try:
+            podium = int(podium_raw)
+        except ValueError:
+            await websocket.close(code=1008, reason="podium must be 0 or 1")
+            return
+        if podium not in (0, 1):
+            await websocket.close(code=1008, reason="podium must be 0 or 1")
+            return
+        run.stage.device_connected(podium)
+    narrator = websocket.query_params.get("narrator", "0") in ("1", "true")
     queue = run.stage.hub.subscribe()
     transcript = websocket.query_params.get("transcript", "1") not in ("0", "false")
 
+    def includes_line(line: dict[str, Any]) -> bool:
+        return line.get("podium") == podium or (
+            narrator and line.get("kind") in ("narrator", "verdict")
+        )
+
+    def snapshot() -> dict[str, Any]:
+        state = run.stage.state(transcript)
+        if podium is not None and "transcript" in state:
+            state["transcript"] = [line for line in state["transcript"] if includes_line(line)]
+        return {"type": "stage.snapshot", **state}
+
     async def sender() -> None:
-        await websocket.send_json({"type": "stage.snapshot", **run.stage.state(transcript)})
+        await websocket.send_json(snapshot())
         while True:
             msg = await queue.get()
             if msg == CLOSE:
                 await websocket.close(code=1001, reason="run deleted")
                 return
             if msg == RESYNC:
-                await websocket.send_json({"type": "stage.snapshot", **run.stage.state(transcript)})
+                await websocket.send_json(snapshot())
             elif isinstance(msg, str):
-                await websocket.send_text(msg)
+                if podium is None:
+                    await websocket.send_text(msg)
+                    continue
+                event = json.loads(msg)
+                event_type = event.get("type")
+                if event_type in ("stage.state", "stage.votes", "stage.verdict") or (
+                    event_type == "stage.line" and includes_line(event)
+                ):
+                    await websocket.send_text(msg)
 
     async def receiver() -> None:
         while True:
@@ -481,6 +531,8 @@ async def stage_socket(websocket: WebSocket, run_id: str) -> None:
                 t.result()
     finally:
         run.stage.hub.unsubscribe(queue)
+        if podium is not None:
+            run.stage.device_disconnected(podium)
 
 
 @router.websocket("/{run_id}/ws")

@@ -14,6 +14,7 @@ from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
+from worldwarpixel.sim.stage import GOD_ID as GOD_ID
 from worldwarpixel.sim.stage import SpeechSynth, Stage
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
@@ -62,9 +63,11 @@ class RunConfig(BaseModel):
     stage_vote_seconds: float = Field(
         default=20.0, ge=3, le=600, description="Seconds the audience votes after a debate"
     )
+    stage_hold_seconds: float = Field(
+        default=120.0, ge=0, le=1800, description="Seconds a verdict winner holds its region"
+    )
 
 
-GOD_ID = 65535
 """Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
@@ -132,6 +135,7 @@ class Run:
             auto=config.stage_auto,
             lines_per_debate=config.stage_lines,
             vote_seconds=config.stage_vote_seconds,
+            hold_seconds=config.stage_hold_seconds,
             clock=clock,
             sleep=sleep,
         )
@@ -185,9 +189,17 @@ class Run:
         """Post a thread as the human; agents see it on the board like any other thread."""
         post = self.board.post_thread(GOD_ID, title, body, self._clock())
         self._on_write(GOD_ID, "post", post.to_dict())
+        self.pin_announcement(post.thread_id, title, body)
+        return post.to_dict()
+
+    def pin_announcement(self, thread_id: int, title: str, body: str) -> None:
         self._announcements.append(
-            {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
+            {"thread_id": thread_id, "title": title, "body": body, "ts": self._clock()}
         )
+
+    def post_reply(self, author_id: int, thread_id: int, body: str) -> dict[str, Any]:
+        post = self.board.reply(author_id, thread_id, body, self._clock())
+        self._on_write(author_id, "post", post.to_dict())
         return post.to_dict()
 
     def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
@@ -323,7 +335,8 @@ class Run:
         while True:
             w = await queue.get()
             await self._running.wait()
-            apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
+            if not self.stage.blocks(w.agent_id, w.x, w.y):
+                apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
             if pending.get((w.x, w.y)) == (w.color, w.agent_id):
                 del pending[(w.x, w.y)]
             if queue.empty() and self.status.get(agent.id) == "painting":
@@ -345,7 +358,17 @@ class Run:
 
         def writer(writes: list[PixelWrite]) -> None:
             if queue is None or (self.config.pixel_interval <= 0 and queue.empty()):
-                apply_writes(self.canvas, writes, sink)
+                allowed: list[PixelWrite] = []
+                for w in writes:
+                    if self.stage.blocks(w.agent_id, w.x, w.y):
+                        if pending is not None and pending.get((w.x, w.y)) == (
+                            w.color,
+                            w.agent_id,
+                        ):
+                            del pending[(w.x, w.y)]
+                    else:
+                        allowed.append(w)
+                apply_writes(self.canvas, allowed, sink)
                 return
             for w in writes:
                 queue.put_nowait(w)
@@ -384,7 +407,6 @@ class Run:
     def _on_write(self, agent_id: int, kind: str, payload: dict[str, Any]) -> None:
         self._record(kind, agent_id, payload)
         self.narrator.observe_write(agent_id, kind, payload)
-        self.stage.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
             self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
