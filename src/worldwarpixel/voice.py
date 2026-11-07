@@ -55,10 +55,10 @@ class WhisperTranscriber:
         return WhisperModel(self._size, device="cpu", compute_type="int8")
 
     def _run(self, pcm: bytes, rate: int) -> str:
-        import numpy as np
-
         if self._model is None:
             self._model = self._load()
+        import numpy as np
+
         audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
         if rate != RATE and len(audio):
             n = int(len(audio) * RATE / rate)
