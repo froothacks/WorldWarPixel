@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import time
 from collections.abc import Iterable
 from typing import Any, cast
 
@@ -318,6 +319,30 @@ def user_prompt(
     )
 
 
+def _sample(samples: list[float], value: float, keep: int = 2000) -> None:
+    samples.append(value)
+    if len(samples) > keep:
+        del samples[: len(samples) - keep]
+
+
+def latency_summary(samples: list[float]) -> dict[str, float] | None:
+    """n / mean / p50 / p95 / max in seconds over the recent samples."""
+    if not samples:
+        return None
+    xs = sorted(samples)
+
+    def pick(q: float) -> float:
+        return xs[min(len(xs) - 1, int(q * len(xs)))]
+
+    return {
+        "n": len(xs),
+        "mean": round(sum(xs) / len(xs), 3),
+        "p50": round(pick(0.5), 3),
+        "p95": round(pick(0.95), 3),
+        "max": round(xs[-1], 3),
+    }
+
+
 class LLMPolicy:
     """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
 
@@ -337,9 +362,17 @@ class LLMPolicy:
             "no_tools": 0,
             "failures": 0,
         }
+        self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
         return system_prompt(agent, width, height, pixels, posts)
+
+    def public_stats(self) -> dict[str, Any]:
+        """Counters plus latency percentiles of the recent model calls and whole turns."""
+        return {
+            **self.stats,
+            "latency": {k: latency_summary(v) for k, v in self._latency.items()},
+        }
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         text = user_prompt(
@@ -376,8 +409,10 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
+        turn_t0 = time.monotonic()
         for round_no in range(MAX_ROUNDS):
             self.stats["calls"] += 1
+            call_t0 = time.monotonic()
             try:
                 response = await self._client.chat.completions.create(
                     model=self._model,
@@ -394,6 +429,7 @@ class LLMPolicy:
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
                 thoughts.append(f"(model call failed: {type(e).__name__})")
                 break
+            _sample(self._latency["model"], time.monotonic() - call_t0)
             msg = response.choices[0].message
             if msg.content:
                 thoughts.append(msg.content.strip())
@@ -426,6 +462,7 @@ class LLMPolicy:
         thought = " ".join(t for t in thoughts if t)
         if actions:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
+        _sample(self._latency["turn"], time.monotonic() - turn_t0)
         return thought or "(no response)"
 
     def _execute(
