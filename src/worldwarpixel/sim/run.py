@@ -24,7 +24,9 @@ class RunConfig(BaseModel):
     height: int = Field(default=320, ge=16, le=4096)
     agents: int = Field(default=100, ge=1, le=5000)
     cooldown: float = Field(
-        default=3.0, gt=0, description="Minimum seconds between the starts of an agent's turns"
+        default=3.0,
+        gt=0,
+        description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
         default=0.1,

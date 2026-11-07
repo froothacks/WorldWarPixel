@@ -170,7 +170,7 @@ export default function GodBar({
       >
         token
       </button>
-      <label className="small" title="Minimum seconds between the starts of an agent's turns">
+      <label className="small" title="Seconds between the starts of an agent's turns (randomised by jitter)">
         cooldown {run.config.cooldown}s
         <input
           type="range"
