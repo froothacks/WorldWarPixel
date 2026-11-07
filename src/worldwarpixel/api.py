@@ -23,7 +23,7 @@ from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
-from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.timelapse import build_timelapse
 
 
@@ -150,7 +150,7 @@ class GodAnnouncement(BaseModel):
 class GodPace(BaseModel):
     cooldown: float | None = Field(default=None, ge=0.1, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
-    pixel_interval: float | None = Field(default=None, ge=0, le=5)
+    pixel_interval: float | None = Field(default=None, ge=MIN_PIXEL_INTERVAL, le=5)
 
 
 @router.post("/{run_id}/god/pixels")

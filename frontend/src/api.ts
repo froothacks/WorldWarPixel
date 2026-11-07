@@ -21,7 +21,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   cooldown: 0.5,
   jitter: 0.3,
   pixels_per_turn: 200,
-  pixel_interval: 0.03,
+  pixel_interval: 0.05,
   posts_per_turn: 1,
   max_concurrency: 16,
   seed: null,
