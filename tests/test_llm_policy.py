@@ -166,3 +166,12 @@ def test_out_of_range_arguments_are_clamped() -> None:
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "placed 1 px near (63, 0)" in thought and "posted thread 1" in thought
     assert events[0][1]["color"] == agent.color and policy.stats["tool_errors"] == 0
+
+
+def test_double_encoded_pixel_list_is_accepted() -> None:
+    agent, tools, obs, events = _setup()
+    encoded = json.dumps([{"x": 3, "y": 4, "color": 2}, {"x": 4, "y": 4, "color": 2}])
+    client = FakeClient([_response("Line.", [("place_pixels", {"pixels": encoded})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0

@@ -344,6 +344,8 @@ class LLMPolicy:
 
         match name:
             case "place_pixels":
+                if isinstance(a["pixels"], str):  # the model often double-encodes the list
+                    a["pixels"] = json.loads(a["pixels"])
                 a["pixels"] = [
                     {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
                     for p in a["pixels"]
