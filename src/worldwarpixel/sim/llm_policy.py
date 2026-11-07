@@ -210,7 +210,13 @@ class LLMPolicy:
         self._model = model
         self._timeout = timeout
         self._vision = vision
-        self.stats = {"calls": 0, "tool_calls": 0, "tool_errors": 0, "no_tools": 0, "failures": 0}
+        self.stats: dict[str, Any] = {
+            "calls": 0,
+            "tool_calls": 0,
+            "tool_errors": 0,
+            "no_tools": 0,
+            "failures": 0,
+        }
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
         return system_prompt(agent, width, height, pixels, posts)
@@ -310,16 +316,22 @@ class LLMPolicy:
             result = self._dispatch(agent, tools, name, args)
         except ToolError as e:
             self.stats["tool_errors"] += 1
-            log.info("agent tool %s rejected: %s", name, e)
+            self._note_error(f"{name}: {e}")
             actions.append(f"{name} rejected: {e}")
             return f"error: {e}"
         except (TypeError, ValueError, KeyError) as e:
-            log.info("agent tool %s bad arguments %s: %r", name, raw_args[:200], e)
+            self._note_error(f"{name}: bad arguments {raw_args[:120]!r}: {e!r}")
             self.stats["tool_errors"] += 1
             return f"error: bad arguments ({e})"
         actions.append(_summarise(name, args, result))
         _track_position(agent, name, args, result)
         return json.dumps(result)
+
+    def _note_error(self, text: str) -> None:
+        """Keep the last few tool errors so run summaries show what the model gets wrong."""
+        recent = self.stats.setdefault("recent_errors", [])
+        recent.append(text[:200])
+        del recent[:-8]
 
     @staticmethod
     def _dispatch(agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]) -> dict[str, Any]:
