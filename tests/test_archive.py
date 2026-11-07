@@ -89,6 +89,10 @@ def test_unknown_and_legacy_runs() -> None:
     assert listed["stats"] == run.stats and listed["narrator"] == run.narrator.stats
     assert run.canvas.get(2, 3) == 4 and run.canvas.owner(2, 3) == 1
     assert run.stats["pixels"] == 1 and run.created_at == 1.0
+    # Legacy pixel events had no prev_owner; the replayed canvas supplies it.
+    log.append("old", 7.0, "pixel", 2, {"x": 2, "y": 3, "color": 5})
+    raided = restore_run(log, "old")
+    assert raided is not None and raided.world.snapshot() != run.world.snapshot()
 
 
 def test_board_restore_keeps_ids_and_skips_orphans() -> None:
