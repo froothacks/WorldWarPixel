@@ -159,7 +159,7 @@ def test_thread_votes_reorder_the_board(client: TestClient) -> None:
     again = client.post(
         f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1}
     )
-    assert again.json()["votes"] == 1
+    assert again.json()["votes"] == 2
     assert (
         client.post(f"/runs/{run_id}/threads/999/vote", json={"voter": "v1", "vote": 1}).status_code
         == 404

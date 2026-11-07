@@ -162,7 +162,7 @@ class Run:
         return post.to_dict()
 
     def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
-        """A viewer's vote on a thread (one per voter); it shifts where the board ranks it."""
+        """A viewer's up/down click on a thread; it shifts where the board ranks it."""
         votes = self.board.vote(thread_id, voter, value)
         self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)

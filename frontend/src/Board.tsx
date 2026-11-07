@@ -17,7 +17,8 @@ interface Props {
   agents?: Agent[];
 }
 
-type MyVotes = Record<number, 1 | -1>;
+/** This viewer's net clicks per thread (they can vote as often as they like). */
+type MyVotes = Record<number, number>;
 
 function loadVotes(runId: string): MyVotes {
   try {
@@ -80,7 +81,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
   const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
   const voteQueue = useRef<Promise<unknown>>(Promise.resolve());
 
-  const saveVote = (threadId: number, value: 0 | 1 | -1) => {
+  const saveVote = (threadId: number, value: number) => {
     const v = loadVotes(runId);
     if (value === 0) delete v[threadId];
     else v[threadId] = value;
@@ -89,17 +90,12 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
   };
 
   const vote = (threadId: number, dir: 1 | -1) => {
-    const prev = loadVotes(runId)[threadId] ?? 0;
-    const next = prev === dir ? 0 : dir;
-    saveVote(threadId, next);
-    // Send votes one at a time so the server ends up with the last click.
+    saveVote(threadId, (loadVotes(runId)[threadId] ?? 0) + dir);
     voteQueue.current = voteQueue.current.then(() =>
       api
-        .vote(runId, threadId, voterId(), next)
+        .vote(runId, threadId, voterId(), dir)
         .then(onVoted)
-        .catch(() => {
-          if ((loadVotes(runId)[threadId] ?? 0) === next) saveVote(threadId, prev);
-        }),
+        .catch(() => saveVote(threadId, (loadVotes(runId)[threadId] ?? 0) - dir)),
     );
   };
 
@@ -261,7 +257,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
           <div key={t.thread_id} className="thread-item">
           <div className="voter">
             <button
-              className={`vote ${myVotes[t.thread_id] === 1 ? "on" : ""}`}
+              className={`vote ${(myVotes[t.thread_id] ?? 0) > 0 ? "on" : ""}`}
               title="Upvote: move this thread up the board (agents see the board in this order)"
               aria-label="Upvote"
               onClick={() => vote(t.thread_id, 1)}
@@ -270,7 +266,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
             </button>
             <span className="small">{t.votes ?? 0}</span>
             <button
-              className={`vote ${myVotes[t.thread_id] === -1 ? "on" : ""}`}
+              className={`vote ${(myVotes[t.thread_id] ?? 0) < 0 ? "on" : ""}`}
               title="Downvote: move this thread down the board"
               aria-label="Downvote"
               onClick={() => vote(t.thread_id, -1)}
