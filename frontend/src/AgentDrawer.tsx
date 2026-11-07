@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api, type Agent, type AgentDetail, type Thought } from "./api";
 
 interface Props {
@@ -8,6 +8,40 @@ interface Props {
   liveThoughts: Thought[];
   pixelsOwned: number;
   onClose: () => void;
+}
+
+const CARD_FIELDS: [string, string][] = [
+  ["age", "Age"],
+  ["sex", "Sex"],
+  ["ethnic_group", "Ethnic group"],
+  ["settlement", "Lives in"],
+  ["marital_status", "Marital status"],
+  ["children", "Children"],
+  ["education", "Education"],
+  ["employment", "Employment"],
+  ["occupation", "Occupation"],
+  ["hobbies", "Hobbies"],
+  ["income_decile", "Income decile (1–10)"],
+  ["social_class", "Social class"],
+  ["religion", "Religion"],
+  ["religiosity", "Religiosity"],
+  ["attendance", "Attends services"],
+  ["god_importance", "Importance of God (1–10)"],
+  ["left_right", "Left–right (1–10)"],
+  ["political_interest", "Politics"],
+  ["trust", "Trust"],
+  ["democracy_importance", "Democracy matters (1–10)"],
+  ["democratic_system", "Democratic system"],
+  ["strong_leader", "Strong leader"],
+  ["income_equality", "Equality vs incentives (1–10)"],
+  ["env_vs_growth", "Environment vs growth"],
+  ["happiness", "Happiness"],
+  ["life_satisfaction", "Life satisfaction (1–10)"],
+  ["national_pride", "National pride"],
+];
+
+function formatValue(v: string | number | string[] | null): string {
+  return Array.isArray(v) ? v.join(", ") : String(v);
 }
 
 export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixelsOwned, onClose }: Props) {
@@ -51,6 +85,26 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
         <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
       </dl>
       <p className="small persona">{agent.persona}</p>
+      {agent.persona_card && Object.keys(agent.persona_card).length > 0 && (
+        <details className="prompt">
+          <summary className="muted small">
+            Persona card · {agent.persona_card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}
+            {agent.persona_card.survey_country && agent.persona_card.survey_country !== agent.country
+              ? ` (proxy: ${agent.persona_card.survey_country})`
+              : ""}
+          </summary>
+          <dl className="facts small">
+            {CARD_FIELDS.filter(([key]) => agent.persona_card[key] != null && agent.persona_card[key] !== "").map(
+              ([key, label]) => (
+                <Fragment key={key}>
+                  <dt>{label}</dt>
+                  <dd>{formatValue(agent.persona_card[key])}</dd>
+                </Fragment>
+              ),
+            )}
+          </dl>
+        </details>
+      )}
       <p className="muted small">Its pixels are highlighted on the canvas.</p>
       {fresh?.system_prompt && (
         <details className="prompt">

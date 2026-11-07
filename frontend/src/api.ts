@@ -83,6 +83,7 @@ export interface Agent {
   status: AgentStatus;
   last_thought: Thought | null;
   persona: string;
+  persona_card: Record<string, string | number | string[] | null>;
 }
 
 export interface AgentDetail extends Agent {

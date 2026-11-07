@@ -80,6 +80,63 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates.
 
+## Persona data
+
+Agents are seeded to be representative of the world population and each one speaks as a specific
+survey respondent (`src/worldwarpixel/personas/`):
+
+1. **Seats per country** come from UN World Population Prospects 2024 (medium variant, 2024) via
+   largest-remainder apportionment, so 100 agents give 18 India, 17 China, 4 USA, 4 Indonesia, …
+   A compact derived table (`src/worldwarpixel/data/wpp2024_population.csv`, UN data is public) is
+   committed; refresh it with `uv run worldwarpixel-personas fetch-wpp`.
+2. **Each seat is one World Values Survey Wave 7 respondent** from that country, sampled with the
+   survey weight (`W_WEIGHT`). Age, sex, education, employment/occupation, income decile, religion and
+   religiosity, left–right self-placement (Q240), generalised trust (Q57), attitudes to democracy
+   (Q250/Q235/Q238), country-coded ethnic group (Q290) etc. become the agent's **persona card**
+   (`AgentSpec.persona_card`, shown in the UI drawer) and a ~5-sentence **persona text** written as
+   the respondent's own answers ("you place yourself at 4 on a 1 (left) to 10 (right) scale") that
+   opens the LLM prompt. Countries WVS did not survey borrow respondents from the nearest surveyed
+   country in the same cultural zone (`personas/proxy.py`; the card shows `survey_country`).
+3. **Names** come from per-country, sex-matched name pools (`sim/names.py`); optional
+   [Nemotron-Personas](https://huggingface.co/nvidia) data adds a concrete occupation and hobbies.
+
+### Downloading the WVS microdata (optional, recommended)
+
+WVS data is free but requires registration and **may not be redistributed**, so it is not in git
+(`/data/` is ignored) and the app falls back to a **clearly-labelled synthetic dataset**
+(`src/worldwarpixel/data/synthetic_respondents.csv`, `source=synthetic`, hand-written priors per
+country — it is *not* survey data; a warning is logged at startup when it is used).
+
+1. Register at https://www.worldvaluessurvey.org/WVSDocumentationWV7.jsp and download the
+   *WVS Cross-National Wave 7* **CSV** release (v6.0; a zip containing one `WVS_Cross-National_Wave_7_csv_v6_0.csv`), unzip it.
+2. Import it (keeps only the variables above, one row per respondent, ~95k rows):
+
+   ```sh
+   uv run worldwarpixel-personas import-wvs ~/Downloads/WVS_Cross-National_Wave_7_csv_v6_0.csv
+   # -> data/wvs7_respondents.csv  (override with $WVS_RESPONDENTS_PATH)
+   ```
+
+3. Optionally fetch Nemotron-Personas samples (CC BY 4.0) for occupation/hobbies enrichment:
+
+   ```sh
+   uv run worldwarpixel-personas fetch-nemotron          # USA IND SGP GBR -> data/nemotron/
+   ```
+
+4. Inspect the allocation and sample personas, or regenerate the synthetic fallback:
+
+   ```sh
+   uv run worldwarpixel-personas show --agents 100 --sample 5
+   uv run worldwarpixel-personas show --json --sample 1   # full persona cards
+   uv run worldwarpixel-personas build-synthetic
+   ```
+
+`seed_agents()` picks up `data/wvs7_respondents.csv` automatically on the next run; survey countries
+missing from the file are topped up from the synthetic set. Generated persona pools derived from WVS
+must stay out of git.
+
+Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World Values Survey Wave 7
+(2017–2022) Cross-National Data-Set v6.0, doi:10.14281/18241.24; NVIDIA Nemotron-Personas (CC BY 4.0).
+
 ## Development
 
 ```sh
