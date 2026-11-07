@@ -137,6 +137,27 @@ must stay out of git.
 Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World Values Survey Wave 7
 (2017–2022) Cross-National Data-Set v6.0, doi:10.14281/18241.24; NVIDIA Nemotron-Personas (CC BY 4.0).
 
+## Deploy to Modal
+
+`deploy/modal_app.py` runs the app (API + UI + WebSockets) in a single CPU [Modal Sandbox](https://modal.com/docs/guide/sandboxes). CPU Sandboxes are not preempted, but they live at most 24h and get a new tunnel URL each time, so the module also deploys:
+
+- `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
+- `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. Share this URL.
+
+The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); their events stay in the saved log, but the API only serves runs that are live in memory, so a replaced run's `/events` and timelapse return 404 until archived runs are served from the log.
+
+One-time setup, with the Modal CLI authenticated (`uv run --with modal modal token new`):
+
+```sh
+uv run --with modal modal secret create worldwarpixel \
+  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel OPENAI_API_KEY=unused \
+  MODAL_KEY=... MODAL_SECRET=... GOD_TOKEN=$(openssl rand -hex 16)
+uv run --with modal python deploy/modal_app.py launch   # build + publish the image, start the sandbox
+uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
+```
+
+Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
+
 ## Development
 
 ```sh
