@@ -261,6 +261,9 @@ def test_paint_stencil_is_progressive_and_skips_matching_pixels() -> None:
             break
     assert all(canvas.get(x, y) == c for x, y, c in cells)
     assert fresh().paint_stencil(cells)["placed"] == 0
+    # Another agent's same-coloured pixel is reclaimed rather than skipped.
+    canvas.write(PixelWrite(cells[0][0], cells[0][1], cells[0][2], agent_id=2))
+    assert fresh().paint_stencil(cells)["placed"] == 1 and canvas.owner(*cells[0][:2]) == 1
 
 
 def test_match_name_handles_sloppy_country_strings() -> None:
