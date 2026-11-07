@@ -212,11 +212,22 @@ def palette_legend() -> str:
 
 
 def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    event = agent.persona_card.get("event")
+    setting = (
+        f"You have joined an r/place-style game at {event}: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board shared with "
+        f"the other attendees. Everyone plays as themselves: there are no assigned teams, so any "
+        f"alliances or rivalries are up to you and the people you talk to. "
+        if event
+        else f"You have joined a global r/place-style event: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board, open to "
+        f"people from every country. "
+    )
+    concern = "you" if event else "your country"
     return (
         f"You are {agent.persona}\n\n"
-        f"You have joined a global r/place-style event: a {width}x{height} shared pixel canvas "
-        f"(x grows right, y grows down, 0-based) and a public message board, open to people from "
-        f"every country. Nobody is in charge and nothing is pre-planned. Each turn you may paint "
+        f"{setting}"
+        f"Nobody is in charge and nothing is pre-planned. Each turn you may paint "
         f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
         "In events like this people have done all sorts of things: painted their national or "
@@ -240,8 +251,8 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
         "borders and backgrounds.\n"
         "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
-        "territory changes and finished artwork on this canvas. If one concerns your "
-        "country, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
+        "territory changes and finished artwork on this canvas. If one concerns "
+        f"{concern}, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
         "- Only post when it matters to others: a claim with coordinates, a call for help, "
         "a threat, a deal, or an answer to someone. No greetings or status chatter. Prefer "
         "replying in an existing thread to starting a new one; address people by @Name. "

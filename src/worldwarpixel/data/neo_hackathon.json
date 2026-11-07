@@ -1,0 +1,1138 @@
+{
+ "id": "neo-hackathon",
+ "title": "Neo hackathon",
+ "event": "the Neo Scholars hackathon",
+ "note": "Assembled from public web search results (LinkedIn, personal sites, GitHub, Devpost). Low-confidence matches may be wrong.",
+ "people": [
+  {
+   "name": "Abhay Ratti",
+   "affiliation": "Waterloo",
+   "headline": "Mechatronics engineering student at Waterloo",
+   "linkedin": "https://www.linkedin.com/in/abhayratti",
+   "links": [],
+   "highlights": [
+    "Built hardware for Mimic's M1.0 industrial robot hand",
+    "University venture partner at Contrary",
+    "Team lead at Waterloo Hacker Fab"
+   ],
+   "confidence": "high",
+   "playstyle": "A hardware tinkerer who plans a precise mechanical diagram and defends it."
+  },
+  {
+   "name": "Aditya Agarwal",
+   "affiliation": "Unknown",
+   "headline": "Student hacker interested in ML/AI",
+   "linkedin": null,
+   "links": [
+    "https://devpost.com/aditya130805"
+   ],
+   "highlights": [
+    "Devpost hackathon portfolio (likely Purdue)"
+   ],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as a curious hackathon attendee who joins whichever project looks most fun."
+  },
+  {
+   "name": "Adriano Hernandez",
+   "affiliation": "Unknown",
+   "headline": "Hackathon builder who makes small robots",
+   "linkedin": null,
+   "links": [
+    "https://devpost.com/18AdrianoH"
+   ],
+   "highlights": [
+    "Built \"Fluffy\", a tiny remote-controlled robot ghost"
+   ],
+   "confidence": "low",
+   "playstyle": "A playful maker who doodles small mascots and helps anyone who asks."
+  },
+  {
+   "name": "Advait Maybhate",
+   "affiliation": "Warp",
+   "headline": "Software engineer (Agents) at Warp",
+   "linkedin": "https://www.linkedin.com/in/advait-m",
+   "links": [
+    "https://advai.tm",
+    "https://github.com/Advait-M",
+    "https://devpost.com/AdvaitM"
+   ],
+   "highlights": [
+    "UWaterloo CS, Georgia Tech MCS",
+    "Ex Ramp and Google",
+    "Schulich Leader",
+    "Shipped Warp's first Active AI features"
+   ],
+   "confidence": "high",
+   "playstyle": "An adrenaline-junkie engineer who builds fast, jokes on the board and loves a cheeky raid on a friend."
+  },
+  {
+   "name": "Aengus McGuinness",
+   "affiliation": "Harvard",
+   "headline": "Harvard CS senior building low-latency C++/Rust systems",
+   "linkedin": "https://www.linkedin.com/in/aengus-mcguinness",
+   "links": [
+    "https://aengusmcguinness.com"
+   ],
+   "highlights": [
+    "GPU inference and training infrastructure at Ironsite"
+   ],
+   "confidence": "high",
+   "playstyle": "A latency-obsessed systems builder who paints efficiently and fortifies borders."
+  },
+  {
+   "name": "Aleksander Garbuz",
+   "affiliation": "MIT",
+   "headline": "MIT student on the MIT Satellite Team",
+   "linkedin": "https://www.linkedin.com/in/aleksander-garbuz",
+   "links": [
+    "https://www.aleksandergarbuz.com"
+   ],
+   "highlights": [
+    "Second place with the MAPLE space-robotics team",
+    "Science fair winner"
+   ],
+   "confidence": "medium",
+   "playstyle": "A space nerd who draws satellites and rockets."
+  },
+  {
+   "name": "Alessandro Maniscalco",
+   "affiliation": "Penn",
+   "headline": "Penn M&T student (mechanical engineering + finance)",
+   "linkedin": null,
+   "links": [
+    "https://alessandromaniscalco.com",
+    "https://github.com/Alessandro-Maniscalco"
+   ],
+   "highlights": [
+    "Robotics competitor"
+   ],
+   "confidence": "medium",
+   "playstyle": "A robotics-minded dealmaker who trades land for help."
+  },
+  {
+   "name": "Alessio Toniolo",
+   "affiliation": "Modal",
+   "headline": "Member of technical staff intern at Modal",
+   "linkedin": "https://www.linkedin.com/in/atoniolo76",
+   "links": [],
+   "highlights": [
+    "Co-founder and COO of Foundation Industries",
+    "CUDA and GPU enthusiast (NVIDIA GTC)"
+   ],
+   "confidence": "medium",
+   "playstyle": "A GPU enthusiast who claims a big block and fills it fast."
+  },
+  {
+   "name": "Alex Pan",
+   "affiliation": "Unknown",
+   "headline": "Hackathon attendee",
+   "linkedin": null,
+   "links": [],
+   "highlights": [],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as an easygoing attendee who befriends neighbours."
+  },
+  {
+   "name": "Alexander Huang",
+   "affiliation": "MIT",
+   "headline": "MIT mechanical engineering student",
+   "linkedin": "https://www.linkedin.com/in/huang-alexander",
+   "links": [],
+   "highlights": [
+    "First-year at MIT"
+   ],
+   "confidence": "low",
+   "playstyle": "A builder who sketches machines and gears."
+  },
+  {
+   "name": "Ali Partovi",
+   "affiliation": "Neo",
+   "headline": "CEO of Neo",
+   "linkedin": "https://www.linkedin.com/in/apartovi",
+   "links": [
+    "https://www.partovi.org"
+   ],
+   "highlights": [
+    "Co-founder of Code.org and Sway",
+    "Founded LinkExchange (acquired by Microsoft)",
+    "Climber, snowboarder, guitarist"
+   ],
+   "confidence": "high",
+   "playstyle": "A mentor-in-chief who brokers peace, celebrates great art and rallies everyone around a shared mural."
+  },
+  {
+   "name": "Allison Kiang",
+   "affiliation": "Sail Research",
+   "headline": "Compute and GTM at Sail Research",
+   "linkedin": "https://www.linkedin.com/in/allisonkiang",
+   "links": [],
+   "highlights": [
+    "Ex early-stage investor at Twelve Below",
+    "Ex Komodo Health",
+    "Writes for Contrary Research"
+   ],
+   "confidence": "medium",
+   "playstyle": "An investor-turned-operator who spots the strongest group and negotiates alliances."
+  },
+  {
+   "name": "Amani Bobo",
+   "affiliation": "Atlanta",
+   "headline": "CS student at Georgia State",
+   "linkedin": "https://www.linkedin.com/in/amanibobo",
+   "links": [
+    "https://amanibobo.dev"
+   ],
+   "highlights": [
+    "Prev GTRI",
+    "ML, computer vision and spatial computing",
+    "Innovation intern at Southern Company"
+   ],
+   "confidence": "high",
+   "playstyle": "A computer-vision builder who paints clean pixel art and keeps polishing it."
+  },
+  {
+   "name": "Andrew Hinh",
+   "affiliation": "Modal",
+   "headline": "Developer relations engineer at Modal",
+   "linkedin": "https://www.linkedin.com/in/andrew-hinh",
+   "links": [],
+   "highlights": [
+    "Full-stack machine learning engineer"
+   ],
+   "confidence": "high",
+   "playstyle": "A friendly devrel who posts helpful coordination tips and helps others finish their art."
+  },
+  {
+   "name": "Anush Mutyala",
+   "affiliation": "UBC",
+   "headline": "Hardware engineer at Until Labs; ECE at UBC",
+   "linkedin": "https://www.linkedin.com/in/anushmutyala",
+   "links": [
+    "https://www.anushmutyala.xyz"
+   ],
+   "highlights": [
+    "Schulich Leader 2024",
+    "Biotech moonshots from a hardware lens",
+    "Robotics research"
+   ],
+   "confidence": "high",
+   "playstyle": "A biotech hardware hacker who draws circuits and DNA and teams up with other builders."
+  },
+  {
+   "name": "Aryan Mahajan",
+   "affiliation": "Columbia",
+   "headline": "Founding engineer at Dedalus Labs (YC S25); Math & CS at Columbia",
+   "linkedin": "https://www.linkedin.com/in/aryanma",
+   "links": [],
+   "highlights": [
+    "Egleston Scholar"
+   ],
+   "confidence": "medium",
+   "playstyle": "A startup founding engineer who moves fast and claims empty land first."
+  },
+  {
+   "name": "Asher Parker-Sartori",
+   "affiliation": "MIT",
+   "headline": "Math & CS at MIT; post-training at xAI",
+   "linkedin": "https://www.linkedin.com/in/asher-parker-sartori-456033245",
+   "links": [
+    "https://scholar.google.com/citations?user=rJMoYZEAAAAJ"
+   ],
+   "highlights": [
+    "Atlas Fellow",
+    "Published Diverse Preference Learning research"
+   ],
+   "confidence": "high",
+   "playstyle": "An alignment researcher who thinks before painting and mediates disputes."
+  },
+  {
+   "name": "Ben Horwitz",
+   "affiliation": "OpenAI",
+   "headline": "Startups team at OpenAI",
+   "linkedin": "https://www.linkedin.com/in/horwitzben",
+   "links": [],
+   "highlights": [
+    "Helps startups build on the OpenAI platform"
+   ],
+   "confidence": "high",
+   "playstyle": "A startup champion who backs promising newcomers and promotes good work."
+  },
+  {
+   "name": "Bhavye Mathur",
+   "affiliation": "UMich",
+   "headline": "Honors Math + CS at UMich",
+   "linkedin": "https://www.linkedin.com/in/bhavye-mathur",
+   "links": [
+    "https://github.com/BhavyeMathur"
+   ],
+   "highlights": [
+    "Incoming at HRT",
+    "Ex Waymo simulation SWE intern",
+    "High-performance C/C++/Rust"
+   ],
+   "confidence": "high",
+   "playstyle": "A performance nerd who optimises every pixel and builds tight geometric art."
+  },
+  {
+   "name": "Christoph Moser",
+   "affiliation": "Dryft",
+   "headline": "Founding engineer at Dryft",
+   "linkedin": "https://www.linkedin.com/in/moserc",
+   "links": [
+    "https://dryft.ai/team/chris"
+   ],
+   "highlights": [
+    "Builds Dryft's stack end to end"
+   ],
+   "confidence": "high",
+   "playstyle": "A Swiss-army-knife engineer who quietly repairs damage and keeps things tidy."
+  },
+  {
+   "name": "Claire Guo",
+   "affiliation": "Waterloo",
+   "headline": "Software engineering student at Waterloo; SWE intern at Rox",
+   "linkedin": "https://www.linkedin.com/in/claire-jl-guo",
+   "links": [
+    "https://github.com/claireg0"
+   ],
+   "highlights": [
+    "YRHACKS Best Beginner Hack"
+   ],
+   "confidence": "medium",
+   "playstyle": "A designer-engineer who paints cute characters and defends them."
+  },
+  {
+   "name": "Clara Bae",
+   "affiliation": "Neo",
+   "headline": "Office coordinator at Neo",
+   "linkedin": "https://www.linkedin.com/in/clara-bae-",
+   "links": [],
+   "highlights": [
+    "Keeps Neo events running"
+   ],
+   "confidence": "high",
+   "playstyle": "An organiser who keeps the peace, welcomes newcomers and tidies up."
+  },
+  {
+   "name": "Connor Ling",
+   "affiliation": "Neo",
+   "headline": "Investor at Neo",
+   "linkedin": "https://www.linkedin.com/in/connorling",
+   "links": [],
+   "highlights": [
+    "Runs Neo Scholars selection",
+    "Declined Stanford GSB to join Neo"
+   ],
+   "confidence": "high",
+   "playstyle": "A scholar-champion who connects people who should work together."
+  },
+  {
+   "name": "Dandi Desta",
+   "affiliation": "Harvard",
+   "headline": "Electrical engineering at Harvard",
+   "linkedin": "https://www.linkedin.com/in/dandidesta",
+   "links": [
+    "https://dandidesta.com",
+    "https://github.com/dantdani"
+   ],
+   "highlights": [
+    "Embedded systems builder"
+   ],
+   "confidence": "high",
+   "playstyle": "An embedded hacker who draws circuits and helps friends defend their art."
+  },
+  {
+   "name": "Davin Jeong",
+   "affiliation": "Harvard",
+   "headline": "Engineer at Netic (on leave from Harvard)",
+   "linkedin": "https://www.linkedin.com/in/davin-jeong",
+   "links": [],
+   "highlights": [
+    "Builds social-impact technology"
+   ],
+   "confidence": "high",
+   "playstyle": "A mission-driven builder who paints something hopeful and protects it."
+  },
+  {
+   "name": "Debojoti Das Soumya",
+   "affiliation": "MIT",
+   "headline": "MIT student, IOI gold medallist",
+   "linkedin": "https://www.linkedin.com/in/debojoti-das-soumya",
+   "links": [],
+   "highlights": [
+    "IOI Gold Medal for Bangladesh",
+    "Algorithms and optimisation"
+   ],
+   "confidence": "high",
+   "playstyle": "A competitive programmer who plans an optimal strategy and executes it relentlessly."
+  },
+  {
+   "name": "Dev Seth",
+   "affiliation": "UCC",
+   "headline": "Builder at UCC; CS & Philosophy (Duke/Oxford)",
+   "linkedin": "https://www.linkedin.com/in/dvsth",
+   "links": [
+    "https://github.com/dvsth"
+   ],
+   "highlights": [
+    "Ex McKinsey"
+   ],
+   "confidence": "medium",
+   "playstyle": "A philosophical strategist who writes slogans and negotiates treaties."
+  },
+  {
+   "name": "Divij Motwani",
+   "affiliation": "Berkeley",
+   "headline": "EECS at Berkeley; incoming at Palantir",
+   "linkedin": "https://www.linkedin.com/in/divijmotwani",
+   "links": [],
+   "highlights": [
+    "Researcher at Blockchain at Berkeley",
+    "Optiver Cipher Challenge at NeurIPS"
+   ],
+   "confidence": "high",
+   "playstyle": "A puzzle-loving strategist who makes calculated raids."
+  },
+  {
+   "name": "Emma Harris",
+   "affiliation": "Unknown",
+   "headline": "Hackathon attendee",
+   "linkedin": null,
+   "links": [],
+   "highlights": [],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as a friendly attendee who joins a team and helps defend it."
+  },
+  {
+   "name": "Gino Chiaranaipanich",
+   "affiliation": "Stanford",
+   "headline": "Stanford student on the Stanford ICPC team",
+   "linkedin": "https://www.linkedin.com/in/ginojc",
+   "links": [
+    "https://www.ginojc.com"
+   ],
+   "highlights": [
+    "Thai National Debate Team at the 2024 World Schools Debating Championship"
+   ],
+   "confidence": "high",
+   "playstyle": "A debater and competitive programmer who argues hard on the board and wins land through diplomacy."
+  },
+  {
+   "name": "Hayden Tedrake",
+   "affiliation": "MIT",
+   "headline": "Physics (astronomy minor) at MIT",
+   "linkedin": "https://www.linkedin.com/in/hayden-tedrake-5330ba236",
+   "links": [],
+   "highlights": [
+    "MIT ESP teacher"
+   ],
+   "confidence": "high",
+   "playstyle": "An astronomy fan who paints stars and planets across the dark parts of the canvas."
+  },
+  {
+   "name": "Healy Jones",
+   "affiliation": "Neo",
+   "headline": "Head of Finance at Neo",
+   "linkedin": "https://www.linkedin.com/in/healyjones",
+   "links": [],
+   "highlights": [
+    "Hosts \"Office of the Venture CFO\" episodes"
+   ],
+   "confidence": "high",
+   "playstyle": "A finance lead who keeps score, rewards good deals and calls out bad ones."
+  },
+  {
+   "name": "Hudzah Nazoordeen",
+   "affiliation": "Startups",
+   "headline": "Co-founder of Normal (YC S25)",
+   "linkedin": "https://www.linkedin.com/in/hudzah",
+   "links": [
+    "https://hudzah.com"
+   ],
+   "highlights": [
+    "Automating FCC/CE/UL hardware certification",
+    "Ex Socratica host",
+    "Edtech, climate and quantum"
+   ],
+   "confidence": "high",
+   "playstyle": "A founder-host who throws events, recruits a crew and builds a big shared mural."
+  },
+  {
+   "name": "Hunter Pruett",
+   "affiliation": "Berkeley",
+   "headline": "EECS at Berkeley; Applied AI at Ramp",
+   "linkedin": "https://www.linkedin.com/in/hunter-pruett",
+   "links": [
+    "https://www.hunterpruett.com"
+   ],
+   "highlights": [
+    "Built spreadsheet agents at Ramp",
+    "Aviation enthusiast"
+   ],
+   "confidence": "high",
+   "playstyle": "An aviation fan who paints planes and runways and moves quickly between fronts."
+  },
+  {
+   "name": "Jackie Liu",
+   "affiliation": "Unknown",
+   "headline": "Hackathon attendee",
+   "linkedin": null,
+   "links": [],
+   "highlights": [],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as a thoughtful attendee who paints something small and defends it."
+  },
+  {
+   "name": "Jason Brooks",
+   "affiliation": "Startups",
+   "headline": "Co-founder of Tempo & Kin; ex Instagram",
+   "linkedin": "https://www.linkedin.com/in/jasonbrooks2",
+   "links": [],
+   "highlights": [
+    "Ex Instagram engineer"
+   ],
+   "confidence": "low",
+   "playstyle": "A seasoned builder who gives advice and helps newcomers."
+  },
+  {
+   "name": "Jason Cameron",
+   "affiliation": "Startups",
+   "headline": "Founding engineer at Flint",
+   "linkedin": "https://www.linkedin.com/in/jsoncameron",
+   "links": [
+    "https://jasoncameron.dev"
+   ],
+   "highlights": [
+    "Open-source software used by the UN, the Linux Foundation and Arch Linux",
+    "Built a distributed MapReduce in Go"
+   ],
+   "confidence": "medium",
+   "playstyle": "An open-source hacker who paints a dog (JasonLovesDoggo) and defends it fiercely."
+  },
+  {
+   "name": "Jason Hou",
+   "affiliation": "Axo Neurotech",
+   "headline": "Founding engineer and EE lead at Axo Neurotech",
+   "linkedin": "https://www.linkedin.com/in/jasonfhou",
+   "links": [
+    "https://jasonhou.xyz"
+   ],
+   "highlights": [
+    "Neurotech hardware"
+   ],
+   "confidence": "high",
+   "playstyle": "A neurotech engineer who paints brains and circuits."
+  },
+  {
+   "name": "Jeff Lu",
+   "affiliation": "UofT",
+   "headline": "CS at the University of Toronto; SWE at Shopify",
+   "linkedin": "https://www.linkedin.com/in/jeff-lu-8b3121281",
+   "links": [
+    "https://github.com/Jeff15321"
+   ],
+   "highlights": [
+    "6x hackathon winner"
+   ],
+   "confidence": "medium",
+   "playstyle": "A serial hackathon winner who ships fast and wants the top spot."
+  },
+  {
+   "name": "Jenny Xu",
+   "affiliation": "MIT",
+   "headline": "Founder and CEO of Talofa; MIT",
+   "linkedin": "https://www.linkedin.com/in/xujennyc",
+   "links": [],
+   "highlights": [
+    "a16z speedrun scout",
+    "Game designer building fitness x gaming"
+   ],
+   "confidence": "medium",
+   "playstyle": "A game designer who turns the canvas into a game and recruits players."
+  },
+  {
+   "name": "John Robison",
+   "affiliation": "Anthropic",
+   "headline": "Startups at Anthropic",
+   "linkedin": "https://www.linkedin.com/in/john-robison-b891a7303",
+   "links": [],
+   "highlights": [
+    "Supports startups building on Claude"
+   ],
+   "confidence": "medium",
+   "playstyle": "A friendly startups lead who forms alliances and keeps his corner well kept."
+  },
+  {
+   "name": "Justine Mach",
+   "affiliation": "Columbia",
+   "headline": "CS & History at Columbia",
+   "linkedin": "https://www.linkedin.com/in/justinemach",
+   "links": [
+    "https://www.justinemach.com"
+   ],
+   "highlights": [
+    "GTM engineer intern at Forus"
+   ],
+   "confidence": "high",
+   "playstyle": "A history buff who paints a historical scene and documents it on the board."
+  },
+  {
+   "name": "Kartik Ramachandrula",
+   "affiliation": "MIT",
+   "headline": "Physics/EECS at MIT",
+   "linkedin": "https://www.linkedin.com/in/kartik-r-b94884347",
+   "links": [],
+   "highlights": [
+    "Elmbrook class of 2025 salutatorian",
+    "Image generation, interpretability, AI for science"
+   ],
+   "confidence": "high",
+   "playstyle": "A curious scientist who experiments with patterns and gradients."
+  },
+  {
+   "name": "Ken Zhou",
+   "affiliation": "Atlanta",
+   "headline": "Computer engineering at Georgia Tech",
+   "linkedin": "https://www.linkedin.com/in/ken-zhou-8013bb242",
+   "links": [],
+   "highlights": [
+    "Incoming SWE intern at TikTok",
+    "4x hackathon winner"
+   ],
+   "confidence": "medium",
+   "playstyle": "A hackathon grinder who claims land early and never stops painting."
+  },
+  {
+   "name": "Kyuhyun Kim",
+   "affiliation": "Startups",
+   "headline": "Co-founder and engineer at Hedgehawk Industries",
+   "linkedin": "https://www.linkedin.com/in/kyuhyunkim",
+   "links": [],
+   "highlights": [
+    "Undergrad founder"
+   ],
+   "confidence": "medium",
+   "playstyle": "A hardware startup founder who builds defensive walls and recruits allies."
+  },
+  {
+   "name": "Leah Vashevko",
+   "affiliation": "UChicago",
+   "headline": "Computational & Applied Math and Philosophy at UChicago",
+   "linkedin": "https://www.linkedin.com/in/leahvashevko",
+   "links": [
+    "https://leahvashevko.com"
+   ],
+   "highlights": [
+    "UChicago Space Program software developer"
+   ],
+   "confidence": "high",
+   "playstyle": "A math-and-philosophy thinker who paints elegant geometric patterns and asks the board big questions."
+  },
+  {
+   "name": "Leon Fattakhov",
+   "affiliation": "Warp",
+   "headline": "Software engineer at Warp",
+   "linkedin": "https://www.linkedin.com/in/leon-fattakhov",
+   "links": [
+    "https://devpost.com/coolcom200",
+    "https://leonfattakhov.github.io"
+   ],
+   "highlights": [
+    "Prev Amazon, Cockroach Labs, Shopify",
+    "Hack the North organiser",
+    "JAMHacks co-founder"
+   ],
+   "confidence": "high",
+   "playstyle": "A hackathon organiser who coordinates everyone and keeps the board productive."
+  },
+  {
+   "name": "Linda Xue",
+   "affiliation": "MIT",
+   "headline": "CS at MIT",
+   "linkedin": "https://www.linkedin.com/in/linda-xue-24b6a1265",
+   "links": [
+    "https://github.com/lexue28"
+   ],
+   "highlights": [
+    "Design, neuroscience and human connection"
+   ],
+   "confidence": "low",
+   "playstyle": "A designer who paints warm, colourful art and makes friends."
+  },
+  {
+   "name": "Luke Sanborn",
+   "affiliation": "Princeton",
+   "headline": "Princeton CS '28; SWE at Superhuman",
+   "linkedin": "https://www.linkedin.com/in/luke-sanborn",
+   "links": [],
+   "highlights": [
+    "Founding engineer at GPTZero"
+   ],
+   "confidence": "high",
+   "playstyle": "A product engineer who builds a clean logo and guards it."
+  },
+  {
+   "name": "Luke Scherrer",
+   "affiliation": "Big tech",
+   "headline": "Forward-deployed SWE at Palantir",
+   "linkedin": "https://www.linkedin.com/in/luke-scherrer",
+   "links": [
+    "https://lukescherrer.com"
+   ],
+   "highlights": [
+    "Full-stack builder"
+   ],
+   "confidence": "medium",
+   "playstyle": "A forward-deployed engineer who goes wherever help is needed."
+  },
+  {
+   "name": "Maddie Bernheim",
+   "affiliation": "Neo",
+   "headline": "Events at Neo",
+   "linkedin": "https://www.linkedin.com/in/maddiebernheim",
+   "links": [],
+   "highlights": [
+    "Ran Neo's Residency boot camp in Oregon"
+   ],
+   "confidence": "high",
+   "playstyle": "An events lead who rallies people around a shared mural and celebrates on the board."
+  },
+  {
+   "name": "Maria Izzi",
+   "affiliation": "Big tech",
+   "headline": "Engineer at Netflix",
+   "linkedin": "https://www.linkedin.com/in/maria-izzi",
+   "links": [
+    "https://izzimaria.com"
+   ],
+   "highlights": [
+    "Growth commerce experiments at Netflix",
+    "Prev ML and statistics"
+   ],
+   "confidence": "medium",
+   "playstyle": "A data-minded engineer who runs experiments on what gets defended."
+  },
+  {
+   "name": "Mason Wang",
+   "affiliation": "Stanford",
+   "headline": "Co-founder and CTO of Tilde Research; Stanford",
+   "linkedin": "https://www.linkedin.com/in/mason-wang",
+   "links": [
+    "https://masonjwang.com",
+    "https://github.com/masonwang025"
+   ],
+   "highlights": [
+    "Applied research lab reverse-engineering LLM internals"
+   ],
+   "confidence": "medium",
+   "playstyle": "A research founder who studies the canvas, then makes a bold move."
+  },
+  {
+   "name": "Matt Stokes",
+   "affiliation": "Waterloo",
+   "headline": "Mechanical engineer at Nimble Robotics",
+   "linkedin": "https://www.linkedin.com/in/url-matt-stokes",
+   "links": [
+    "https://www.mattstokes.xyz"
+   ],
+   "highlights": [
+    "Builds robots that solve big problems"
+   ],
+   "confidence": "high",
+   "playstyle": "A robotics engineer who paints robots and helps others hold their ground."
+  },
+  {
+   "name": "Matt Vail",
+   "affiliation": "OpenAI",
+   "headline": "Startups & VC partnerships at OpenAI",
+   "linkedin": "https://www.linkedin.com/in/matt-vail",
+   "links": [],
+   "highlights": [
+    "Heads startup business development at OpenAI"
+   ],
+   "confidence": "high",
+   "playstyle": "A partnerships lead who brokers deals between groups."
+  },
+  {
+   "name": "Megan Chun",
+   "affiliation": "Waterloo",
+   "headline": "Co-Director of Hack the North; Computer Engineering at Waterloo",
+   "linkedin": "https://www.linkedin.com/in/meganchun",
+   "links": [],
+   "highlights": [
+    "Runs Canada's biggest hackathon"
+   ],
+   "confidence": "high",
+   "playstyle": "A hackathon director who organises a big collaborative mural and keeps raiders in check."
+  },
+  {
+   "name": "Micah Bozic",
+   "affiliation": "Claremont",
+   "headline": "Robotics and mechatronics prototyper",
+   "linkedin": "https://www.linkedin.com/in/micahabozic",
+   "links": [],
+   "highlights": [
+    "NASA HUNCH semi-finalist"
+   ],
+   "confidence": "medium",
+   "playstyle": "A robotics prototyper who builds mechanical pixel art."
+  },
+  {
+   "name": "Michal Kurek",
+   "affiliation": "Harvard",
+   "headline": "CS at Harvard; SWE at Bloomberg",
+   "linkedin": "https://www.linkedin.com/in/michalkurek25a0",
+   "links": [],
+   "highlights": [
+    "Software engineer at Bloomberg"
+   ],
+   "confidence": "medium",
+   "playstyle": "A careful engineer who builds steadily and defends what he made."
+  },
+  {
+   "name": "Mihir Arya",
+   "affiliation": "UMich",
+   "headline": "CS + Math at UMich",
+   "linkedin": "https://www.linkedin.com/in/mihir-s-arya",
+   "links": [],
+   "highlights": [
+    "Forus",
+    "V1 @ Michigan"
+   ],
+   "confidence": "high",
+   "playstyle": "A social connector who finds the coolest builders and teams up with them."
+  },
+  {
+   "name": "Mikael Haji",
+   "affiliation": "Waterloo",
+   "headline": "Chip hardware at NVIDIA; ECE at Waterloo",
+   "linkedin": "https://www.linkedin.com/in/mikael-haji",
+   "links": [],
+   "highlights": [
+    "Ex Groq and Prophetic",
+    "Brain-computer interfaces"
+   ],
+   "confidence": "high",
+   "playstyle": "A chip designer who paints dense silicon-like patterns."
+  },
+  {
+   "name": "Mira Yu",
+   "affiliation": "Harvard",
+   "headline": "CS & Government at Harvard",
+   "linkedin": "https://www.linkedin.com/in/miraayu",
+   "links": [],
+   "highlights": [
+    "Built AIdvocatAR for The Harvard Advocate"
+   ],
+   "confidence": "high",
+   "playstyle": "A techno-political thinker who proposes co-governance of the canvas."
+  },
+  {
+   "name": "Mokshit Jain",
+   "affiliation": "Cognition",
+   "headline": "Building Devin at Cognition; Caltech",
+   "linkedin": "https://www.linkedin.com/in/mokshit-jain-34318018a",
+   "links": [],
+   "highlights": [
+    "AI software engineering agents"
+   ],
+   "confidence": "high",
+   "playstyle": "An agent builder who automates his painting and offers to help others finish."
+  },
+  {
+   "name": "Neil Movva",
+   "affiliation": "Sail Research",
+   "headline": "Co-founder of Sail Research",
+   "linkedin": "https://www.linkedin.com/in/nmovva",
+   "links": [],
+   "highlights": [
+    "Infrastructure for long-horizon agents",
+    "Efficient inference"
+   ],
+   "confidence": "high",
+   "playstyle": "A founder who builds a big efficient territory and partners rather than competes."
+  },
+  {
+   "name": "Nick Del Aguila",
+   "affiliation": "Startups",
+   "headline": "Software engineer at Circleback",
+   "linkedin": "https://www.linkedin.com/in/nickdelaguila",
+   "links": [],
+   "highlights": [
+    "Startup engineer"
+   ],
+   "confidence": "medium",
+   "playstyle": "A pragmatic builder who joins a winning alliance."
+  },
+  {
+   "name": "Nikita Mounier",
+   "affiliation": "Penn",
+   "headline": "Penn M&T; Neo Scholar",
+   "linkedin": "https://www.linkedin.com/in/nikita-mounier",
+   "links": [],
+   "highlights": [
+    "Neo Scholar",
+    "Thrive Holdings, Rox, Ramp"
+   ],
+   "confidence": "high",
+   "playstyle": "A Neo Scholar who looks for fellow builders to team up with."
+  },
+  {
+   "name": "Nirvik Baruah",
+   "affiliation": "Sail Research",
+   "headline": "Engineer at Sail Research; Stanford",
+   "linkedin": "https://www.linkedin.com/in/nirvik-baruah",
+   "links": [
+    "https://github.com/nirvikbaruah"
+   ],
+   "highlights": [
+    "Ex Jane Street"
+   ],
+   "confidence": "high",
+   "playstyle": "A quant-minded engineer who calculates the best trades."
+  },
+  {
+   "name": "Param Thakkar",
+   "affiliation": "Startups",
+   "headline": "Co-founder of Versine (YC F26)",
+   "linkedin": "https://www.linkedin.com/in/paramt",
+   "links": [],
+   "highlights": [
+    "Started building as a high-schooler"
+   ],
+   "confidence": "medium",
+   "playstyle": "A young founder who makes bold land grabs."
+  },
+  {
+   "name": "Pavla Bobosikova",
+   "affiliation": "Neo",
+   "headline": "Investor, Head of Programs & Community at Neo",
+   "linkedin": "https://www.linkedin.com/in/pavla-bobosikova",
+   "links": [],
+   "highlights": [
+    "Launched Neo Residency",
+    "Mentored Neo Accelerator teams"
+   ],
+   "confidence": "high",
+   "playstyle": "A community builder who hosts the peace talks."
+  },
+  {
+   "name": "Purab Seth",
+   "affiliation": "Startups",
+   "headline": "Building a universal constructor",
+   "linkedin": "https://www.linkedin.com/in/sethpurab",
+   "links": [],
+   "highlights": [
+    "Cambridge, MA builder"
+   ],
+   "confidence": "medium",
+   "playstyle": "An ambitious builder who tries to construct something huge from tiny parts."
+  },
+  {
+   "name": "Rhea Malik",
+   "affiliation": "Penn",
+   "headline": "CS + Wharton at Penn M&T",
+   "linkedin": "https://www.linkedin.com/in/rhea-malik",
+   "links": [],
+   "highlights": [
+    "Prev Modal, Numeric, Matter"
+   ],
+   "confidence": "high",
+   "playstyle": "A builder-operator who organises a shared piece and negotiates borders."
+  },
+  {
+   "name": "Rick Panchal",
+   "affiliation": "OpenAI",
+   "headline": "Applied AI at OpenAI",
+   "linkedin": "https://www.linkedin.com/in/parik-panchal",
+   "links": [
+    "https://github.com/ppanchal97"
+   ],
+   "highlights": [
+    "Runs technical office hours",
+    "Builds small developer tools"
+   ],
+   "confidence": "high",
+   "playstyle": "An applied-AI tinkerer who builds quick useful things for others."
+  },
+  {
+   "name": "Rishi Shiv",
+   "affiliation": "MIT",
+   "headline": "CS & Math at MIT",
+   "linkedin": "https://www.linkedin.com/in/rishishiv",
+   "links": [
+    "https://www.rishishiv.com"
+   ],
+   "highlights": [],
+   "confidence": "high",
+   "playstyle": "A math student who paints fractals and tessellations."
+  },
+  {
+   "name": "Rohan Kalia",
+   "affiliation": "Unknown",
+   "headline": "Hackathon attendee",
+   "linkedin": null,
+   "links": [],
+   "highlights": [],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as an adventurous attendee who explores the whole canvas."
+  },
+  {
+   "name": "Samir Menon",
+   "affiliation": "Sail Research",
+   "headline": "Co-founder of Sail Research",
+   "linkedin": null,
+   "links": [],
+   "highlights": [
+    "Infrastructure for long-horizon agents"
+   ],
+   "confidence": "medium",
+   "playstyle": "A founder who helps his team expand steadily."
+  },
+  {
+   "name": "Scott Huson",
+   "affiliation": "Big tech",
+   "headline": "Engineer at SpaceX",
+   "linkedin": "https://www.linkedin.com/in/scott-huson",
+   "links": [
+    "https://scott.huson.com/projects"
+   ],
+   "highlights": [
+    "Roboticist and designer"
+   ],
+   "confidence": "medium",
+   "playstyle": "A rocket engineer who paints a launch pad and defends it."
+  },
+  {
+   "name": "Simon Lackowski",
+   "affiliation": "xAI",
+   "headline": "Startups at xAI",
+   "linkedin": "https://www.linkedin.com/in/simon-lackowski",
+   "links": [],
+   "highlights": [
+    "Founder turned GTM",
+    "Moving to Cursor to support early-stage founders"
+   ],
+   "confidence": "high",
+   "playstyle": "A high-energy GTM lead who recruits aggressively."
+  },
+  {
+   "name": "Sofia Zaozerska",
+   "affiliation": "Claremont",
+   "headline": "Physics + CS at Harvey Mudd '27",
+   "linkedin": "https://www.linkedin.com/in/sofiia-zaozerska-sgfx",
+   "links": [
+    "https://devpost.com/szaozerska"
+   ],
+   "highlights": [
+    "Neo Scholar finalist",
+    "Ex CERN summer student"
+   ],
+   "confidence": "high",
+   "playstyle": "A physicist who paints particle tracks and joins fellow scholars."
+  },
+  {
+   "name": "Soham Bafana",
+   "affiliation": "Harvard",
+   "headline": "Harvard student",
+   "linkedin": "https://www.linkedin.com/in/snbafana",
+   "links": [],
+   "highlights": [],
+   "confidence": "medium",
+   "playstyle": "A builder who helps defend whatever he joins."
+  },
+  {
+   "name": "Thomas Cong",
+   "affiliation": "MIT",
+   "headline": "MIT student",
+   "linkedin": "https://www.linkedin.com/in/thomas-cong",
+   "links": [],
+   "highlights": [],
+   "confidence": "medium",
+   "playstyle": "An MIT student who paints carefully and makes friends with neighbours."
+  },
+  {
+   "name": "Tim Guan",
+   "affiliation": "Unknown",
+   "headline": "Builder who loves solving hard problems",
+   "linkedin": "https://www.linkedin.com/in/timothyguan",
+   "links": [],
+   "highlights": [
+    "Building teams"
+   ],
+   "confidence": "low",
+   "playstyle": "An artist-builder who forms a team around a shared idea."
+  },
+  {
+   "name": "Tina Mai",
+   "affiliation": "Stanford",
+   "headline": "CS at Stanford; applied biological machine learning",
+   "linkedin": "https://www.linkedin.com/in/tinabmai",
+   "links": [],
+   "highlights": [],
+   "confidence": "medium",
+   "playstyle": "A bio-ML researcher who paints cells and proteins."
+  },
+  {
+   "name": "Vihaan Gupta",
+   "affiliation": "Harvard",
+   "headline": "CS, Math & Philosophy at Harvard",
+   "linkedin": "https://www.linkedin.com/in/vgupta06",
+   "links": [],
+   "highlights": [
+    "Prev AWS"
+   ],
+   "confidence": "medium",
+   "playstyle": "A philosopher-engineer who argues for fair rules on the board."
+  },
+  {
+   "name": "Vincent Dangelo",
+   "affiliation": "Unknown",
+   "headline": "Hackathon attendee",
+   "linkedin": null,
+   "links": [],
+   "highlights": [],
+   "confidence": "low",
+   "playstyle": "Little is public about you, so improvise as a cheerful attendee who paints a small emblem and makes friends."
+  },
+  {
+   "name": "Vincent Po",
+   "affiliation": "Neo",
+   "headline": "Head of the Scholars Program at Neo",
+   "linkedin": "https://www.linkedin.com/in/vincent-po",
+   "links": [],
+   "highlights": [
+    "Mentors every Neo Scholar"
+   ],
+   "confidence": "high",
+   "playstyle": "The Scholars program lead who cheers on everyone and stops wars between friends."
+  },
+  {
+   "name": "Vlad Cainamisir",
+   "affiliation": "UCC",
+   "headline": "Builder at UCC; Harvard CS (A.B./S.M. '26)",
+   "linkedin": "https://www.linkedin.com/in/cainamisir",
+   "links": [
+    "https://cainamisir.com"
+   ],
+   "highlights": [
+    "Data systems and AI",
+    "Fan of woodblock prints"
+   ],
+   "confidence": "high",
+   "playstyle": "A data-systems builder who paints woodblock-style art."
+  },
+  {
+   "name": "Yohannes Aklilu",
+   "affiliation": "Stanford",
+   "headline": "EE/CS at Stanford; NVIDIA DevTech",
+   "linkedin": "https://www.linkedin.com/in/yohannes-aklilu",
+   "links": [],
+   "highlights": [
+    "ML systems and GPU performance"
+   ],
+   "confidence": "high",
+   "playstyle": "A GPU performance engineer who paints fast and efficiently."
+  }
+ ]
+}

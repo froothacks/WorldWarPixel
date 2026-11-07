@@ -40,6 +40,20 @@ const CARD_FIELDS: [string, string][] = [
   ["national_pride", "National pride"],
 ];
 
+const CONFIDENCE: Record<string, string> = {
+  high: "Profile match: confident",
+  medium: "Profile match: likely",
+  low: "Profile match: uncertain (little public info)",
+};
+
+function asList(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(String) : [];
+}
+
+function linkLabel(url: string): string {
+  return url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+}
+
 function formatValue(v: string | number | string[] | null): string {
   return Array.isArray(v) ? v.join(", ") : String(v);
 }
@@ -68,6 +82,8 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
   // The snapshot's agent list is static; the detail fetch has where the agent is painting now.
   const pos = fresh ?? agent;
   const card = fresh?.persona_card ?? {};
+  const person = card.source === "roster";
+  const links = [...(typeof card.linkedin === "string" ? [card.linkedin] : []), ...asList(card.links)];
   const thoughts = [...liveThoughts, ...history]
     .filter((t) => (seen.has(t.ts) ? false : (seen.add(t.ts), true)))
     .sort((a, b) => b.ts - a.ts)
@@ -85,13 +101,43 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
       </header>
       <div className="drawer-body">
         <dl className="facts">
-          <dt>Country</dt><dd>{agent.country}</dd>
+          {person ? (
+            <>
+              <dt>Affiliation</dt><dd>{String(card.affiliation ?? "unknown")}</dd>
+            </>
+          ) : (
+            <>
+              <dt>Country</dt><dd>{agent.country}</dd>
+            </>
+          )}
           <dt>Position</dt><dd>({pos.home_x}, {pos.home_y})</dd>
           <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
           <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
         </dl>
+        {person && (
+          <section className="profile">
+            <p className="profile-headline">{String(card.headline ?? "")}</p>
+            {asList(card.highlights).length > 0 && (
+              <ul className="profile-highlights">
+                {asList(card.highlights).map((h) => (
+                  <li key={h}>{h}</li>
+                ))}
+              </ul>
+            )}
+            {links.length > 0 && (
+              <div className="profile-links">
+                {links.map((url) => (
+                  <a key={url} href={url} target="_blank" rel="noreferrer">
+                    {url.includes("linkedin.com/in/") ? "LinkedIn" : linkLabel(url)}
+                  </a>
+                ))}
+              </div>
+            )}
+            <p className="faint small">{CONFIDENCE[String(card.confidence)] ?? ""}</p>
+          </section>
+        )}
         <p className="small persona">{fresh?.persona ?? (failed ? "Couldn't load this agent's persona." : "Loading persona…")}</p>
-        {Object.keys(card).length > 0 && (
+        {!person && Object.keys(card).length > 0 && (
           <details className="prompt">
             <summary className="muted small">
               Persona card · {card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}

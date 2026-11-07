@@ -10,6 +10,8 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "random";
+  /** "world" seats `agents` people by population; a roster id plays one agent per real attendee. */
+  roster: "world" | "hackathon";
   narrator_interval: number;
   narrator_canvas_image: boolean;
 }
@@ -26,6 +28,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  roster: "world",
   narrator_interval: 60,
   narrator_canvas_image: true,
 };
@@ -91,6 +94,8 @@ export interface Agent {
   home_x: number;
   home_y: number;
   cooldown: number;
+  /** One-line profile for roster runs; empty for world runs. */
+  headline?: string;
   status: AgentStatus;
   last_thought: Thought | null;
 }
@@ -214,7 +219,15 @@ export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
+export interface RosterSummary {
+  id: Exclude<RunConfig["roster"], "world">;
+  title: string;
+  event: string;
+  size: number;
+}
+
 export const api = {
+  rosters: () => request<RosterSummary[]>("/rosters"),
   listRuns: () => request<RunSummary[]>("/runs"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {

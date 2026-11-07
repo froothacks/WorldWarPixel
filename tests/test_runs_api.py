@@ -142,3 +142,8 @@ def test_spa_fallback_does_not_swallow_api_404s(
     with pytest.raises(HTTPException) as exc:
         asyncio.run(app_module.frontend("runs/nope/unknown"))
     assert exc.value.status_code == 404
+
+
+def test_rosters_endpoint_lists_the_hackathon(client: TestClient) -> None:
+    rosters = client.get("/rosters").json()
+    assert {"id": "hackathon", "size": 86}.items() <= rosters[0].items()

@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/runs": { target: backend, ws: true },
+      "/rosters": backend,
       "/health": backend,
     },
   },

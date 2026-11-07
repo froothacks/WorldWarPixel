@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 from worldwarpixel.personas import nemotron
+from worldwarpixel.personas import roster as roster_mod
 from worldwarpixel.personas.allocation import allocate_seats
 from worldwarpixel.personas.pool import RespondentPool, default_pool
 from worldwarpixel.personas.proxy import survey_country
@@ -25,6 +26,7 @@ class AgentSpec:
     cooldown: float
     persona: str = ""
     persona_card: dict[str, Any] = field(default_factory=dict)
+    headline: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -90,6 +92,38 @@ def seed_agents(
                     persona_card=persona_card(respondent, country.name, survey_name),
                 )
             )
+    rng.shuffle(agents)
+    for i, agent in enumerate(agents, start=1):
+        agent.id = i
+    return agents
+
+
+def seed_roster(
+    people: Sequence[roster_mod.Person],
+    event: str,
+    width: int,
+    height: int,
+    cooldown: float,
+    rng: random.Random,
+) -> list[AgentSpec]:
+    """One agent per real person, each playing for themselves: an agent's "country" is its own
+    name, so territory and alliances are per person and any groups form on the board."""
+    visible = len(PALETTE) - 2
+    agents = [
+        AgentSpec(
+            id=i,
+            name=person.name,
+            country=person.name,
+            color=2 + rng.randrange(visible),
+            home_x=rng.randrange(width),
+            home_y=rng.randrange(height),
+            cooldown=cooldown,
+            persona=roster_mod.persona_text(person, event),
+            persona_card=roster_mod.persona_card(person, event),
+            headline=person.headline,
+        )
+        for i, person in enumerate(people, start=1)
+    ]
     rng.shuffle(agents)
     for i, agent in enumerate(agents, start=1):
         agent.id = i
