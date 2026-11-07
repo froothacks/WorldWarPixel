@@ -34,8 +34,7 @@ class Settings(BaseSettings):
 
     @property
     def is_modal_endpoint(self) -> bool:
-        host = urlparse(self.openai_base_url or "").hostname or ""
-        return host == "modal.run" or host.endswith((".modal.run", ".modal.direct"))
+        return is_modal_url(self.openai_base_url)
 
     def api_key(self) -> str:
         """Bearer key for the model endpoint; 'none' (ignored) on Modal, which uses headers."""
@@ -48,9 +47,19 @@ class Settings(BaseSettings):
         key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
         return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
 
+    def modal_headers_for(self, url: str | None) -> dict[str, str]:
+        """Modal headers only when the destination is a Modal host, so an overridden
+        preset base URL can never receive the Modal credentials."""
+        return self.modal_headers() if is_modal_url(url) else {}
+
     def default_headers(self) -> dict[str, str]:
         """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""
         return self.modal_headers() if self.is_modal_endpoint else {}
+
+
+def is_modal_url(url: str | None) -> bool:
+    host = urlparse(url or "").hostname or ""
+    return host == "modal.run" or host.endswith((".modal.run", ".modal.direct"))
 
 
 @lru_cache
