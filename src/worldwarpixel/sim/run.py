@@ -77,7 +77,7 @@ class Run:
         self._tasks: list[asyncio.Task[None]] = []
         self.narrator = Narrator(
             self,
-            narrator_model,
+            narrator_model if config.policy == "llm" else None,
             self._running,
             interval=config.narrator_interval,
             include_image=config.narrator_canvas_image,

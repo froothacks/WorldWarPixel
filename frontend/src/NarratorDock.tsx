@@ -107,7 +107,9 @@ function UpdateItem({ update: u, onHighlight }: { update: NarratorUpdate; onHigh
               · last {Math.round(u.window.seconds)} s: {u.window.turns} turns, {u.window.pixels} px, {u.window.posts} posts
             </span>
           )}
-          {u.source === "fallback" && <span title={u.error ?? undefined}>· stats only, model unavailable</span>}
+          {u.source === "fallback" && (
+            <span title={u.error ?? undefined}>{u.error ? "· stats only, model unavailable" : "· stats only, no narrator model for this run"}</span>
+          )}
         </div>
         <div className="narr-headline">{u.headline}</div>
         {u.bullets.length > 0 && (

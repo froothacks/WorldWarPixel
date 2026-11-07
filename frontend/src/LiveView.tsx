@@ -65,8 +65,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           setConnection("live");
           break;
         case "narrator.update": {
-          const { type: _type, ...update } = ev;
-          setNarrator((n) => (n ? { ...n, updates: appendUpdate(n.updates, update) } : n));
+          const { type: _type, stats, ...update } = ev;
+          setNarrator((n) => (n ? { ...n, stats: stats ?? n.stats, updates: appendUpdate(n.updates, update) } : n));
           break;
         }
         case "run.state":

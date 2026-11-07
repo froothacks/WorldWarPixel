@@ -183,6 +183,11 @@ def _unescape(raw: str) -> str:
         return raw
 
 
+def bucket_span(i: int, size: int) -> tuple[int, int]:
+    """[start, end) of grid bucket `i` along a side of `size`; inverse of `x * GRID // size`."""
+    return -(-i * size // GRID), -(-(i + 1) * size // GRID)
+
+
 def _int(value: Any) -> int | None:
     try:
         return int(value)
@@ -270,13 +275,13 @@ class Narrator:
 
     def _region_box(self, rx: int, ry: int) -> dict[str, int]:
         canvas = self._run.canvas
-        cw, ch = math.ceil(canvas.width / GRID), math.ceil(canvas.height / GRID)
-        x, y = rx * cw, ry * ch
-        return {"x": x, "y": y, "w": min(cw, canvas.width - x), "h": min(ch, canvas.height - y)}
+        x0, x1 = bucket_span(rx, canvas.width)
+        y0, y1 = bucket_span(ry, canvas.height)
+        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
 
-    def build_digest(self) -> dict[str, Any]:
+    def build_digest(self, window: Window | None = None) -> dict[str, Any]:
         """Structured summary of the window; also what gets rendered into the prompt."""
-        run, w = self._run, self._window
+        run, w = self._run, window if window is not None else self._window
         by_id = run.by_id
         now = self._clock()
 
@@ -284,7 +289,8 @@ class Narrator:
         for aid, n in w.pixels.items():
             if aid in by_id:
                 countries[by_id[aid].country] += n
-        active = Counter({aid: w.pixels[aid] + 10 * w.posts[aid] for aid in w.turns})
+        seen = set(w.turns) | set(w.pixels) | set(w.posts)
+        active = Counter({aid: w.pixels[aid] + 10 * w.posts[aid] for aid in seen})
         top_agents = [
             {
                 "id": aid,
@@ -501,7 +507,7 @@ class Narrator:
         source = "model"
         error: str | None = None
         if self._model is None:
-            source, error = "fallback", "narrator model not configured"
+            source, error = "fallback", None
             headline, bullets, raw = self.fallback_update(digest)
         else:
             try:
@@ -540,14 +546,13 @@ class Narrator:
         self.history.append(update)
         self.stats["answers" if update["kind"] == "answer" else "updates"] += 1
         self._run.record("narrator.update", None, update)
-        self._run.hub.publish("narrator.update", **update)
+        self._run.hub.publish("narrator.update", **update, stats=dict(self.stats))
 
     async def tick(self) -> dict[str, Any]:
         """Summarise the window since the last update, then start a new window."""
         async with self._lock:
-            digest = self.build_digest()
-            update = await self._compose(digest, "update", None)
-            self._window = Window(self._clock())
+            window, self._window = self._window, Window(self._clock())
+            update = await self._compose(self.build_digest(window), "update", None)
             self._emit(update)
             return update
 

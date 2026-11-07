@@ -12,7 +12,13 @@ from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
-from worldwarpixel.sim.narrator import NarratorUnavailable, canvas_png, parse_reply
+from worldwarpixel.sim.narrator import (
+    GRID,
+    NarratorUnavailable,
+    bucket_span,
+    canvas_png,
+    parse_reply,
+)
 from worldwarpixel.sim.run import Run, RunConfig
 
 CONFIG = RunConfig(
@@ -138,7 +144,7 @@ def test_fallback_when_model_is_missing_or_fails() -> None:
         run._on_write(3, "pixel", {"x": 1, "y": 1, "color": 5, "prev_owner": 0})
         run.narrator.observe_turn(3)
         update = await run.narrator.tick()
-        assert update["source"] == "fallback" and "not configured" in update["error"]
+        assert update["source"] == "fallback" and update["error"] is None
         assert update["headline"].startswith("1 turns, 1 pixels")
         assert update["highlights"][0] == {
             "type": "agent",
@@ -221,7 +227,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 def test_narrator_endpoints(client: TestClient) -> None:
     manager = client.app.state.runs  # type: ignore[attr-defined]
     manager.narrator_model = FakeNarratorModel()
-    run_id = client.post("/runs", json=SMALL).json()["id"]
+    manager.make_policy = lambda _cfg: RandomWalkPolicy(seed=1)
+    run_id = client.post("/runs", json={**SMALL, "policy": "llm"}).json()["id"]
 
     state = client.get(f"/runs/{run_id}/narrator").json()
     assert state["updates"] == [] and state["interval"] == 60
@@ -270,3 +277,17 @@ def test_parse_reply_salvages_truncated_json() -> None:
     assert headline == "Noise spreads across the grid"
     assert bullets == ["Agent 12 painted at (5, 5)", "Agent 3 replied in thread 4"]
     assert highlights == []
+
+
+def test_bucket_span_matches_bucket_math_for_odd_sizes() -> None:
+    for size in (7, 128, 130, 129, 1000):
+        for x in range(size):
+            start, end = bucket_span(x * GRID // size, size)
+            assert start <= x < end
+        assert bucket_span(0, size)[0] == 0 and bucket_span(GRID - 1, size)[1] == size
+
+
+def test_random_runs_do_not_call_the_narrator_model() -> None:
+    config = CONFIG.model_copy(update={"policy": "random"})
+    run = Run("r", config, EventLog(), RandomWalkPolicy(seed=1), narrator_model=FakeNarratorModel())
+    assert run.narrator._model is None
