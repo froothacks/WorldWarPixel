@@ -367,7 +367,6 @@ void playAudio(const StageLine &line) {
     if (available <= 0) {
       if (!http.connected()) break;
       stageSocket.loop();
-      serviceFrameRefresh();
       delay(2);
       continue;
     }
@@ -382,7 +381,6 @@ void playAudio(const StageLine &line) {
     i2s.write(buffer, count);
     if (remaining > 0) remaining -= count;
     stageSocket.loop();
-    serviceFrameRefresh();
   }
   http.end();
 }
@@ -402,6 +400,7 @@ void playNextLine() {
   speaking = false;
   linePlaying = false;
   drawCaption();
+  serviceFrameRefresh();
   if (phase == "idle" && lineQueueSize == 0) showWaitingScreen();
 }
 
