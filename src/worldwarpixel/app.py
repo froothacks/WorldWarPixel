@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     agent_model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision,
+                    max_tokens=settings.agent_max_tokens,
                 )
             return random_policy(config)
 
