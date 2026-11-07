@@ -126,6 +126,8 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
   }, []);
 
   const openThread = (id: number) => {
+    // The list unmounts under the pointer, so onMouseLeave never fires.
+    setFrozen(null);
     listScroll.current = listRef.current?.scrollTop ?? 0;
     onOpen(id);
   };
@@ -339,6 +341,10 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const [fresh, setFresh] = useState<Set<number>>(() => new Set());
   const [unseen, setUnseen] = useState<number[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [bump, setBump] = useState(0);
   const jumpTarget = useRef<number | null>(null);
   const activeRef = useRef(active);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -369,7 +375,22 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
     return () => {
       live = false;
     };
-  }, [runId, threadId, version]);
+  }, [runId, threadId, version, bump]);
+
+  const sendGodReply = () => {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setSendError(null);
+    api
+      .godReply(runId, threadId, body)
+      .then(() => {
+        setDraft("");
+        setBump((b) => b + 1);
+      })
+      .catch((e: unknown) => setSendError(e instanceof Error ? e.message : "reply failed"))
+      .finally(() => setSending(false));
+  };
 
   useEffect(() => {
     activeRef.current = active;
@@ -527,6 +548,29 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
         <button className="new-below" onClick={jumpToNext} title="Jump to the next new reply you haven't seen">
           {unseen.length} new {unseen.length === 1 ? "reply" : "replies"}
         </button>
+      )}
+      {!missing && (
+        <form
+          className="god-reply"
+          onSubmit={(e) => {
+            e.preventDefault();
+            sendGodReply();
+          }}
+          title="Agents treat replies from The Hand of God as top priority"
+        >
+          <span className="god-reply-label">⚡ The Hand of God</span>
+          <input
+            value={draft}
+            maxLength={600}
+            placeholder="Reply in this thread as The Hand of God…"
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={sending}
+          />
+          <button type="submit" disabled={sending || !draft.trim()}>
+            {sending ? "…" : "Reply"}
+          </button>
+          {sendError && <span className="error small">{sendError}</span>}
+        </form>
       )}
     </>
   );

@@ -16,6 +16,8 @@ import { GOD_ID, GOD_NAME } from "./api";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
+import Territory from "./Territory";
+import Alliances from "./Alliances";
 import Board from "./Board";
 import NarratorDock from "./NarratorDock";
 import Timelapse from "./Timelapse";
@@ -28,6 +30,13 @@ interface Props {
 const MAX_LIVE_THOUGHTS = 20;
 const MAX_NARRATOR_UPDATES = 50;
 
+type SideTab = "agents" | "territory" | "alliances";
+const TABS: [SideTab, string][] = [
+  ["agents", "Agents"],
+  ["territory", "Territory"],
+  ["alliances", "Alliances"],
+];
+
 export default function LiveView({ run: initial, onLeave }: Props) {
   const [run, setRun] = useState<RunSummary>(initial);
   const [palette, setPalette] = useState<string[]>([]);
@@ -36,6 +45,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const [boardVersion, setBoardVersion] = useState(0);
   const [thoughts, setThoughts] = useState<Map<number, Thought[]>>(new Map());
   const [selected, setSelected] = useState<number | null>(null);
+  const [tab, setTab] = useState<SideTab>("agents");
+  const [country, setCountry] = useState<string | null>(null);
   const [openThread, setOpenThread] = useState<number | null>(null);
   const [focus, setFocus] = useState<Region | null>(null);
   const [narrator, setNarrator] = useState<NarratorState | null>(null);
@@ -201,6 +212,12 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   }, [thoughts]);
 
   const selectedAgent = selected !== null ? agentMap.get(selected) : undefined;
+  const highlightMask = useMemo(() => {
+    if (!country) return null;
+    const mask = new Uint8Array(65536);
+    for (const a of agents) if (a.country === country) mask[a.id] = 1;
+    return mask;
+  }, [country, agents]);
   const pixelsOwned = useMemo(
     () => (selected !== null && store ? store.countOwned(selected) : 0),
     // version is what makes this recount as pixels land.
@@ -247,9 +264,20 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [tool, setTool] = useState<GodTool | null>(null);
+  const paintRejected = useRef(false);
   const paint = useCallback(
     (pixels: [number, number, number][], erase: boolean) => {
-      api.godPixels(initial.id, pixels, erase).catch(() => undefined);
+      api.godPixels(initial.id, pixels, erase).then(
+        () => {
+          paintRejected.current = false;
+        },
+        (e: Error) => {
+          // One alert per streak of failures, not one per brush segment.
+          if (paintRejected.current) return;
+          paintRejected.current = true;
+          alert(`God brush rejected: ${e.message}`);
+        },
+      );
     },
     [initial.id],
   );
@@ -332,6 +360,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             version={version}
             agents={agentMap}
             highlightAgent={selected}
+            highlightMask={highlightMask}
             onPickAgent={setSelected}
             focus={focus}
             tool={god ? tool : null}
@@ -353,18 +382,59 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           societies={run.societies ?? []}
           agents={agents}
         />
-        {selectedAgent ? (
-          <AgentDrawer
-            runId={initial.id}
-            agent={selectedAgent}
+        <div className="side">
+          <nav className="tabs">
+            {TABS.map(([id, label]) => (
+              <button
+                key={id}
+                className={tab === id && !selectedAgent ? "on" : ""}
+                onClick={() => {
+                  setTab(id);
+                  setSelected(null);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          {selectedAgent && (
+            <AgentDrawer
+              runId={initial.id}
+              agent={selectedAgent}
+              palette={palette}
+              liveThoughts={thoughts.get(selectedAgent.id) ?? []}
+              pixelsOwned={pixelsOwned}
+              onClose={() => setSelected(null)}
+            />
+          )}
+          <AgentList
+            agents={agents}
+            societies={run.societies ?? []}
             palette={palette}
-            liveThoughts={thoughts.get(selectedAgent.id) ?? []}
-            pixelsOwned={pixelsOwned}
-            onClose={() => setSelected(null)}
+            selected={selected}
+            lastThought={lastThought}
+            onSelect={setSelected}
+            hidden={selectedAgent !== undefined || tab !== "agents"}
           />
-        ) : (
-          <AgentList agents={agents} societies={run.societies ?? []} palette={palette} selected={selected} lastThought={lastThought} onSelect={setSelected} />
-        )}
+          <Territory
+            store={store}
+            version={version}
+            agents={agents}
+            palette={palette}
+            highlight={country}
+            onHighlight={setCountry}
+            hidden={selectedAgent !== undefined || tab !== "territory"}
+          />
+          <Alliances
+            runId={initial.id}
+            running={run.state === "running"}
+            agents={agents}
+            palette={palette}
+            highlight={country}
+            onHighlight={setCountry}
+            hidden={selectedAgent !== undefined || tab !== "alliances"}
+          />
+        </div>
       </div>
       {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
     </div>

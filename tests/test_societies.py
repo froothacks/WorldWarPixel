@@ -74,7 +74,7 @@ def test_run_tools_peek_join_rename_and_posts_land_in_own_society() -> None:
         TurnBudget(posts=2, reads=1),
         lambda k, p: None,
         run._clock,
-        _SocietyAccess(run, agent.id),
+        societies=_SocietyAccess(run, agent.id),
     )
     tid = tools.post_thread("hello", "first")["thread_id"]
     assert run.board.society_of(tid) == home
@@ -270,7 +270,7 @@ def test_invites_contacts_moves_and_memory_reach_the_prompt() -> None:
         TurnBudget(),
         lambda k, p: None,
         run._clock,
-        _SocietyAccess(run, a.id),
+        societies=_SocietyAccess(run, a.id),
     )
     assert tools.invite(b.name) == {"invited": b.name, "society": socs.of(a.id)}
     with pytest.raises(ToolError, match="budget"):

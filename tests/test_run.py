@@ -1,13 +1,28 @@
 import asyncio
 
+import pytest
+from pydantic import ValidationError
+
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT, RESYNC, Hub
 from worldwarpixel.sim.run import Run, RunConfig
 
 CONFIG = RunConfig(
-    width=64, height=64, agents=5, cooldown=0.01, jitter=0, pixels_per_turn=4, seed=1
-)
+    width=64,
+    height=64,
+    agents=5,
+    cooldown=0.01,
+    jitter=0,
+    pixels_per_turn=4,
+    seed=1,
+).model_copy(update={"pixel_interval": 0})
+
+
+def test_pixel_interval_has_a_50_ms_minimum_and_default() -> None:
+    assert RunConfig().pixel_interval == 0.05
+    with pytest.raises(ValidationError):
+        RunConfig(pixel_interval=0.01)
 
 
 async def _settle() -> None:
@@ -81,5 +96,24 @@ def test_slow_subscriber_gets_a_resync_marker_instead_of_a_hole() -> None:
         assert q.get_nowait() == RESYNC
         assert isinstance(q.get_nowait(), str)
         assert q.empty()
+
+    asyncio.run(main())
+
+
+def test_pixels_drip_out_at_the_pixel_interval() -> None:
+    async def main() -> None:
+        cfg = CONFIG.model_copy(update={"agents": 1, "cooldown": 10.0, "pixel_interval": 0.05})
+        run = Run("d", cfg, EventLog(), RandomWalkPolicy(seed=1, post_chance=0.0))
+        run.rng.random = lambda: 0.0  # type: ignore[method-assign]  # no start-up delay
+        await run.start()
+        await asyncio.sleep(0.08)
+        assert run.stats["turns"] == 1
+        assert 0 < run.stats["pixels"] < 4, "a turn's pixels land one at a time"
+        assert run.status[run.agents[0].id] == "painting"
+        await asyncio.sleep(0.25)
+        assert run.stats["pixels"] == 4
+        assert run.status[run.agents[0].id] == "idle"
+        run.god_set_pace(None, None, pixel_interval=0.0)
+        await run.stop()
 
     asyncio.run(main())

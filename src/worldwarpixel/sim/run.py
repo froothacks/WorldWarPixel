@@ -16,20 +16,41 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.societies import Societies
-from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
+from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
+
+MIN_PIXEL_INTERVAL = 0.05
+MAX_AGENTS = 10_000
+"""Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
+list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
+by one core for the random policy (~100 turns/s)."""
+
+LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown")
 
 
 class RunConfig(BaseModel):
     width: int = Field(default=512, ge=16, le=4096)
     height: int = Field(default=320, ge=16, le=4096)
-    agents: int = Field(default=100, ge=1, le=5000)
-    cooldown: float = Field(default=10.0, gt=0, description="Seconds an agent sleeps between turns")
+    agents: int = Field(default=100, ge=1, le=MAX_AGENTS)
+    cooldown: float = Field(
+        default=0.5,
+        gt=0,
+        description="Seconds between the starts of an agent's turns (randomised by jitter)",
+    )
+    pixel_interval: float = Field(
+        default=0.05,
+        ge=MIN_PIXEL_INTERVAL,
+        le=5,
+        description=(
+            "Seconds between an agent's successive pixels (at least 50 ms so batches animate in)"
+        ),
+    )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
-    pixels_per_turn: int = Field(default=40, ge=1, le=1024)
+    pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
+    max_concurrency: int = Field(default=16, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "llm-guided", "random"] = Field(
         default="llm",
@@ -58,6 +79,9 @@ MEMORY_TURNS = 3  # own past turns shown to an agent
 CONTACTS_SHOWN = 5
 MENTION = re.compile(r"@(\w+(?:-\w+)*)")
 MAX_GOD_PIXELS = 50_000
+PREFETCH_LEAD = 1.0
+"""Start an agent's next model call when this many seconds of queued pixels remain, so the
+next batch lands as the current one finishes draining ("premoving")."""
 
 
 class Run:
@@ -72,6 +96,7 @@ class Run:
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
+        agents: list[AgentSpec] | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -88,9 +113,10 @@ class Run:
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
-        self.agents = seed_agents(
+        self.agents = agents or seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
+        self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
         if config.societies:
             self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
@@ -217,6 +243,22 @@ class Run:
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 
+    def god_reply(self, thread_id: int, body: str) -> dict[str, Any]:
+        """Reply in an existing thread as the human; pinned for agents like an announcement."""
+        post = self.board.reply(GOD_ID, thread_id, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        root = self.board.thread(thread_id)[0]
+        self._announcements.append(
+            {
+                "thread_id": thread_id,
+                "title": root.title,
+                "body": body,
+                "ts": post.created_at,
+                "reply": True,
+            }
+        )
+        return post.to_dict()
+
     def recent_announcements(self, window: float = ANNOUNCEMENT_WINDOW) -> list[dict[str, Any]]:
         """God announcements from the last `window` seconds, newest last, for the observation."""
         cutoff = self._clock() - window
@@ -231,10 +273,17 @@ class Run:
                 replies = len(self.board.thread(a["thread_id"])) - 1
             except (KeyError, IndexError):
                 continue
+            if a.get("reply"):
+                title = (
+                    f'📢 {GOD_NAME} replied in "{a["title"]}": {a["body"]} '
+                    "(answer this in that thread before anything else)"
+                )
+            else:
+                title = f"📢 ANNOUNCEMENT: {a['title']} — {a['body']}"
             out.append(
                 {
                     "thread_id": a["thread_id"],
-                    "title": f"📢 ANNOUNCEMENT: {a['title']} — {a['body']}",
+                    "title": title,
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,
@@ -242,15 +291,31 @@ class Run:
             )
         return out
 
-    def god_set_pace(self, cooldown: float | None, pixels_per_turn: int | None) -> None:
-        """Change how fast agents act; takes effect from each agent's next turn."""
+    def god_set_pace(
+        self,
+        cooldown: float | None,
+        pixels_per_turn: int | None,
+        pixel_interval: float | None = None,
+    ) -> None:
+        """Change how fast agents act. Cooldown and px/turn apply from each agent's next turn;
+        the pixel interval applies to the very next pixel of every queue."""
         if cooldown is not None:
             for agent in self.agents:
                 agent.cooldown = cooldown
             self.config.cooldown = cooldown
         if pixels_per_turn is not None:
             self.config.pixels_per_turn = pixels_per_turn
-        self._record("god.pace", GOD_ID, {"cooldown": cooldown, "pixels_per_turn": pixels_per_turn})
+        if pixel_interval is not None:
+            self.config.pixel_interval = pixel_interval
+        self._record(
+            "god.pace",
+            GOD_ID,
+            {
+                "cooldown": cooldown,
+                "pixels_per_turn": pixels_per_turn,
+                "pixel_interval": pixel_interval,
+            },
+        )
         self.hub.publish("run.state", state=self.state, stats=self.stats)
 
     # -- lifecycle -------------------------------------------------------------------------
@@ -259,7 +324,8 @@ class Run:
         if self.state != "created":
             raise RuntimeError(f"run is {self.state}")
         self.started_at = self._clock()
-        self._record("run.created", None, {"config": self.config.model_dump()})
+        roster = [a.to_dict() for a in self.agents]
+        self._record("run.created", None, {"config": self.config.model_dump(), "agents": roster})
         self._set_state("running")
         self._running.set()
         self.hub.start()
@@ -298,26 +364,75 @@ class Run:
     # -- agent loop ------------------------------------------------------------------------
 
     async def _agent_loop(self, agent: AgentSpec) -> None:
-        await self._sleep(self.rng.random() * agent.cooldown)
-        last_turn = self.started_at or self._clock()
-        while True:
-            await self._running.wait()
-            now = self._clock()
-            await self._turn(agent, now - last_turn)
-            last_turn = now
-            j = self.config.jitter
-            await self._sleep(agent.cooldown * (1 + self.rng.uniform(-j, j)))
+        queue: asyncio.Queue[PixelWrite] = asyncio.Queue()
+        pending: dict[tuple[int, int], tuple[int, int]] = {}
+        painter = asyncio.create_task(self._painter(agent, queue, pending))
+        try:
+            await self._sleep(self.rng.random() * agent.cooldown)
+            last_turn = self.started_at or self._clock()
+            while True:
+                await self._running.wait()
+                now = self._clock()
+                await self._turn(agent, now - last_turn, queue, pending)
+                last_turn = now
+                j = self.config.jitter
+                await self._sleep(agent.cooldown * (1 + self.rng.uniform(-j, j)))
+                while queue.qsize() * self.config.pixel_interval > PREFETCH_LEAD:
+                    await self._sleep(self.config.pixel_interval)
+        finally:
+            painter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await painter
 
-    async def _turn(self, agent: AgentSpec, elapsed: float) -> None:
+    async def _painter(
+        self,
+        agent: AgentSpec,
+        queue: asyncio.Queue[PixelWrite],
+        pending: dict[tuple[int, int], tuple[int, int]],
+    ) -> None:
+        """Drip an agent's queued pixels onto the canvas one every `pixel_interval` seconds."""
+        while True:
+            w = await queue.get()
+            await self._running.wait()
+            apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
+            if pending.get((w.x, w.y)) == (w.color, w.agent_id):
+                del pending[(w.x, w.y)]
+            if queue.empty() and self.status.get(agent.id) == "painting":
+                self._set_status(agent.id, "idle")
+            # Sleep in short slices so a god-mode change to pixel_interval applies within 250 ms.
+            t0 = time.monotonic()
+            while (left := self.config.pixel_interval - (time.monotonic() - t0)) > 0:
+                await self._sleep(min(left, 0.25))
+
+    async def _turn(
+        self,
+        agent: AgentSpec,
+        elapsed: float,
+        queue: asyncio.Queue[PixelWrite] | None = None,
+        pending: dict[tuple[int, int], tuple[int, int]] | None = None,
+    ) -> None:
         budget = TurnBudget(self.config.pixels_per_turn, self.config.posts_per_turn)
+        sink = lambda kind, payload: self._on_write(agent.id, kind, payload)  # noqa: E731
+
+        def writer(writes: list[PixelWrite]) -> None:
+            if queue is None or (self.config.pixel_interval <= 0 and queue.empty()):
+                apply_writes(self.canvas, writes, sink)
+                return
+            for w in writes:
+                queue.put_nowait(w)
+                if pending is not None:
+                    pending[(w.x, w.y)] = (w.color, w.agent_id)
+
         tools = ToolSet(
             self.canvas,
             self.board,
             agent.id,
             budget,
-            lambda kind, payload: self._on_write(agent.id, kind, payload),
+            sink,
             self._clock,
-            _SocietyAccess(self, agent.id) if self.societies else None,
+            writer,
+            pending,
+            societies=_SocietyAccess(self, agent.id) if self.societies else None,
             vote=lambda thread_id, up: self.agent_vote(agent.id, thread_id, up),
         )
         society = self.societies.of(agent.id) if self.societies else None
@@ -358,7 +473,7 @@ class Run:
         self.thoughts[agent.id].append(entry)
         self._record("agent.thought", agent.id, entry)
         self.hub.publish("agent.thought", agent_id=agent.id, **entry)
-        self._set_status(agent.id, "idle")
+        self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
 
     # -- societies -------------------------------------------------------------------------
 
@@ -415,10 +530,12 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
+            self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
             owner = int(payload.get("owner", agent_id))
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
+            self.world.observe_post(payload)
             for p in self.board.thread(int(payload["thread_id"]))[-6:]:
                 self.meet(agent_id, p.author_id)
             for word in MENTION.findall(str(payload.get("body", ""))):
@@ -455,9 +572,10 @@ class Run:
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
+        """Compact rows for the sidebar; persona text and card come from ``agent_detail``."""
         return [
             {
-                **a.to_dict(),
+                **{k: getattr(a, k) for k in LIST_FIELDS},
                 "society": self.societies.of(a.id) if self.societies else None,
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,

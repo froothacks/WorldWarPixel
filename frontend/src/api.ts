@@ -5,6 +5,7 @@ export interface RunConfig {
   cooldown: number;
   jitter: number;
   pixels_per_turn: number;
+  pixel_interval: number;
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
@@ -18,11 +19,12 @@ export const DEFAULT_CONFIG: RunConfig = {
   width: 512,
   height: 320,
   agents: 100,
-  cooldown: 10,
+  cooldown: 0.5,
   jitter: 0.3,
-  pixels_per_turn: 40,
+  pixels_per_turn: 200,
+  pixel_interval: 0.05,
   posts_per_turn: 1,
-  max_concurrency: 10,
+  max_concurrency: 16,
   seed: null,
   policy: "llm",
   narrator_interval: 60,
@@ -104,12 +106,12 @@ export interface Agent {
   cooldown: number;
   status: AgentStatus;
   last_thought: Thought | null;
-  persona: string;
-  persona_card: Record<string, string | number | string[] | null>;
   society?: number | null;
 }
 
 export interface AgentDetail extends Agent {
+  persona: string;
+  persona_card: Record<string, string | number | string[] | null>;
   thoughts: Thought[];
   system_prompt: string | null;
 }
@@ -172,6 +174,29 @@ export interface NarratorState {
   updates: NarratorUpdate[];
 }
 
+export interface WorldNode {
+  country: string;
+  agents: number;
+  /** Pixels painted by this country over the whole run (not what it holds now). */
+  pixels: number;
+  posts: number;
+}
+
+export interface WorldEdge {
+  a: string;
+  b: string;
+  /** Replies and @mentions between the two countries. */
+  talk: number;
+  /** Pixels of b that a painted over, and vice versa. */
+  raids_ab: number;
+  raids_ba: number;
+}
+
+export interface WorldGraph {
+  nodes: WorldNode[];
+  edges: WorldEdge[];
+}
+
 export interface Snapshot {
   type: "snapshot";
   run: RunSummary;
@@ -220,6 +245,7 @@ export const api = {
   agent: (id: string, agentId: number) =>
     request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
+  world: (id: string) => request<WorldGraph>(`/runs/${id}/world`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
   vote: (id: string, threadId: number, voter: string, vote: number) =>
@@ -247,9 +273,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title, body }),
     }),
+  godReply: (id: string, threadId: number, body: string) =>
+    request<Post>(`/runs/${id}/god/reply`, {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, body }),
+    }),
   godPace: (
     id: string,
-    pace: { cooldown?: number; pixels_per_turn?: number },
+    pace: { cooldown?: number; pixels_per_turn?: number; pixel_interval?: number },
   ) =>
     request<RunSummary>(`/runs/${id}/god/pace`, {
       method: "POST",

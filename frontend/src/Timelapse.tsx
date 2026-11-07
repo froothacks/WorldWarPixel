@@ -39,6 +39,18 @@ function parse(buf: ArrayBuffer): {
   return { width, height, frames };
 }
 
+const VIDEO_TYPES = ["video/webm;codecs=vp9", "video/webm", "video/mp4"];
+
+/** First container this browser can record a canvas into (Safari has no webm), or null. */
+function videoType(): string | null {
+  if (
+    typeof MediaRecorder === "undefined" ||
+    !("captureStream" in HTMLCanvasElement.prototype)
+  )
+    return null;
+  return VIDEO_TYPES.find((t) => MediaRecorder.isTypeSupported(t)) ?? null;
+}
+
 /** Replays the run's canvas history from the /timelapse endpoint with a scrubber and webm export. */
 export default function Timelapse({ runId, palette, onClose }: Props) {
   const [data, setData] = useState<{
@@ -55,8 +67,21 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
   const bufRef = useRef<Uint8Array | null>(null);
   const builtRef = useRef(-1);
   const recRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const exportType = useMemo(() => videoType(), []);
 
-  useEffect(() => () => recRef.current?.stop(), []);
+  const stopCapture = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  useEffect(
+    () => () => {
+      if (recRef.current?.state === "recording") recRef.current.stop();
+      stopCapture();
+    },
+    [],
+  );
 
   useEffect(() => {
     fetch(`/runs/${runId}/timelapse?frames=240`)
@@ -109,43 +134,57 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
     ctx.putImageData(img, 0, 0);
   }, [data, pos, rgb]);
 
+  const posRef = useRef(pos);
+  useEffect(() => {
+    posRef.current = pos;
+  }, [pos]);
+
   useEffect(() => {
     if (!playing || !data) return;
     const t = window.setInterval(() => {
-      setPos((p) => {
-        if (p + 1 >= data.frames.length) {
-          setPlaying(false);
-          if (recRef.current)
-            window.setTimeout(() => recRef.current?.stop(), 500);
-          return p;
-        }
-        return p + 1;
-      });
+      if (posRef.current + 1 < data.frames.length) {
+        setPos(posRef.current + 1);
+        return;
+      }
+      setPlaying(false);
+      const rec = recRef.current;
+      if (rec)
+        window.setTimeout(() => rec.state === "recording" && rec.stop(), 500);
     }, 1000 / fps);
     return () => window.clearInterval(t);
   }, [playing, data, fps]);
 
   const exportVideo = () => {
     const el = canvasRef.current;
-    if (!el || !data || recording) return;
+    if (!el || !data || recording || !exportType) return;
     const stream = el.captureStream(fps);
-    const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, { mimeType: exportType });
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      setError(`video export failed: ${(e as Error).message}`);
+      return;
+    }
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => chunks.push(e.data);
     rec.onstop = () => {
       recRef.current = null;
+      stopCapture();
       setRecording(false);
       if (!canvasRef.current?.isConnected) return;
-      const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
+      const url = URL.createObjectURL(new Blob(chunks, { type: exportType }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `worldwarpixel-${runId}.webm`;
+      a.download = `worldwarpixel-${runId}.${exportType.startsWith("video/mp4") ? "mp4" : "webm"}`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoking synchronously can cancel the download in Firefox/Safari.
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
     };
+    streamRef.current = stream;
     recRef.current = rec;
     setRecording(true);
-    builtRef.current = -1;
+    bufRef.current = null;
     setPos(0);
     rec.start();
     setPlaying(true);
@@ -164,16 +203,28 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
         <header>
           <strong>Timelapse</strong>
           <span className="muted small">
-            {data
-              ? `${data.frames.length} frames · ${Math.round((data.frames.at(-1)?.ts ?? t0) - t0)} s of history`
-              : (error ?? "loading…")}
+            {error ??
+              (data
+                ? `${data.frames.length} frames · ${Math.round((data.frames.at(-1)?.ts ?? t0) - t0)} s of history`
+                : "loading…")}
           </span>
           <span className="spacer" />
           <button className="ghost" onClick={onClose}>
             close
           </button>
         </header>
-        <canvas ref={canvasRef} className="timelapse-canvas" />
+        <canvas
+          ref={canvasRef}
+          className="timelapse-canvas"
+          // Fit by height too so the controls below stay on screen for tall canvases.
+          style={
+            data && data.height > 0
+              ? {
+                  width: `min(80vw, 1024px, calc((92vh - 110px) * ${data.width / data.height}))`,
+                }
+              : undefined
+          }
+        />
         <div className="timelapse-controls">
           <button
             onClick={() => setPlaying(!playing)}
@@ -210,10 +261,16 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           </label>
           <button
             onClick={exportVideo}
-            disabled={!data || recording}
-            title="Plays from the start while recording, then downloads a .webm"
+            disabled={!data || recording || !exportType}
+            title={
+              exportType
+                ? "Plays from the start while recording, then downloads the video"
+                : "This browser cannot record a canvas to video"
+            }
           >
-            {recording ? "Recording…" : "Export .webm"}
+            {recording
+              ? "Recording…"
+              : `Export .${exportType?.startsWith("video/mp4") ? "mp4" : "webm"}`}
           </button>
         </div>
       </div>

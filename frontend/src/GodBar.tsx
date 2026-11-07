@@ -73,6 +73,8 @@ export default function GodBar({
     void act("pace", () => api.godPace(runId, { cooldown }).then(onRun));
   const pxPerTurn = (pixels_per_turn: number) =>
     void act("pace", () => api.godPace(runId, { pixels_per_turn }).then(onRun));
+  const pxInterval = (ms: number) =>
+    void act("pace", () => api.godPace(runId, { pixel_interval: ms / 1000 }).then(onRun));
 
   return (
     <div className="godbar">
@@ -168,13 +170,13 @@ export default function GodBar({
       >
         token
       </button>
-      <label className="small" title="Seconds between each agent's turns">
+      <label className="small" title="Seconds between the starts of an agent's turns (randomised by jitter)">
         cooldown {run.config.cooldown}s
         <input
           type="range"
-          min={0.5}
+          min={0.1}
           max={60}
-          step={0.5}
+          step={0.1}
           value={run.config.cooldown}
           onChange={(e) => pace(+e.target.value)}
         />
@@ -188,6 +190,20 @@ export default function GodBar({
           value={run.config.pixels_per_turn}
           onChange={(e) => pxPerTurn(+e.target.value)}
           style={{ width: 64 }}
+        />
+      </label>
+      <label
+        className="small"
+        title="Milliseconds between an agent's successive pixels (minimum 50 ms)"
+      >
+        px gap {Math.round(run.config.pixel_interval * 1000)}ms
+        <input
+          type="range"
+          min={50}
+          max={1000}
+          step={10}
+          value={Math.round(run.config.pixel_interval * 1000)}
+          onChange={(e) => pxInterval(+e.target.value)}
         />
       </label>
       <span className="sep" />

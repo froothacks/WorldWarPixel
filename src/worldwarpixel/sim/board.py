@@ -93,6 +93,17 @@ class Board:
         self._replies[thread_id].append(post.id)
         return post
 
+    def restore(self, post: Post) -> None:
+        """Re-insert a post read back from the event log, keeping its recorded ids."""
+        self._next_id = max(self._next_id, post.id + 1)
+        if post.thread_id == post.id:
+            self._replies[post.id] = []
+        elif post.thread_id in self._replies:
+            self._replies[post.thread_id].append(post.id)
+        else:
+            return
+        self._posts[post.id] = post
+
     def get(self, post_id: int) -> Post | None:
         return self._posts.get(post_id)
 

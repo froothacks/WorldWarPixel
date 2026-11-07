@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import Canvas
+from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
@@ -78,3 +78,40 @@ def test_posting_shares_one_budget_and_wraps_board_errors() -> None:
     assert len(tools.read_thread(1)["posts"]) == 2
     with pytest.raises(ToolError, match="does not exist"):
         tools.read_thread(5)
+
+
+def test_stencil_skips_pixels_already_queued_for_painting() -> None:
+    canvas = Canvas(16, 16)
+    queued: list[PixelWrite] = []
+    pending: dict[tuple[int, int], tuple[int, int]] = {}
+
+    def writer(writes: list[PixelWrite]) -> None:
+        for w in writes:
+            queued.append(w)
+            pending[(w.x, w.y)] = (w.color, w.agent_id)
+
+    def tools() -> ToolSet:
+        budget = TurnBudget(2, 1)
+        return ToolSet(canvas, Board(), 1, budget, lambda k, p: None, lambda: 0.0, writer, pending)
+
+    stencil = [(0, 0, 3), (1, 0, 3), (2, 0, 3)]
+    assert tools().paint_stencil(stencil)["remaining"] == 1
+    # Nothing has landed on the canvas yet, but the next turn must not re-select the queued cells.
+    assert canvas.get(0, 0) == 0
+    out = tools().paint_stencil(stencil)
+    assert out["placed"] == 1 and out["done"]
+    assert [(w.x, w.y) for w in queued] == [(0, 0), (1, 0), (2, 0)]
+
+
+def test_posts_must_not_parrot_the_organiser_or_reuse_a_title() -> None:
+    board = Board()
+    tools = ToolSet(Canvas(8, 8), board, 1, TurnBudget(0, 5), lambda k, p: None, lambda: 0.0)
+    tid = tools.post_thread("Hearts everywhere", "Join me at (3, 3).")["thread_id"]
+    with pytest.raises(ToolError, match="already exists"):
+        tools.post_thread("hearts EVERYWHERE", "me too")
+    with pytest.raises(ToolError, match="own words"):
+        tools.post_thread("📢 ANNOUNCEMENT: Hearts", "copying")
+    with pytest.raises(ToolError, match="own words"):
+        tools.reply(tid, "📢 ANNOUNCEMENT: Hearts — paint hearts")
+    assert tools.reply(tid, "On my way.")["post_id"]
+    assert tools.budget.posts == 3, "rejected posts cost nothing"
