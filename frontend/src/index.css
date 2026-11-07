@@ -13,7 +13,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; }
+html, body, #root { margin: 0; height: 100%; min-width: 780px; }
 button, input, select {
   font: inherit;
   color: inherit;
@@ -58,7 +58,7 @@ button.ghost { background: transparent; border-color: transparent; }
 /* Live view */
 .live { height: 100%; display: grid; grid-template-rows: 44px 1fr 150px; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.live-grid { display: grid; grid-template-columns: 260px 1fr 320px; min-height: 0; }
+.live-grid { display: grid; grid-template-columns: 260px minmax(200px, 1fr) 320px; min-height: 0; min-width: 780px; overflow: auto; }
 .agents, .board, .drawer { display: flex; flex-direction: column; min-height: 0; background: var(--panel); overflow: hidden; }
 .agents { border-right: 1px solid var(--border); }
 .board, .drawer { border-left: 1px solid var(--border); }

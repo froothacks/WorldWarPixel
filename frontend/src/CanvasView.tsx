@@ -20,16 +20,26 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const [vp, setVp] = useState<Viewport | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  // Track the element's CSS size so the backing store and viewport follow window resizes.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setSize({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   // Fit the canvas into the viewport the first time we get a store.
   useEffect(() => {
-    const el = canvasRef.current;
-    if (!store || !el || vp) return;
-    const zoom = Math.max(0.1, Math.min(el.clientWidth / store.width, el.clientHeight / store.height));
-    setVp({ zoom, panX: (el.clientWidth - store.width * zoom) / 2, panY: (el.clientHeight - store.height * zoom) / 2 });
-  }, [store, vp]);
+    if (!store || vp || size.w === 0 || size.h === 0) return;
+    const zoom = Math.max(0.1, Math.min(size.w / store.width, size.h / store.height));
+    setVp({ zoom, panX: (size.w - store.width * zoom) / 2, panY: (size.h - store.height * zoom) / 2 });
+  }, [store, vp, size]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -63,7 +73,7 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
         ctx.fillRect(vp.panX + x * vp.zoom, vp.panY + y * vp.zoom, vp.zoom, vp.zoom);
       }
     }
-  }, [store, version, vp, highlightAgent]);
+  }, [store, version, vp, highlightAgent, size]);
 
   const toPixel = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!store || !vp) return null;

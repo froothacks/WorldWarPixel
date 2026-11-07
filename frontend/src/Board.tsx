@@ -6,9 +6,10 @@ interface Props {
   threads: ThreadDigest[];
   agentName: (id: number) => string;
   version: number;
+  totalThreads: number;
 }
 
-export default function Board({ runId, threads, agentName, version }: Props) {
+export default function Board({ runId, threads, agentName, version, totalThreads }: Props) {
   const [open, setOpen] = useState<number | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
 
@@ -21,7 +22,7 @@ export default function Board({ runId, threads, agentName, version }: Props) {
     <aside className="board">
       <header className="board-header">
         <strong>Message board</strong>
-        <span className="muted small">{threads.length} threads</span>
+        <span className="muted small">{totalThreads} threads{totalThreads > threads.length ? ` · showing ${threads.length} most active` : ""}</span>
       </header>
       <div className="threads">
         {threads.length === 0 && <p className="muted small pad">No posts yet.</p>}

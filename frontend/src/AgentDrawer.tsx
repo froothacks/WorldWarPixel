@@ -13,6 +13,9 @@ interface Props {
 export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixelsOwned, onClose }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
 
+  // Refetch whenever a new live thought arrives so position / history stay current.
+  const liveCount = liveThoughts.length;
+  const latestTs = liveThoughts[0]?.ts ?? 0;
   useEffect(() => {
     let cancelled = false;
     api.agent(runId, agent.id)
@@ -21,7 +24,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
     return () => {
       cancelled = true;
     };
-  }, [runId, agent.id]);
+  }, [runId, agent.id, liveCount, latestTs]);
 
   const seen = new Set<number>();
   const fresh = detail?.id === agent.id ? detail : null;

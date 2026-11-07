@@ -146,10 +146,10 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             onClose={() => setSelected(null)}
           />
         ) : (
-          <Board runId={initial.id} threads={threads} agentName={agentName} version={boardVersion} />
+          <Board runId={initial.id} threads={threads} agentName={agentName} version={boardVersion} totalThreads={run.threads} />
         )}
       </div>
-      <NarratorDock stats={run.stats} threads={threads.length} />
+      <NarratorDock stats={run.stats} threads={run.threads} />
     </div>
   );
 }
