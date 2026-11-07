@@ -272,6 +272,36 @@ def test_truncated_pixel_string_is_salvaged() -> None:
     assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
 
 
+def test_truncated_place_pixels_json_is_salvaged() -> None:
+    agent, tools, obs, events = _setup()
+    raw = (
+        '{"pixels": [{"x":0,"y":1,"color":2},{"x":1,"y":1,"color":2},'
+        '{"x":2,"y":1,"color":2},{"x":3,"y":1,"color'
+    )
+    call = _Obj(id="c0", type="function", function=_Obj(name="place_pixels", arguments=raw))
+    resp = _Obj(choices=[_Obj(message=_Obj(content="Line.", tool_calls=[call]))])
+    client = FakeClient([resp])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px" in thought and len(events) == 3 and policy.stats["tool_errors"] == 0
+
+
+def test_malformed_pixels_are_skipped_not_fatal() -> None:
+    agent, tools, obs, events = _setup()
+    pixels = [
+        {"x": 1, "y": 1, "color": 2},
+        {"x": 5, "color": 3},  # missing y
+        {"x": {"bad": 1}, "y": 2, "color": 3},  # x is an object
+        [6, 7, 4],  # shorthand
+        {"x": 8, "y": 8},  # missing colour -> agent colour
+    ]
+    client = FakeClient([_response("Mixed.", [("place_pixels", {"pixels": pixels})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px" in thought and len(events) == 3
+    assert policy.stats["tool_errors"] == 0
+
+
 def test_incomplete_pixel_objects_are_skipped() -> None:
     assert _parse_pixel_list(
         '[{"x": 1, "y": 2}, {"x": 9, "y": 9, "color": 3}, {"x": 4, "color'

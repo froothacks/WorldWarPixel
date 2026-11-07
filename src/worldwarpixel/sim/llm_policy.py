@@ -446,8 +446,13 @@ class LLMPolicy:
         try:
             args: dict[str, Any] = json.loads(raw_args or "{}")
         except json.JSONDecodeError:
-            self.stats["tool_errors"] += 1
-            return "error: arguments were not valid JSON"
+            # Reasoning models sometimes hit the token cap mid-arguments; salvage the
+            # complete pixel objects instead of losing the whole turn.
+            salvaged = _salvage_place_pixels(name, raw_args)
+            if salvaged is None:
+                self.stats["tool_errors"] += 1
+                return "error: arguments were not valid JSON"
+            args = salvaged
         try:
             result = self._dispatch(agent, tools, name, args)
         except ToolError as e:
@@ -497,13 +502,31 @@ class LLMPolicy:
         # looking at the canvas.
         match name:
             case "place_pixels":
-                if isinstance(a["pixels"], str):  # the model often double-encodes the list
-                    a["pixels"] = _parse_pixel_list(a["pixels"])
-                a["pixels"] = [
-                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
-                    for p in map(_pixel_fields, a["pixels"])
-                ]
-                return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
+                raw_pixels = a["pixels"]
+                if isinstance(raw_pixels, str):  # the model often double-encodes the list
+                    raw_pixels = _parse_pixel_list(raw_pixels)
+                # Skip malformed pixels instead of failing the whole turn: big models
+                # occasionally emit a pixel without y or with x as an object.
+                pixels: list[dict[str, int]] = []
+                skipped = 0
+                for raw in raw_pixels:
+                    try:
+                        fields = _pixel_fields(raw)
+                        xy = _pixel_coords(fields, w, h)
+                    except (KeyError, TypeError, ValueError):
+                        xy = None
+                    if xy is None:
+                        skipped += 1
+                        continue
+                    x, y = xy
+                    pixels.append({"x": x, "y": y, "color": colour(fields["color"])})
+                if not pixels:
+                    raise ToolError("place_pixels had no valid pixels")
+                a["pixels"] = pixels  # downstream summaries and tracking read the clean list
+                result = tools.place_pixels([(p["x"], p["y"], p["color"]) for p in pixels])
+                if skipped:
+                    result["skipped_invalid"] = skipped
+                return result
             case "post_thread":
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
@@ -516,6 +539,26 @@ class LLMPolicy:
 
 
 _FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
+
+
+def _pixel_coords(fields: dict[str, Any], w: int, h: int) -> tuple[int, int] | None:
+    """Clamp a pixel's coordinates into the canvas, or None when they are not numbers."""
+    try:
+        x, y = int(fields["x"]), int(fields["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return min(max(x, 0), w - 1), min(max(y, 0), h - 1)
+
+
+def _salvage_place_pixels(name: str, raw: str) -> dict[str, Any] | None:
+    """Recover a truncated place_pixels payload from its complete pixel objects."""
+    if name != "place_pixels":
+        return None
+    try:
+        pixels = _parse_pixel_list(raw)
+    except ToolError:
+        return None
+    return {"pixels": pixels} if pixels else None
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
