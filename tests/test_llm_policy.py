@@ -119,3 +119,31 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     assert "4 pixels" in system_prompt(agent, 64, 40, 4, 1) and "Priya Raman, 34" in system_prompt(
         agent, 64, 40, 4, 1
     )
+
+
+def test_follow_up_failure_keeps_completed_actions() -> None:
+    agent, tools, obs, events = _setup()
+
+    class Boom(FakeCompletions):
+        async def create(self, **kw: Any) -> Any:
+            if not self.responses:
+                raise RuntimeError("down")
+            return await super().create(**kw)
+
+    client = FakeClient([])
+    client.chat.completions = Boom(
+        [
+            _response(
+                "Paint then look.",
+                [
+                    ("place_pixels", {"pixels": [{"x": 3, "y": 3, "color": 2}]}),
+                    ("view_canvas", {"x": 0, "y": 0, "w": 4, "h": 4}),
+                ],
+            )
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
+    assert "model call failed: RuntimeError" in thought
+    assert len(events) == 1 and policy.stats["failures"] == 1
