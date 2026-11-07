@@ -222,7 +222,7 @@ async def get_agent(run_id: str, agent_id: int, manager: ManagerDep) -> dict[str
 @router.get("/{run_id}/threads")
 async def list_threads(run_id: str, manager: ManagerDep) -> list[dict[str, Any]]:
     run = manager.get(run_id)
-    return run.board.digest(limit=100, name_of=run.agent_name)
+    return run.board.listing(limit=100, name_of=run.agent_name)
 
 
 @router.get("/{run_id}/threads/{thread_id}")

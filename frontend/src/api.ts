@@ -103,9 +103,13 @@ export interface ThreadDigest {
   thread_id: number;
   title: string;
   author: string;
+  author_id: number;
+  created_at: number;
+  last_activity: number;
+  participants: number;
   replies: number;
   votes: number;
-  latest: { author: string; body: string } | null;
+  latest: { author: string; author_id: number; body: string } | null;
 }
 
 export interface Post {

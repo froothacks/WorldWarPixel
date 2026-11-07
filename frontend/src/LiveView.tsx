@@ -165,6 +165,13 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`),
     [agentMap],
   );
+  const agentColor = useCallback(
+    (id: number) => {
+      const a = agentMap.get(id);
+      return a ? (palette[a.color] ?? "#888") : id === GOD_ID ? "#c9a7ff" : "#888";
+    },
+    [agentMap, palette],
+  );
   const lastThought = useMemo(() => {
     const m = new Map<number, string>();
     thoughts.forEach((list, id) => {
@@ -243,8 +250,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             {run.stats.posts.toLocaleString()} posts
             {run.llm &&
               ` · ${run.llm.tool_calls.toLocaleString()} tool calls / ${run.llm.calls.toLocaleString()} model calls${run.llm.failures ? ` · ${run.llm.failures} failed` : ""}`}
-            {run.llm?.latency?.turn &&
-              ` · turn p50 ${run.llm.latency.turn.p50.toFixed(2)} s / p95 ${run.llm.latency.turn.p95.toFixed(2)} s`}
             {" · "}
             {connection}
           </span>
@@ -310,7 +315,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           tool={god ? tool : null}
           onPaint={paint}
         />
-        {selectedAgent ? (
+        {selectedAgent && (
           <AgentDrawer
             runId={initial.id}
             agent={selectedAgent}
@@ -319,18 +324,20 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             pixelsOwned={pixelsOwned}
             onClose={() => setSelected(null)}
           />
-        ) : (
-          <Board
-            runId={initial.id}
-            threads={threads}
-            agentName={agentName}
-            version={boardVersion}
-            totalThreads={run.threads}
-            open={openThread}
-            onOpen={setOpenThread}
-            onVoted={scheduleThreadRefresh}
-          />
         )}
+        <Board
+          runId={initial.id}
+          threads={threads}
+          agentName={agentName}
+          agentColor={agentColor}
+          onSelectAgent={setSelected}
+          version={boardVersion}
+          totalThreads={run.threads}
+          open={openThread}
+          onOpen={setOpenThread}
+          onVoted={scheduleThreadRefresh}
+          hidden={!!selectedAgent}
+        />
       </div>
       {timelapse && (
         <Timelapse
