@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,9 +21,11 @@ class Settings(BaseSettings):
     max_active_runs: int = 4
 
     def default_headers(self) -> dict[str, str]:
-        """Extra headers for the inference endpoint (Modal proxy auth when configured)."""
+        """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""
         key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
-        return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
+        host = urlparse(self.openai_base_url or "").hostname or ""
+        is_modal = host == "modal.run" or host.endswith((".modal.run", ".modal.direct"))
+        return {"Modal-Key": key, "Modal-Secret": secret} if key and secret and is_modal else {}
 
 
 @lru_cache
