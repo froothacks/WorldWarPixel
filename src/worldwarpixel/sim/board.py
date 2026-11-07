@@ -179,7 +179,15 @@ class Board:
         self, limit: int = 100, name_of: Callable[[int], str] = lambda i: f"agent {i}"
     ) -> list[dict[str, object]]:
         """`digest` plus the ids and timestamps a viewer needs to sort, filter and mark unread."""
-        out = self.digest(limit=limit, name_of=name_of)
+        if self._society:
+            out, seen = [], set()
+            for s in sorted(set(self._society.values())):
+                for e in self.digest(limit=limit, name_of=name_of, society=s):
+                    if e["thread_id"] not in seen:
+                        seen.add(e["thread_id"])
+                        out.append(e)
+        else:
+            out = self.digest(limit=limit, name_of=name_of)
         for entry in out:
             root = self._posts[entry["thread_id"]]  # type: ignore[index]
             replies = [self._posts[i] for i in self._replies[root.id]]
