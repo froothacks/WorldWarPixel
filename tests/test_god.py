@@ -102,7 +102,7 @@ def test_god_endpoints() -> None:
         assert bad.status_code == 422
         r = client.post(f"/runs/{rid}/god/pace", json={"cooldown": 2.5})
         assert r.status_code == 200 and r.json()["config"]["cooldown"] == 2.5
-        for pixel_interval in (0, 0.01):
+        for pixel_interval in (0, 0.005):
             assert (
                 client.post(
                     f"/runs/{rid}/god/pace", json={"pixel_interval": pixel_interval}

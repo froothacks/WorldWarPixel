@@ -20,9 +20,9 @@ CONFIG = RunConfig(
 
 
 def test_pixel_interval_has_a_50_ms_minimum_and_default() -> None:
-    assert RunConfig().pixel_interval == 0.05
+    assert RunConfig().pixel_interval == 0.01
     with pytest.raises(ValidationError):
-        RunConfig(pixel_interval=0.01)
+        RunConfig(pixel_interval=0.005)
 
 
 async def _settle() -> None:

@@ -171,6 +171,12 @@ def test_stencil_tools_are_rejected_unless_guided() -> None:
         policy._dispatch(agent, tools, "draw_flag", {"country": "india", "x": 0, "y": 0})
 
 
+def test_system_prompt_does_not_assign_a_usual_colour() -> None:
+    agent, *_ = _setup()
+    prompt = system_prompt(agent, 64, 40, 4, 1)
+    assert "usual colour" not in prompt.lower()
+
+
 def test_follow_up_failure_keeps_completed_actions() -> None:
     agent, tools, obs, events = _setup()
 
