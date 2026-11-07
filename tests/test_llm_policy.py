@@ -341,6 +341,20 @@ def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> 
     a2 = dict(flag)
     policy._dispatch(second, tools_for(second), "draw_flag", a2)
     assert a2["x"] == 24 and a2["y"] == 10 and a2["moved"]
+    # a scaled text's footprint is respected, and a drawing that cannot fit to the right goes left
+    third = AgentSpec(3, "C", "Peru", 7, 0, 0, 1.0, "C.")
+    policy._projects[second.id] = ("draw_text", {"text": "HI", "x": 60, "y": 10, "scale": 3}, 5)
+    a3 = {"shape": "heart", "x": 60, "y": 10, "color": 5, "scale": 1}
+    policy._dispatch(third, tools_for(third), "draw_shape", a3)
+    assert a3["x"] == 60 + 2 * 4 * 3 + 2
+    policy._projects[second.id] = (
+        "draw_flag",
+        {"country": "japan", "x": 100, "y": 10, "width": 36},
+        5,
+    )
+    a4 = {"country": "peru", "x": 100, "y": 10, "width": 20}
+    policy._dispatch(third, tools_for(third), "draw_flag", a4)
+    assert a4["x"] == 100 - 20 - 2
     # the first agent continuing its own flag is never moved
     again = dict(flag)
     policy._dispatch(first, tools_for(first), "draw_flag", again)

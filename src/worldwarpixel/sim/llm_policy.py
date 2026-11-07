@@ -468,7 +468,7 @@ class LLMPolicy:
         if mine and mine[1].get("x") == a["x"] and mine[1].get("y") == a["y"]:
             return
         taken = {
-            (p[1].get("x"), p[1].get("y")): p[1]
+            (p[1].get("x"), p[1].get("y")): p
             for aid, p in self._projects.items()
             if aid != agent.id
         }
@@ -476,8 +476,13 @@ class LLMPolicy:
             other = taken.get((a["x"], a["y"]))
             if other is None:
                 return
-            step = int(other.get("width") or (len(str(other.get("text", ""))) * 4) or 10) + 2
-            a["x"] = a["x"] + step if a["x"] + step + width <= w else max(0, a["x"] - step)
+            ow, oh = _footprint(other[0], other[1])
+            if a["x"] + ow + 2 + width <= w:
+                a["x"] = a["x"] + ow + 2
+            elif a["x"] - width - 2 >= 0:
+                a["x"] = a["x"] - width - 2
+            else:
+                a["y"] = a["y"] + oh + 2
             a["moved"] = True
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
@@ -661,6 +666,17 @@ def _canonical_tool(name: str) -> str:
         if hint in low:
             return real
     return name
+
+
+def _footprint(tool: str, args: dict[str, Any]) -> tuple[int, int]:
+    """(width, height) in pixels of a draw_* call, from its arguments."""
+    scale = _scale(args.get("scale", 1))
+    if tool == "draw_flag":
+        fw = int(args.get("width") or 24)
+        return fw, max(3, round(fw * 2 / 3))
+    if tool == "draw_text":
+        return max(1, len(str(args.get("text") or "?"))) * 4 * scale, 5 * scale
+    return 9 * scale, 9 * scale
 
 
 def _clamp(v: Any, size: int) -> int:
