@@ -14,9 +14,16 @@ Podium 0 also voices the narrator and the verdict.
 
 Protocol:
 
-1. `WS /runs/{id}/stage/ws`: a `stage.snapshot`, then JSON `stage.state`, `stage.line`,
-   `stage.votes`, `stage.reaction` and `stage.verdict` events.
-2. For each `stage.line` whose `podium` matches (narrator/verdict lines have `podium: null`), if
-   `audio` is true fetch `GET /runs/{id}/stage/lines/{line_id}/audio?format=pcm`: raw signed 16-bit
-   little-endian mono at `sample_rate` (24 kHz), streamed straight to I2S. Otherwise show the caption
-   for `duration` seconds.
+1. Connect to `WS /runs/{id}/stage/ws?podium={PODIUM}&narrator={0|1}`. The server forwards only
+   that podium's debate lines; `narrator=1` additionally forwards narrator and verdict lines
+   (podium 0 should set it). Snapshots, `stage.state`, `stage.votes` and `stage.verdict` are always
+   forwarded. The connected-device counts are included in stage state.
+2. For each `stage.line`, if `audio` is true fetch
+   `GET /runs/{id}/stage/lines/{line_id}/audio?format=pcm`: raw signed 16-bit little-endian mono at
+   `sample_rate` (24 kHz), streamed straight to I2S. Otherwise show the caption for `duration`
+   seconds.
+3. Request `GET /runs/{id}/stage/frame?w=320&h=240&podium={PODIUM}` for a display frame. The
+   response is exactly `w*h*2` bytes of RGB565 little-endian with `X-Width` and `X-Height` headers.
+   The debate region (or the full canvas when idle) is nearest-neighbour scaled and letterboxed;
+   debater-owned pixels are full color and other pixels are dimmed. The `podium` parameter is
+   reserved and currently does not change the frame.

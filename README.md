@@ -44,7 +44,7 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.03 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (16), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds` (see below).
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.03 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (16), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds`, `stage_hold_seconds` (see below).
 - `GET /runs`, `GET /runs/{id}`: run state and stats.
 - `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it and drops it from memory (the event log is kept). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
@@ -67,45 +67,47 @@ Each run has a narrator loop that pauses/stops with the run. Every `narrator_int
 
 ## Live debate stage
 
-A run also has a **stage** (`sim/stage.py`): a wall-clock layer on top of the sim where two agents
-argue out loud while the swarm keeps painting on its own clock. The stage picks the pair that has
-overwritten each other most (or `a`/`b` you choose), asks the model for one in-character spoken line
-per turn (persona, recent thoughts, the opponent's last line, crowd reactions, the vote so far), and
-paces lines by their audio length. While on stage the two debaters' sim turns wait for their line to
-finish, so their canvas moves and their words stay in step; everyone else keeps their cooldown. After
-`stage_lines` lines the audience votes for `stage_vote_seconds`, and the verdict is pinned to every
-agent as a God announcement.
+Debate lives in the run's live view: the **Debate** toggle opens controls in the same canvas and
+narrator dock, alongside the board, instead of opening a separate control app. Starting a debate
+opens a board thread that collects the introduction, spoken lines and verdict. The narrator tracks
+cumulative pixel overwrites; automatic debates feature the strongest rivals and focus/highlight their
+region on the canvas. The audience votes on the live view or `/?audience=<run>`, and a winner holds
+the debated region against other agents' paint for `stage_hold_seconds`.
 
-The audience is the narrator: a narrator line (typed or spoken through the browser mic) is spoken next
-and every following line responds to it; with `announce` it is also pinned for all agents.
+The swarm keeps painting on its own clock. Each debater's turns wait for their spoken line to finish;
+after `stage_lines` lines the audience votes for `stage_vote_seconds`. An audience member can send
+live reactions or a named narrator line; debaters respond to those in later prompts. `stage_auto`
+starts another debate whenever the stage is idle. Start, stop and auto controls are God-gated;
+votes, reactions and narrator lines are open.
 
-Debate lines come from the narrator model unless `STAGE_MODEL` is set (e.g. `gpt-4o-mini`); with an
-OpenAI `TTS_API_KEY` (no `TTS_BASE_URL`) that model is called on OpenAI with the same key, otherwise on
-`OPENAI_BASE_URL`.
+Debate lines come from the narrator model unless `STAGE_MODEL` is set (e.g. `gpt-4o-mini`). Set
+`TTS_API_KEY` (OpenAI, `TTS_MODEL` defaults to `gpt-4o-mini-tts`) or `TTS_BASE_URL` for a local
+OpenAI-compatible TTS server. Without server TTS, browsers can read the text with speech synthesis.
 
-Voices: set `TTS_API_KEY` (OpenAI, `TTS_MODEL` default `gpt-4o-mini-tts`) or `TTS_BASE_URL` for a local
-OpenAI-compatible TTS server (e.g. Kokoro/Piper wrappers). Each agent gets a stable voice from its
-persona and speaks with an accent/emotion instruction. Without TTS the lines are text-only and the
-browser podium reads them with the browser's own speech voices.
+Pages: `/?stage=<run>` is the full-screen presenter; `/?stage=<run>&podium=0` filters the presenter
+to one podium, and `/?audience=<run>` is the mobile voting and Say page. The live view's DebateBar
+links to both. `firmware/podium/` documents the ESP32 client protocol.
 
-Pages: the live view's **Stage** button opens `/?stage=<run>` (both podiums, controls, transcript);
-`/?audience=<run>` is the phone page (vote, cheer/boo/laugh/gasp, narrate); `/?stage=<run>&podium=0`
-shows one podium, the browser stand-in for an ESP32 podium (`firmware/podium/`).
-
-- `GET /runs/{id}/stage`: phase (`idle` | `debating` | `voting`), topic, debaters, votes, transcript.
+- `GET /runs/{id}/stage`: phase (`idle` | `debating` | `voting`), topic, debaters, votes, thread,
+  region hold, connected podium devices and transcript.
 - `POST /runs/{id}/stage/start` `{"a"?, "b"?, "topic"?, "auto"?}`, `POST /runs/{id}/stage/stop`,
-  `POST /runs/{id}/stage/auto` `{"auto": true}` (start a new debate whenever idle). God-gated.
-- `POST /runs/{id}/stage/vote` `{"voter", "agent_id"}` (one vote per voter, re-voting moves it),
+  `POST /runs/{id}/stage/auto` `{"auto": true}`. God-gated.
+- `POST /runs/{id}/stage/vote` `{"voter", "agent_id"}` (one changeable vote per voter),
   `POST /runs/{id}/stage/react` `{"reaction": "cheer"|"boo"|"laugh"|"gasp", "agent_id"?}`,
   `POST /runs/{id}/stage/narrate` `{"text", "name"?, "announce"?}` (`announce` is God-gated).
-- `GET /runs/{id}/stage/lines/{line_id}/audio?format=wav|pcm`: WAV for browsers, raw s16le mono PCM
+- `GET /runs/{id}/stage/frame?w=320&h=240&podium=0`: raw `w*h*2` byte RGB565 little-endian
+  preview, with `X-Width` / `X-Height`; the debate region (or whole canvas) is nearest-neighbour
+  scaled and letterboxed. Debater pixels are full color, other pixels 40% brightness. `podium` is
+  reserved and does not alter the frame yet.
+- `GET /runs/{id}/stage/lines/{line_id}/audio?format=wav|pcm`: WAV for browsers or raw s16le mono PCM
   (`X-Sample-Rate`, 24 kHz) for devices.
-- `WS /runs/{id}/stage/ws`: `stage.snapshot`, then `stage.state`, `stage.line` (`speaker_id`, `name`,
-  `country`, `color_hex`, `podium` 0/1 or null for narrator/verdict, `text`, `emotion`, `voice`,
-  `audio`, `duration`), `stage.votes`, `stage.reaction`, `stage.verdict`. The same events also go out
-  on the run WebSocket.
+- `WS /runs/{id}/stage/ws?podium=0&narrator=1`: filtered podium `stage.line` events, snapshots,
+  state, votes and verdicts; podium 0 also receives narrator/verdict lines when requested. Device
+  connections are reflected in stage state. The presenter, audience and live view consume the same
+  `stage.*` events mirrored on `WS /runs/{id}/ws`.
 
-Run config: `stage_auto` (false), `stage_lines` (6), `stage_vote_seconds` (20).
+Run config: `stage_auto` (false), `stage_lines` (6), `stage_vote_seconds` (20),
+`stage_hold_seconds` (120; 0 disables the region hold, maximum 1800).
 
 ## Chat endpoints
 
