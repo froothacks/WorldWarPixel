@@ -14,7 +14,7 @@ from openai.types.chat import (
 )
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
-from worldwarpixel.sim.canvas import PALETTE, TILE
+from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.stencils import FLAGS, SHAPES, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
@@ -253,7 +253,7 @@ def region_view(
     """Busiest areas plus a few quiet ones (randomised per agent so agents spread out)."""
     rng = rng or random.Random(agent.id)
     busy = [t for t in tiles if t["painted"]][:6]
-    quiet = [t for t in tiles if t["painted"] < (TILE * TILE) // 20]
+    quiet = [t for t in tiles if t["painted"] * 20 < t["size"]]
     quiet = rng.sample(quiet, min(3, len(quiet)))
     if not busy:
         return (
