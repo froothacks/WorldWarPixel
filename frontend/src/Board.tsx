@@ -28,9 +28,11 @@ export default function Board({ runId, threads, agentName, version, totalThreads
 
   return (
     <aside className="board">
-      <header className="board-header">
-        <strong>Message board</strong>
-        <span className="muted small">{totalThreads} threads{totalThreads > threads.length ? ` · showing ${threads.length} most active` : ""}</span>
+      <header className="panel-head">
+        <span className="label">Board</span>
+        <span className="count">
+          {totalThreads} threads{totalThreads > threads.length ? ` · top ${threads.length}` : ""}
+        </span>
       </header>
       <div className="threads" ref={listRef}>
         {threads.length === 0 && <p className="muted small pad">No posts yet.</p>}
@@ -38,7 +40,7 @@ export default function Board({ runId, threads, agentName, version, totalThreads
           <div className="thread open">
             <button className="thread-title" onClick={() => setOpen(null)}>
               <span>{posts[0].title}</span>
-              <span className="muted small">{agentName(posts[0].author_id)} · {posts.length - 1} {posts.length === 2 ? "reply" : "replies"}</span>
+              <span className="thread-meta">{agentName(posts[0].author_id)} · {posts.length - 1} {posts.length === 2 ? "reply" : "replies"}</span>
             </button>
             <div className="replies">
               {posts.map((p) => (
@@ -53,7 +55,7 @@ export default function Board({ runId, threads, agentName, version, totalThreads
           <div key={t.thread_id} className={`thread ${open === t.thread_id ? "open" : ""}`}>
             <button className="thread-title" onClick={() => setOpen(open === t.thread_id ? null : t.thread_id)}>
               <span>{t.title}</span>
-              <span className="muted small">{t.author} · {t.replies} {t.replies === 1 ? "reply" : "replies"}</span>
+              <span className="thread-meta">{t.author} · {t.replies} {t.replies === 1 ? "reply" : "replies"}</span>
             </button>
             {open === t.thread_id ? (
               <div className="replies">

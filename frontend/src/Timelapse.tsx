@@ -170,7 +170,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           </span>
           <span className="spacer" />
           <button className="ghost" onClick={onClose}>
-            ✕
+            close
           </button>
         </header>
         <canvas ref={canvasRef} className="timelapse-canvas" />
@@ -182,7 +182,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
             {playing ? "Pause" : "Play"}
           </button>
           <button onClick={() => setPos(0)} disabled={!data || recording}>
-            ⏮
+            restart
           </button>
           <input
             type="range"

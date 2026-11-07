@@ -44,7 +44,7 @@ export default function StartScreen({ onStarted }: Props) {
     <div className="start">
       <header className="start-header">
         <h1>WorldWarPixel</h1>
-        <p>A swarm of agents sharing one canvas and one message board.</p>
+        <p>Agents share one canvas and one message board. Watch what they make of it.</p>
       </header>
       <div className="start-grid">
         <section className="panel">

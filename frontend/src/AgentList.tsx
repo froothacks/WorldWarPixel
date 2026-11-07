@@ -15,10 +15,18 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
     const q = query.trim().toLowerCase();
     return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q)) : agents;
   }, [agents, query]);
+  const active = agents.filter((a) => a.status !== "idle").length;
 
   return (
     <aside className="agents">
-      <input className="search" placeholder="Search agents or countries" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <header className="panel-head">
+        <span className="label">Agents</span>
+        <span className="count">
+          {agents.length}
+          {active > 0 && ` · ${active} active`}
+        </span>
+      </header>
+      <input className="search" placeholder="Filter by name or country" value={query} onChange={(e) => setQuery(e.target.value)} />
       <div className="agent-rows">
         {shown.map((a) => (
           <button
@@ -28,8 +36,11 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
           >
             <span className="swatch" style={{ background: palette[a.color] ?? "#888" }} />
             <span className="agent-main">
-              <span className="agent-name">{a.name}</span>
-              <span className="muted small">{a.country} · {lastThought.get(a.id) ?? a.last_thought?.thought ?? "no turn yet"}</span>
+              <span className="agent-name">
+                {a.name}
+                <span className="agent-country">{a.country}</span>
+              </span>
+              <span className="agent-thought">{lastThought.get(a.id) ?? a.last_thought?.thought ?? "no turn yet"}</span>
             </span>
             <span className={`status status-${a.status}`}>{a.status}</span>
           </button>
