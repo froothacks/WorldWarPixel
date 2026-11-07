@@ -79,7 +79,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.max_active_runs,
             make_policy,
             OpenAINarratorModel(
-                client, settings.narrator_model or settings.openai_model, settings.request_timeout
+                client,
+                settings.narrator_model or settings.openai_model,
+                settings.request_timeout,
+                max_tokens=settings.narrator_max_tokens,
             ),
         )
         try:

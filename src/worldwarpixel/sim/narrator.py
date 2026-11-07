@@ -75,16 +75,19 @@ class NarratorModel(Protocol):
 
 
 class OpenAINarratorModel:
-    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self, client: AsyncOpenAI, model: str, timeout: float = 60.0, max_tokens: int = 700
+    ) -> None:
         self._client = client
         self.model = model
         self._timeout = timeout
+        self._max_tokens = max_tokens
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         response = await self._client.chat.completions.create(
             model=self.model,
             messages=messages,
-            max_tokens=700,
+            max_tokens=self._max_tokens,
             temperature=0.4,
             timeout=self._timeout,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},

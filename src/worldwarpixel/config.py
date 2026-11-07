@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     agent_vision: bool = True
     agent_max_tokens: int = Field(default=700, ge=1)
     """Max output tokens per agent model call; reasoning models need more to reach the tool call."""
+    narrator_max_tokens: int = Field(default=700, ge=1)
+    """Max output tokens per narrator update; reasoning models need more to finish the JSON."""
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
     god_token: SecretStr = SecretStr("")
