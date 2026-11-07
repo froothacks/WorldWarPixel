@@ -118,7 +118,6 @@ export default function NarratorDock({ narrator, paused, onHighlight, onAsk }: P
         </div>
       )}
       <form className="narrator-ask" onSubmit={submit}>
-        <span className="prompt-sign">&gt;</span>
         <input
           placeholder={hasModel ? "Ask the narrator, e.g. who holds the top-left corner?" : "No narrator model for this run (random agents)"}
           value={question}
@@ -154,7 +153,7 @@ function UpdateItem({ update: u, open, onToggle, onHighlight }: ItemProps) {
     <div className={`narr-item ${u.kind} ${open ? "open" : ""}`}>
       <div className="narr-row">
         <span className="narr-time">{time}</span>
-        {u.kind === "answer" && <span className="narr-kind">ans</span>}
+        {u.kind === "answer" && <span className="narr-kind">Answer</span>}
         <button type="button" className="narr-headline" onClick={onToggle} disabled={!hasDetail} title={open ? "Collapse" : "Expand"}>
           {u.headline}
         </button>

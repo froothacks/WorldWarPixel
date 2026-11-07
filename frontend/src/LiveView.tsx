@@ -242,7 +242,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         </button>
         <span className="crumb">
           <span className="slash">/</span>
-          {run.id}
+          <span className="mono">{run.id}</span>
           <span className={`state state-${run.state}`}>{run.state}</span>
         </span>
         <dl className="stats" title={llmTitle}>
