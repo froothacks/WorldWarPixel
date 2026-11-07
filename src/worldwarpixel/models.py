@@ -47,7 +47,7 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
     return [
         ModelSpec(
             id="gpt-6-luna",
-            label="GPT-6 Luna (OpenAI)",
+            label="GPT-6 Luna",
             model="gpt-6-luna",
             base_url="https://api.openai.com/v1",
             auth="bearer",
@@ -59,14 +59,14 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
         ),
         ModelSpec(
             id="qwen",
-            label="Qwen (SANIC Modal)",
+            label="Qwen 0.8B",
             model="world-war-pixel",
             base_url=settings.qwen_base_url,
             auth="modal",
         ),
         ModelSpec(
             id="deepseek",
-            label="DeepSeek V4.1 Flash (Modal)",
+            label="DeepSeek V4.1 Flash",
             model="deepseek-ai/DeepSeek-V4.1-Flash",
             base_url=settings.deepseek_base_url,
             auth="modal",
