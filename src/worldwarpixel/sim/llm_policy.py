@@ -201,6 +201,18 @@ TOOLS: list[ChatCompletionToolParam] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "vote_thread",
+            "description": "Upvote or downvote a thread; votes move threads up or down the board.",
+            "parameters": {
+                "type": "object",
+                "properties": {"thread_id": {"type": "integer"}, "up": {"type": "boolean"}},
+                "required": ["thread_id", "up"],
+            },
+        },
+    },
 ]
 
 
@@ -372,7 +384,8 @@ def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
     where = "your society's threads" if obs.society else "the board"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
+        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post, "
+        f"{obs.budget.votes} vote.\n"
         f"{look}{society_lines(obs)}\nTop threads on {where}:\n{board}"
     )
 
@@ -387,7 +400,8 @@ def guided_user_prompt(
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
     board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
+        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post, "
+        f"{obs.budget.votes} vote.\n"
         f"{view}\n\n{project}Some current threads:\n{board}\n\n"
         "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
         "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
@@ -703,6 +717,9 @@ class LLMPolicy:
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
                 return tools.reply(int(a["thread_id"]), str(a["body"])[:600])
+            case "vote_thread":
+                up = a.get("up", True) not in (False, 0, "false", "False", "down")
+                return tools.vote_thread(int(a["thread_id"]), up)
             case "view_canvas":
                 return tools.view_canvas(int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]))
             case "read_thread":
@@ -796,6 +813,7 @@ _TOOL_HINTS = (
     ("see", "view_canvas"),
     ("look", "view_canvas"),
     ("view", "view_canvas"),
+    ("vote", "vote_thread"),
     ("reply", "reply"),
     ("thread", "post_thread"),
     ("post", "post_thread"),
@@ -848,10 +866,10 @@ def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
     keep = (
         *("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape"),
-        *("society_id", "name"),
+        *("society_id", "name", "up"),
     )
     out = {k: v for k, v in args.items() if k in keep}
-    if name in ("post_thread", "reply"):
+    if name in ("post_thread", "reply", "vote_thread"):
         out["thread_id"] = args.get("thread_id")
         out["title"] = str(args.get("title", ""))[:80] or None
     return out
@@ -878,6 +896,8 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             return f"posted thread {result.get('thread_id')}"
         case "reply":
             return f"replied in thread {args.get('thread_id')}"
+        case "vote_thread":
+            return f"{'up' if args.get('up', True) else 'down'}voted thread {args.get('thread_id')}"
         case "view_canvas":
             return "looked at the canvas"
         case "read_thread":

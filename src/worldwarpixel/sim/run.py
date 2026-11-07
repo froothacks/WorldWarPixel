@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
-from worldwarpixel.sim.board import Board
+from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
@@ -52,6 +52,7 @@ GOD_ID = 65535
 """Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
+AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
 MAX_GOD_PIXELS = 50_000
 
 
@@ -76,6 +77,7 @@ class Run:
         self._sleep = sleep
         self.state: RunState = "created"
         self.created_at = clock()
+        self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
@@ -148,6 +150,7 @@ class Run:
 
     def god_clear_board(self) -> None:
         self.board.clear()
+        self._agent_votes.clear()
         self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
@@ -165,6 +168,20 @@ class Run:
         """A viewer's up/down click on a thread; it shifts where the board ranks it."""
         votes = self.board.vote(thread_id, voter, value)
         self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
+        self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
+        return votes
+
+    def agent_vote(self, agent_id: int, thread_id: int, up: bool) -> int:
+        """An agent's vote counts like one viewer click, at most once per thread per window."""
+        now = self._clock()
+        last = self._agent_votes.get((agent_id, thread_id))
+        if last is not None and now - last < AGENT_VOTE_WINDOW:
+            raise ToolError(f"you already voted on thread {thread_id} recently")
+        try:
+            votes = self.board.vote(thread_id, f"agent:{agent_id}", 1 if up else -1)
+        except BoardError as e:
+            raise ToolError(str(e)) from e
+        self._agent_votes[(agent_id, thread_id)] = now
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 
@@ -269,6 +286,7 @@ class Run:
             lambda kind, payload: self._on_write(agent.id, kind, payload),
             self._clock,
             _SocietyAccess(self, agent.id) if self.societies else None,
+            vote=lambda thread_id, up: self.agent_vote(agent.id, thread_id, up),
         )
         society = self.societies.of(agent.id) if self.societies else None
         obs = Observation(

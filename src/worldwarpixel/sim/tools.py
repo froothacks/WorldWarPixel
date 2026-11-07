@@ -33,6 +33,7 @@ class TurnBudget:
     posts: int = 1
     views: int = 3
     reads: int = 3
+    votes: int = 1
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -40,6 +41,7 @@ class TurnBudget:
             "posts": self.posts,
             "views": self.views,
             "reads": self.reads,
+            "votes": self.votes,
         }
 
 
@@ -55,8 +57,10 @@ class ToolSet:
         sink: EventSink,
         clock: Callable[[], float],
         societies: SocietyAccess | None = None,
+        vote: Callable[[int, bool], int] | None = None,
     ) -> None:
         self.societies = societies
+        self._vote = vote
         self._canvas = canvas
         self._board = board
         self._agent_id = agent_id
@@ -194,6 +198,14 @@ class ToolSet:
         self._spend("posts", 1)
         self._sink("post", post.to_dict())
         return {"thread_id": thread_id, "post_id": post.id}
+
+    def vote_thread(self, thread_id: int, up: bool = True) -> dict[str, Any]:
+        if self._vote is None:
+            raise ToolError("voting is not available")
+        self._check("votes", 1)
+        votes = self._vote(thread_id, up)
+        self._spend("votes", 1)
+        return {"thread_id": thread_id, "votes": votes}
 
     def _society_call(self, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         if self.societies is None:

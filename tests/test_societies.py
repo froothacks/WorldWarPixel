@@ -204,3 +204,34 @@ def test_device_voice_over_websocket(client: TestClient) -> None:
             if msg["type"] == "state" and msg["voice"]["status"] == "done":
                 break
         assert msg["murmur"] == "rumour: heard 3200 bytes at 16000"
+
+
+def test_agent_votes_are_throttled() -> None:
+    from worldwarpixel.sim.tools import ToolSet
+
+    now = [0.0]
+    cfg = RunConfig(width=32, height=32, agents=2, cooldown=1, seed=1)
+    run = Run("v", cfg, EventLog(), RandomWalkPolicy(0), clock=lambda: now[0])
+    thread = run.board.post_thread(1, "t", "b", now=0.0)
+
+    def tools() -> ToolSet:
+        return ToolSet(
+            run.canvas,
+            run.board,
+            0,
+            TurnBudget(),
+            lambda k, p: None,
+            lambda: now[0],
+            vote=lambda tid, up: run.agent_vote(0, tid, up),
+        )
+
+    turn = tools()
+    assert turn.vote_thread(thread.id, up=True)["votes"] == 1
+    with pytest.raises(ToolError, match="budget"):
+        turn.vote_thread(thread.id)
+    with pytest.raises(ToolError, match="recently"):
+        tools().vote_thread(thread.id)
+    now[0] = 601.0
+    assert tools().vote_thread(thread.id, up=False)["votes"] == 0
+    with pytest.raises(ToolError):
+        tools().vote_thread(999)
