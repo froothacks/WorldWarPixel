@@ -184,6 +184,11 @@ class GodAnnouncement(BaseModel):
     body: str = Field(min_length=1, max_length=600)
 
 
+class GodReply(BaseModel):
+    thread_id: int = Field(ge=0)
+    body: str = Field(min_length=1, max_length=600)
+
+
 class GodPace(BaseModel):
     cooldown: float | None = Field(default=None, ge=0.1, le=600)
     pixels_per_turn: int | None = Field(default=None, ge=1, le=1024)
@@ -213,6 +218,17 @@ async def god_clear_board(run_id: str, manager: ManagerDep, _god: GodDep) -> dic
     run = await manager.fetch(run_id)
     run.god_clear_board()
     return run.summary()
+
+
+@router.post("/{run_id}/god/reply", status_code=201)
+async def god_reply(
+    run_id: str, body: GodReply, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
+    run = manager.get(run_id)
+    try:
+        return run.god_reply(body.thread_id, body.body)
+    except BoardError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/{run_id}/god/announce", status_code=201)
