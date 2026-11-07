@@ -307,7 +307,7 @@ def test_memory_keeps_actions_and_mentions_keep_hyphens() -> None:
     assert _recall("x" * 500 + " [posted thread 3; upvoted thread 2]").endswith(
         "x [posted thread 3; upvoted thread 2]"
     )
-    assert MENTION.findall("hi @Min-jun and @O'Neil.") == ["Min-jun", "O'Neil"]
+    assert MENTION.findall("hi @Min-jun, see @James's thread.") == ["Min-jun", "James"]
     socs = Societies(3, switch_cooldown=0)
     socs.assign([1, 2, 3])
     socs.invite(2, 1, 0.0)

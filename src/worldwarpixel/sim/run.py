@@ -56,7 +56,7 @@ ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's ob
 AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
 MEMORY_TURNS = 3  # own past turns shown to an agent
 CONTACTS_SHOWN = 5
-MENTION = re.compile(r"@(\w+(?:[-'.]\w+)*)")
+MENTION = re.compile(r"@(\w+(?:-\w+)*)")
 MAX_GOD_PIXELS = 50_000
 
 
