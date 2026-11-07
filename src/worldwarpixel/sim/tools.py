@@ -103,11 +103,18 @@ class ToolSet:
         Calling again with the same stencil continues (or repairs) it, so big drawings take
         several turns and a raided drawing can be restored.
         """
+        # Visible progress first: cells whose colour changes, then same-coloured cells we merely
+        # claim from other agents (or from the blank background).
         wanted = [
             (x, y, c)
             for x, y, c in cells
+            if self._canvas.in_bounds(x, y) and self._canvas.get(x, y) != c
+        ] + [
+            (x, y, c)
+            for x, y, c in cells
             if self._canvas.in_bounds(x, y)
-            and (self._canvas.get(x, y) != c or self._canvas.owner(x, y) != self._agent_id)
+            and self._canvas.get(x, y) == c
+            and self._canvas.owner(x, y) != self._agent_id
         ]
         if not cells:
             raise ToolError("the stencil is empty")
