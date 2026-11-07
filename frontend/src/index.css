@@ -56,7 +56,8 @@ button.ghost { background: transparent; border-color: transparent; }
 .run-list button { width: 100%; display: flex; gap: 10px; align-items: center; text-align: left; }
 
 /* Live view */
-.live { height: 100%; display: grid; grid-template-rows: 44px 1fr 240px; }
+.live { height: 100%; display: grid; grid-template-rows: auto 1fr 240px; }
+.topbar { height: 44px; }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .live-grid { display: grid; grid-template-columns: 260px minmax(200px, 1fr) 320px; min-height: 0; min-width: 780px; overflow: auto; }
 .agents, .board, .drawer { display: flex; flex-direction: column; min-height: 0; background: var(--panel); overflow: hidden; }
