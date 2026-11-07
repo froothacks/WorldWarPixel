@@ -218,7 +218,6 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         f"(x grows right, y grows down, 0-based) and a public message board, open to people from "
         f"every country. Nobody is in charge and nothing is pre-planned. Each turn you may paint "
         f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
-        f"Your usual colour is {agent.color} ({COLOR_NAMES[agent.color]}). "
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
         "In events like this people have done all sorts of things: painted their national or "
         "regional flag, a city skyline, a sports club crest or a university logo; drawn pixel-art "

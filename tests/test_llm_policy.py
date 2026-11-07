@@ -140,6 +140,12 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     )
 
 
+def test_system_prompt_does_not_assign_a_usual_colour() -> None:
+    agent, *_ = _setup()
+    prompt = system_prompt(agent, 64, 40, 4, 1)
+    assert "usual colour" not in prompt.lower()
+
+
 def test_follow_up_failure_keeps_completed_actions() -> None:
     agent, tools, obs, events = _setup()
 
