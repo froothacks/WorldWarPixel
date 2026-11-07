@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o-mini"
     agent_model: str | None = None
+    narrator_model: str | None = None
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
     max_concurrency: int = 10

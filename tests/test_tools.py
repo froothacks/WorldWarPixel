@@ -34,10 +34,10 @@ def test_fill_rect_charges_every_cell() -> None:
     tools, events = make(TurnBudget(pixels=8))
     tools.fill_rect(0, 0, 2, 2, 5)
     assert [e[1] for e in events] == [
-        {"x": 0, "y": 0, "color": 5},
-        {"x": 1, "y": 0, "color": 5},
-        {"x": 0, "y": 1, "color": 5},
-        {"x": 1, "y": 1, "color": 5},
+        {"x": 0, "y": 0, "color": 5, "prev_owner": 0},
+        {"x": 1, "y": 0, "color": 5, "prev_owner": 0},
+        {"x": 0, "y": 1, "color": 5, "prev_owner": 0},
+        {"x": 1, "y": 1, "color": 5, "prev_owner": 0},
     ]
     with pytest.raises(ToolError, match="budget exceeded"):
         tools.fill_rect(0, 0, 3, 3, 5)

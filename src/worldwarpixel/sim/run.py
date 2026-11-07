@@ -13,6 +13,7 @@ from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import PALETTE, Canvas
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
+from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 RunState = Literal["created", "running", "paused", "stopped"]
@@ -29,6 +30,12 @@ class RunConfig(BaseModel):
     max_concurrency: int = Field(default=10, ge=1, le=500, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
+    narrator_interval: float = Field(
+        default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
+    )
+    narrator_canvas_image: bool = Field(
+        default=True, description="Send the narrator a downsampled PNG of the canvas"
+    )
 
 
 class Run:
@@ -42,6 +49,7 @@ class Run:
         policy: Policy,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        narrator_model: NarratorModel | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -67,6 +75,15 @@ class Run:
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
+        self.narrator = Narrator(
+            self,
+            narrator_model,
+            self._running,
+            interval=config.narrator_interval,
+            include_image=config.narrator_canvas_image,
+            clock=clock,
+            sleep=sleep,
+        )
 
     @property
     def by_id(self) -> dict[int, AgentSpec]:
@@ -87,6 +104,7 @@ class Run:
         self._running.set()
         self.hub.start()
         self._tasks = [asyncio.create_task(self._agent_loop(a)) for a in self.agents]
+        self.narrator.start()
 
     def pause(self) -> None:
         if self.state == "running":
@@ -107,6 +125,7 @@ class Run:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         self._tasks = []
+        await self.narrator.stop()
         self._running.set()
         self._set_state("stopped")
         await self.hub.stop()
@@ -154,6 +173,7 @@ class Run:
                 thought = f"Tool call rejected: {e}"
                 self.stats["errors"] += 1
         self.stats["turns"] += 1
+        self.narrator.observe_turn(agent.id)
         entry = {"ts": self._clock(), "thought": thought}
         self.thoughts[agent.id].append(entry)
         self._record("agent.thought", agent.id, entry)
@@ -166,6 +186,7 @@ class Run:
 
     def _on_write(self, agent_id: int, kind: str, payload: dict[str, Any]) -> None:
         self._record(kind, agent_id, payload)
+        self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], agent_id)
@@ -175,6 +196,10 @@ class Run:
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
         self.log.append(self.id, self._clock(), kind, agent_id, payload)
+
+    def record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
+        """Append an event on behalf of a collaborator (the narrator)."""
+        self._record(kind, agent_id, payload)
 
     # -- read model ------------------------------------------------------------------------
 
@@ -190,6 +215,7 @@ class Run:
             "threads": len(self.board.threads()),
             "clients": self.hub.client_count,
             "llm": getattr(self.policy, "stats", None),
+            "narrator": dict(self.narrator.stats),
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
@@ -233,4 +259,5 @@ class Run:
             "palette": list(PALETTE),
             "agents": self.agent_list(),
             "threads": self.board.digest(limit=50, name_of=self.agent_name),
+            "narrator": self.narrator.state(),
         }

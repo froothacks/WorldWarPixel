@@ -79,6 +79,10 @@ export default function StartScreen({ onStarted }: Props) {
             <input type="number" min={1} max={500} value={cfg.max_concurrency} onChange={(e) => set("max_concurrency", +e.target.value)} />
           </label>
           <label>
+            Narrator update (s)
+            <input type="number" min={5} max={3600} step={5} value={cfg.narrator_interval} onChange={(e) => set("narrator_interval", +e.target.value)} />
+          </label>
+          <label>
             Seed (optional)
             <input type="number" value={cfg.seed ?? ""} placeholder="random" onChange={(e) => set("seed", e.target.value === "" ? null : +e.target.value)} />
           </label>

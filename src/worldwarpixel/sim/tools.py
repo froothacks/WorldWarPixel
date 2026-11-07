@@ -62,8 +62,9 @@ class ToolSet:
 
     def _write(self, writes: list[PixelWrite]) -> None:
         for w in writes:
+            prev = self._canvas.owner(w.x, w.y)
             self._canvas.write(w)
-            self._sink("pixel", {"x": w.x, "y": w.y, "color": w.color})
+            self._sink("pixel", {"x": w.x, "y": w.y, "color": w.color, "prev_owner": prev})
 
     def place_pixels(self, pixels: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
         if not pixels:

@@ -13,10 +13,12 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
+from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import Run, RunConfig
 
 
@@ -28,10 +30,12 @@ class RunManager:
         log: EventLog,
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
+        narrator_model: NarratorModel | None = None,
     ) -> None:
         self.log = log
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
+        self.narrator_model = narrator_model
         self.runs: dict[str, Run] = {}
 
     def active(self) -> list[Run]:
@@ -42,7 +46,7 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
-        run = Run(run_id, config, self.log, policy)
+        run = Run(run_id, config, self.log, policy, narrator_model=self.narrator_model)
         self.runs[run_id] = run
         await run.start()
         return run
@@ -171,6 +175,28 @@ async def get_events(
         {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
         for e in events
     ]
+
+
+class NarratorQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+
+
+@router.get("/{run_id}/narrator")
+async def get_narrator(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """The narrator's update history (newest last) plus its interval and stats."""
+    return manager.get(run_id).narrator.state()
+
+
+@router.post("/{run_id}/narrator/ask")
+async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep) -> dict[str, Any]:
+    """Answer a viewer's question from the current digest; also streamed as `narrator.update`."""
+    run = manager.get(run_id)
+    if run.state == "stopped":
+        raise HTTPException(409, "run is stopped")
+    try:
+        return await run.narrator.ask(body.question)
+    except NarratorUnavailable as e:
+        raise HTTPException(503, f"narrator unavailable: {e}") from e
 
 
 @router.websocket("/{run_id}/ws")

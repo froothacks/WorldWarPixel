@@ -1,4 +1,4 @@
-import type { AgentStatus, Post, RunState, RunStats, Snapshot, Thought } from "./api";
+import type { AgentStatus, NarratorUpdate, Post, RunState, RunStats, Snapshot, Thought } from "./api";
 
 export const FRAME_SNAPSHOT = 1;
 export const FRAME_PIXELS = 2;
@@ -16,7 +16,8 @@ export type ServerEvent =
   | { type: "run.state"; state: RunState; stats: RunStats }
   | { type: "agent.status"; agent_id: number; status: AgentStatus }
   | ({ type: "agent.thought"; agent_id: number } & Thought)
-  | { type: "post.created"; post: Post; author: string };
+  | { type: "post.created"; post: Post; author: string }
+  | ({ type: "narrator.update" } & NarratorUpdate);
 
 export interface StreamHandlers {
   onEvent: (event: ServerEvent) => void;

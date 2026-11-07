@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Agent, type RunSummary, type ThreadDigest, type Thought } from "./api";
+import {
+  api,
+  type Agent,
+  type NarratorHighlight,
+  type NarratorState,
+  type NarratorUpdate,
+  type RunSummary,
+  type ThreadDigest,
+  type Thought,
+} from "./api";
 import { openRunStream, type ServerEvent } from "./ws";
 import { PixelStore } from "./pixelStore";
-import CanvasView from "./CanvasView";
+import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
 import Board from "./Board";
@@ -14,6 +23,7 @@ interface Props {
 }
 
 const MAX_LIVE_THOUGHTS = 20;
+const MAX_NARRATOR_UPDATES = 50;
 
 export default function LiveView({ run: initial, onLeave }: Props) {
   const [run, setRun] = useState<RunSummary>(initial);
@@ -23,6 +33,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const [boardVersion, setBoardVersion] = useState(0);
   const [thoughts, setThoughts] = useState<Map<number, Thought[]>>(new Map());
   const [selected, setSelected] = useState<number | null>(null);
+  const [openThread, setOpenThread] = useState<number | null>(null);
+  const [focus, setFocus] = useState<Region | null>(null);
+  const [narrator, setNarrator] = useState<NarratorState | null>(null);
   const [store, setStore] = useState<PixelStore | null>(null);
   const [version, setVersion] = useState(0);
   const [connection, setConnection] = useState("connecting…");
@@ -48,8 +61,14 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           setRun(ev.run);
           setAgents(ev.agents);
           setThreads(ev.threads);
+          setNarrator(ev.narrator);
           setConnection("live");
           break;
+        case "narrator.update": {
+          const { type: _type, ...update } = ev;
+          setNarrator((n) => (n ? { ...n, updates: appendUpdate(n.updates, update) } : n));
+          break;
+        }
         case "run.state":
           setRun((r) => ({ ...r, state: ev.state, stats: ev.stats }));
           break;
@@ -117,6 +136,30 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     [selected, store, version],
   );
 
+  const onHighlight = useCallback((h: NarratorHighlight) => {
+    switch (h.type) {
+      case "agent":
+        setSelected(h.id);
+        break;
+      case "thread":
+        setSelected(null);
+        setOpenThread(h.id);
+        break;
+      case "region":
+        setFocus((f) => ({ x: h.x, y: h.y, w: h.w, h: h.h, nonce: (f?.nonce ?? 0) + 1 }));
+        break;
+    }
+  }, []);
+
+  const ask = useCallback(
+    async (question: string) => {
+      const update = await api.ask(initial.id, question);
+      // The socket delivers the same update; appendUpdate dedupes by id.
+      setNarrator((n) => (n ? { ...n, updates: appendUpdate(n.updates, update) } : n));
+    },
+    [initial.id],
+  );
+
   const control = (action: "pause" | "resume" | "stop") => api[action](initial.id).then(setRun).catch((e: Error) => alert(e.message));
 
   return (
@@ -137,7 +180,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       </header>
       <div className="live-grid">
         <AgentList agents={agents} palette={palette} selected={selected} lastThought={lastThought} onSelect={setSelected} />
-        <CanvasView store={store} version={version} agents={agentMap} highlightAgent={selected} onPickAgent={setSelected} />
+        <CanvasView store={store} version={version} agents={agentMap} highlightAgent={selected} onPickAgent={setSelected} focus={focus} />
         {selectedAgent ? (
           <AgentDrawer
             runId={initial.id}
@@ -148,10 +191,15 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             onClose={() => setSelected(null)}
           />
         ) : (
-          <Board runId={initial.id} threads={threads} agentName={agentName} version={boardVersion} totalThreads={run.threads} />
+          <Board runId={initial.id} threads={threads} agentName={agentName} version={boardVersion} totalThreads={run.threads} open={openThread} onOpen={setOpenThread} />
         )}
       </div>
-      <NarratorDock stats={run.stats} threads={run.threads} />
+      <NarratorDock narrator={narrator} stats={run.stats} threads={run.threads} onHighlight={onHighlight} onAsk={ask} />
     </div>
   );
+}
+
+function appendUpdate(list: NarratorUpdate[], update: NarratorUpdate): NarratorUpdate[] {
+  if (list.some((u) => u.id === update.id)) return list;
+  return [...list, update].slice(-MAX_NARRATOR_UPDATES);
 }

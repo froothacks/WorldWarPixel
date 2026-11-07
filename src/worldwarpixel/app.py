@@ -17,6 +17,7 @@ from worldwarpixel.llm import ChatService
 from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
+from worldwarpixel.sim.narrator import OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
 
 
@@ -67,7 +68,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return random_policy(config)
 
         app.state.runs = RunManager(
-            EventLog(settings.event_log_path), settings.max_active_runs, make_policy
+            EventLog(settings.event_log_path),
+            settings.max_active_runs,
+            make_policy,
+            OpenAINarratorModel(
+                client, settings.narrator_model or settings.openai_model, settings.request_timeout
+            ),
         )
         try:
             yield

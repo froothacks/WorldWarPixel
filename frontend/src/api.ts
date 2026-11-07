@@ -9,6 +9,8 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "random";
+  narrator_interval: number;
+  narrator_canvas_image: boolean;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -22,6 +24,8 @@ export const DEFAULT_CONFIG: RunConfig = {
   max_concurrency: 10,
   seed: null,
   policy: "llm",
+  narrator_interval: 60,
+  narrator_canvas_image: true,
 };
 
 export type RunState = "created" | "running" | "paused" | "stopped";
@@ -41,6 +45,12 @@ export interface LLMStats {
   failures: number;
 }
 
+export interface NarratorStats {
+  updates: number;
+  answers: number;
+  failures: number;
+}
+
 export interface RunSummary {
   id: string;
   state: RunState;
@@ -52,6 +62,7 @@ export interface RunSummary {
   threads: number;
   clients: number;
   llm: LLMStats | null;
+  narrator: NarratorStats;
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -97,12 +108,38 @@ export interface Post {
   created_at: number;
 }
 
+export type NarratorHighlight =
+  | { type: "agent"; id: number; label: string }
+  | { type: "thread"; id: number; label: string }
+  | { type: "region"; x: number; y: number; w: number; h: number; label: string };
+
+export interface NarratorUpdate {
+  id: number;
+  ts: number;
+  kind: "update" | "answer";
+  question: string | null;
+  headline: string;
+  bullets: string[];
+  highlights: NarratorHighlight[];
+  source: "model" | "fallback";
+  error: string | null;
+  window: { seconds: number; turns: number; pixels: number; posts: number };
+}
+
+export interface NarratorState {
+  interval: number;
+  next_update_at: number | null;
+  stats: NarratorStats;
+  updates: NarratorUpdate[];
+}
+
 export interface Snapshot {
   type: "snapshot";
   run: RunSummary;
   palette: string[];
   agents: Agent[];
   threads: ThreadDigest[];
+  narrator: NarratorState;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -130,4 +167,7 @@ export const api = {
   agent: (id: string, agentId: number) => request<AgentDetail>(`/runs/${id}/agents/${agentId}`),
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
   thread: (id: string, threadId: number) => request<Post[]>(`/runs/${id}/threads/${threadId}`),
+  narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
+  ask: (id: string, question: string) =>
+    request<NarratorUpdate>(`/runs/${id}/narrator/ask`, { method: "POST", body: JSON.stringify({ question }) }),
 };

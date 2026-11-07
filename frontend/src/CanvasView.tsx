@@ -8,6 +8,16 @@ interface Props {
   agents: Map<number, Agent>;
   highlightAgent: number | null;
   onPickAgent: (agentId: number) => void;
+  focus: Region | null;
+}
+
+export interface Region {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Changes on every request so the same region can be focused twice. */
+  nonce: number;
 }
 
 interface Viewport {
@@ -16,7 +26,7 @@ interface Viewport {
   panY: number;
 }
 
-export default function CanvasView({ store, version, agents, highlightAgent, onPickAgent }: Props) {
+export default function CanvasView({ store, version, agents, highlightAgent, onPickAgent, focus }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const [vp, setVp] = useState<Viewport | null>(null);
@@ -40,6 +50,17 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
     const zoom = Math.max(0.1, Math.min(size.w / store.width, size.h / store.height));
     setVp({ zoom, panX: (size.w - store.width * zoom) / 2, panY: (size.h - store.height * zoom) / 2 });
   }, [store, vp, size]);
+
+  // Pan and zoom so a region the narrator pointed at fills about half the viewport.
+  useEffect(() => {
+    if (!focus || !store || size.w === 0 || size.h === 0) return;
+    const zoom = Math.min(64, Math.max(0.1, Math.min(size.w / focus.w, size.h / focus.h) * 0.5));
+    const cx = focus.x + focus.w / 2;
+    const cy = focus.y + focus.h / 2;
+    setVp({ zoom, panX: size.w / 2 - cx * zoom, panY: size.h / 2 - cy * zoom });
+    // Only re-run for a new focus request, not when the viewport resizes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce, store]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -73,7 +94,12 @@ export default function CanvasView({ store, version, agents, highlightAgent, onP
         ctx.fillRect(vp.panX + x * vp.zoom, vp.panY + y * vp.zoom, vp.zoom, vp.zoom);
       }
     }
-  }, [store, version, vp, highlightAgent, size]);
+    if (focus) {
+      ctx.strokeStyle = "#4f8cff";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(vp.panX + focus.x * vp.zoom, vp.panY + focus.y * vp.zoom, focus.w * vp.zoom, focus.h * vp.zoom);
+    }
+  }, [store, version, vp, highlightAgent, size, focus]);
 
   const toPixel = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!store || !vp) return null;
