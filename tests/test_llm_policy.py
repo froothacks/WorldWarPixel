@@ -204,6 +204,9 @@ def test_follow_up_failure_keeps_completed_actions() -> None:
     assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
     assert "model call failed: RuntimeError" in thought
     assert len(events) == 1 and policy.stats["failures"] == 1
+    client.chat.completions = FakeCompletions([_response("Back.", [])])
+    asyncio.run(policy.act(agent, tools, obs))
+    assert "last_error" not in policy.stats
 
 
 def test_out_of_range_arguments_are_clamped() -> None:
@@ -483,6 +486,16 @@ def test_draw_line_paints_in_free_mode() -> None:
     )
     assert res["placed"] == 4 and res["done"]
     assert [(p["x"], p["y"]) for _, p in events] == [(0, 0), (1, 1), (2, 2), (3, 3)]
+
+
+def test_partial_line_keeps_the_agent_near_where_it_painted() -> None:
+    agent, tools, obs, _ = _setup()
+    tools.budget.pixels = 2
+    client = FakeClient(
+        [_response("Line.", [("draw_line", {"x1": 0, "y1": 0, "x2": 9, "y2": 0, "color": 4})])]
+    )
+    asyncio.run(LLMPolicy(client, "m", vision=False).act(agent, tools, obs))  # type: ignore[arg-type]
+    assert (agent.home_x, agent.home_y) == (0, 0)
 
 
 def test_agent_keeps_painting_while_pixels_are_left() -> None:

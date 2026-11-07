@@ -956,7 +956,8 @@ def _track_position(
         last = args["pixels"][min(placed, len(args["pixels"])) - 1]
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
     elif name == "draw_line" and result.get("placed"):
-        agent.home_x, agent.home_y = int(args["x2"]), int(args["y2"])
+        end = ("x2", "y2") if result.get("done") else ("x1", "y1")
+        agent.home_x, agent.home_y = int(args[end[0]]), int(args[end[1]])
     elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 
