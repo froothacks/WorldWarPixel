@@ -210,9 +210,10 @@ def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
     for x in range(10):
         canvas.write(PixelWrite(x=x, y=0, color=5, agent_id=0))
     canvas.write(PixelWrite(x=70, y=10, color=2, agent_id=0))
-    regions = canvas.regions(tile=64)
+    canvas.write(PixelWrite(x=0, y=0, color=0, agent_id=0))
+    regions = canvas.regions()
     assert [r["x0"] for r in regions] == [0, 64]
-    assert regions[0]["painted"] == 10 and regions[0]["color"] == 5
+    assert regions[0]["painted"] == 9 and regions[0]["color"] == 5
     assert regions[0]["x1"] == 63 and regions[0]["y1"] == 63
 
 

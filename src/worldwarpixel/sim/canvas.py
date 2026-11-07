@@ -24,6 +24,7 @@ PALETTE: tuple[str, ...] = (
     "#CF6EE4",
     "#820080",
 )
+TILE = 64
 MAX_SIDE = 65535
 
 
@@ -45,6 +46,9 @@ class Canvas:
         self.height = height
         self.pixels = bytearray(width * height)
         self.owners = array("H", bytes(2 * width * height))
+        self._tiles_w = -(-width // TILE)
+        tiles = self._tiles_w * -(-height // TILE)
+        self._tile_counts = [[0] * len(PALETTE) for _ in range(tiles)]
 
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
@@ -65,6 +69,11 @@ class Canvas:
         if not 0 <= w.color < len(PALETTE):
             raise ValueError(f"color must be in 0..{len(PALETTE) - 1}")
         i = self._index(w.x, w.y)
+        old = self.pixels[i]
+        if old != w.color:
+            counts = self._tile_counts[(w.y // TILE) * self._tiles_w + w.x // TILE]
+            counts[old] -= 1
+            counts[w.color] += 1
         self.pixels[i] = w.color
         self.owners[i] = w.agent_id
 
@@ -89,29 +98,27 @@ class Canvas:
         swapped.byteswap()
         return swapped.tobytes()
 
-    def regions(self, tile: int = 64, limit: int = 10) -> list[dict[str, int]]:
-        """Busiest tiles: bounds, how many pixels are painted (non-zero) and the dominant colour."""
+    def regions(self, limit: int = 10) -> list[dict[str, int]]:
+        """Busiest TILE x TILE areas: bounds, painted (non-zero) pixel count and dominant colour.
+
+        Counts are maintained incrementally in write(), so this is O(tiles), not O(pixels).
+        """
         out: list[dict[str, int]] = []
-        for y0 in range(0, self.height, tile):
-            for x0 in range(0, self.width, tile):
-                counts = [0] * len(PALETTE)
-                for yy in range(y0, min(y0 + tile, self.height)):
-                    row = yy * self.width
-                    for v in self.pixels[row + x0 : row + min(x0 + tile, self.width)]:
-                        counts[v] += 1
-                painted = sum(counts[1:])
-                if painted:
-                    dominant = max(range(1, len(PALETTE)), key=counts.__getitem__)
-                    out.append(
-                        {
-                            "x0": x0,
-                            "y0": y0,
-                            "x1": min(x0 + tile, self.width) - 1,
-                            "y1": min(y0 + tile, self.height) - 1,
-                            "painted": painted,
-                            "color": dominant,
-                        }
-                    )
+        for t, counts in enumerate(self._tile_counts):
+            painted = sum(counts[1:])
+            if not painted:
+                continue
+            x0, y0 = (t % self._tiles_w) * TILE, (t // self._tiles_w) * TILE
+            out.append(
+                {
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": min(x0 + TILE, self.width) - 1,
+                    "y1": min(y0 + TILE, self.height) - 1,
+                    "painted": painted,
+                    "color": max(range(1, len(PALETTE)), key=counts.__getitem__),
+                }
+            )
         out.sort(key=lambda r: r["painted"], reverse=True)
         return out[:limit]
 
