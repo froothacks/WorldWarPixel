@@ -8,7 +8,7 @@ export interface RunConfig {
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
-  policy: "llm" | "random";
+  policy: "llm" | "llm-guided" | "random";
   narrator_interval: number;
   narrator_canvas_image: boolean;
 }
@@ -104,6 +104,7 @@ export interface ThreadDigest {
   title: string;
   author: string;
   replies: number;
+  votes: number;
   latest: { author: string; body: string } | null;
 }
 
@@ -201,6 +202,11 @@ export const api = {
   threads: (id: string) => request<ThreadDigest[]>(`/runs/${id}/threads`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
+  vote: (id: string, threadId: number, delta: number) =>
+    request<{ thread_id: number; votes: number }>(
+      `/runs/${id}/threads/${threadId}/vote`,
+      { method: "POST", body: JSON.stringify({ delta }) },
+    ),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>
     request<NarratorUpdate>(`/runs/${id}/narrator/ask`, {

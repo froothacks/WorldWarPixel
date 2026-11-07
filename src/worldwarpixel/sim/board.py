@@ -3,6 +3,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 MENTION_RE = re.compile(r"@([\w.-]+)")
+VOTE_BOOST = 60.0
+"""Seconds of recency one net viewer vote is worth when ranking threads."""
 
 
 @dataclass(slots=True)
@@ -31,6 +33,7 @@ class Board:
         self.max_body = max_body
         self._posts: dict[int, Post] = {}
         self._replies: dict[int, list[int]] = {}
+        self._votes: dict[int, int] = {}
         self._next_id = 1
 
     def _new_post(
@@ -57,6 +60,7 @@ class Board:
         """Forget every post but keep issuing fresh ids, so old links never point at new threads."""
         self._posts.clear()
         self._replies.clear()
+        self._votes.clear()
 
     def post_thread(self, author_id: int, title: str, body: str, now: float) -> Post:
         title = title.strip()
@@ -101,11 +105,25 @@ class Board:
         last = replies[-1] if replies else thread_id
         return self._posts[last].created_at
 
+    def vote(self, thread_id: int, delta: int) -> int:
+        """Add a viewer's up/down vote (or the change of one) to a thread; returns its score."""
+        if thread_id not in self._replies:
+            raise BoardError(f"thread {thread_id} does not exist")
+        self._votes[thread_id] = self._votes.get(thread_id, 0) + delta
+        return self._votes[thread_id]
+
+    def votes(self, thread_id: int) -> int:
+        return self._votes.get(thread_id, 0)
+
+    def rank(self, thread_id: int) -> float:
+        """Most recent activity first; each net vote counts as VOTE_BOOST seconds newer/older."""
+        return self.last_activity(thread_id) + self.votes(thread_id) * VOTE_BOOST
+
     def digest(
         self, limit: int = 10, name_of: Callable[[int], str] = lambda i: f"agent {i}"
     ) -> list[dict[str, object]]:
-        """The most recently active threads, summarised for an agent's observation."""
-        ordered = sorted(self._replies, key=self.last_activity, reverse=True)[:limit]
+        """Threads in board order (recent activity, shifted by votes), summarised."""
+        ordered = sorted(self._replies, key=self.rank, reverse=True)[:limit]
         out: list[dict[str, object]] = []
         for tid in ordered:
             root = self._posts[tid]
@@ -117,6 +135,7 @@ class Board:
                     "title": root.title,
                     "author": name_of(root.author_id),
                     "replies": len(replies),
+                    "votes": self.votes(tid),
                     "latest": (
                         {"author": name_of(latest.author_id), "body": latest.body}
                         if latest

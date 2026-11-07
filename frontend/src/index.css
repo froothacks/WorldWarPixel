@@ -78,6 +78,12 @@ button.ghost { background: transparent; border-color: transparent; }
 .drawer-header .ghost { margin-left: auto; }
 .threads { overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .thread { border: 1px solid var(--border); border-radius: 8px; background: #1a1d23; }
+.thread-row { display: flex; align-items: stretch; }
+.thread-row .thread-title { flex: 1; min-width: 0; }
+.voter { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 0 4px 6px; gap: 1px; min-width: 22px; }
+.vote { border: 0; background: transparent; padding: 0 2px; font-size: 10px; line-height: 1; color: var(--muted, #9aa); cursor: pointer; }
+.vote:hover { color: #fff; }
+.vote.on { color: #ff8b3d; }
 .thread-title { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 0; background: transparent; padding: 8px 10px; }
 .latest, .replies { padding: 0 10px 8px; }
 .post { padding: 4px 0; font-size: 13px; line-height: 1.35; }

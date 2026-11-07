@@ -137,6 +137,10 @@ def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
 GodDep = Annotated[None, Depends(require_god)]
 
 
+class ThreadVote(BaseModel):
+    delta: int = Field(ge=-2, le=2, description="+1/-1 to vote, ±2 to flip an earlier vote")
+
+
 class GodPixels(BaseModel):
     pixels: list[tuple[int, int, int]] = Field(max_length=50_000)
     erase: bool = False
@@ -226,6 +230,17 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
+
+
+@router.post("/{run_id}/threads/{thread_id}/vote")
+async def vote_thread(
+    run_id: str, thread_id: int, body: ThreadVote, manager: ManagerDep
+) -> dict[str, Any]:
+    try:
+        votes = manager.get(run_id).vote_thread(thread_id, body.delta)
+    except BoardError as e:
+        raise HTTPException(404, str(e)) from e
+    return {"thread_id": thread_id, "votes": votes}
 
 
 @router.get("/{run_id}/canvas")

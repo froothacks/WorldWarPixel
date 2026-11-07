@@ -52,7 +52,8 @@ export default function StartScreen({ onStarted }: Props) {
           <label>
             Agents brain
             <select value={cfg.policy} onChange={(e) => set("policy", e.target.value as RunConfig["policy"])}>
-              <option value="llm">LLM (configured endpoint)</option>
+              <option value="llm">LLM free-for-all (configured endpoint)</option>
+              <option value="llm-guided">LLM guided: r/place framing, stencils, spot hints</option>
               <option value="random">Random walk (no LLM, free)</option>
             </select>
           </label>
@@ -101,7 +102,7 @@ export default function StartScreen({ onStarted }: Props) {
           </label>
           <p className="muted">
             About {callsPerMin.toLocaleString()} turns/min and up to {pxPerMin.toLocaleString()} px/min.
-            {cfg.policy === "llm" ? " Each turn is one model call." : " No model calls; agents paint random blobs."}
+            {cfg.policy !== "random" ? " Each turn is one model call." : " No model calls; agents paint random blobs."}
           </p>
           {error && <p className="error">{error}</p>}
           <button className="primary" onClick={start} disabled={busy}>

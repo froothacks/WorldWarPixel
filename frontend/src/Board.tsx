@@ -9,10 +9,56 @@ interface Props {
   totalThreads: number;
   open: number | null;
   onOpen: (threadId: number | null) => void;
+  onVoted: () => void;
 }
 
-export default function Board({ runId, threads, agentName, version, totalThreads, open, onOpen }: Props) {
+type MyVotes = Record<number, 1 | -1>;
+
+function loadVotes(runId: string): MyVotes {
+  try {
+    return JSON.parse(localStorage.getItem(`wwp-votes-${runId}`) ?? "{}") as MyVotes;
+  } catch {
+    return {};
+  }
+}
+
+export default function Board({ runId, threads, agentName, version, totalThreads, open, onOpen, onVoted }: Props) {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [myVotes, setMyVotes] = useState<MyVotes>(() => loadVotes(runId));
+
+  const vote = (threadId: number, dir: 1 | -1) => {
+    const prev = myVotes[threadId] ?? 0;
+    const next = prev === dir ? 0 : dir;
+    const updated = { ...myVotes };
+    if (next === 0) delete updated[threadId];
+    else updated[threadId] = next;
+    setMyVotes(updated);
+    localStorage.setItem(`wwp-votes-${runId}`, JSON.stringify(updated));
+    api
+      .vote(runId, threadId, next - prev)
+      .then(onVoted)
+      .catch(() => setMyVotes(myVotes));
+  };
+
+  const voter = (threadId: number, votes: number) => (
+    <div className="voter">
+      <button
+        className={`vote ${myVotes[threadId] === 1 ? "on" : ""}`}
+        title="Upvote: move this thread up the board (agents see the board in this order)"
+        onClick={() => vote(threadId, 1)}
+      >
+        ▲
+      </button>
+      <span className="small">{votes}</span>
+      <button
+        className={`vote ${myVotes[threadId] === -1 ? "on" : ""}`}
+        title="Downvote: move this thread down the board"
+        onClick={() => vote(threadId, -1)}
+      >
+        ▼
+      </button>
+    </div>
+  );
   const setOpen = onOpen;
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -30,7 +76,9 @@ export default function Board({ runId, threads, agentName, version, totalThreads
     <aside className="board">
       <header className="board-header">
         <strong>Message board</strong>
-        <span className="muted small">{totalThreads} threads{totalThreads > threads.length ? ` · showing ${threads.length} most active` : ""}</span>
+        <span className="muted small" title="Sorted by most recent activity; each net vote moves a thread up or down">
+          {totalThreads} threads · recent activity ± votes{totalThreads > threads.length ? ` · top ${threads.length}` : ""}
+        </span>
       </header>
       <div className="threads" ref={listRef}>
         {threads.length === 0 && <p className="muted small pad">No posts yet.</p>}
@@ -51,10 +99,13 @@ export default function Board({ runId, threads, agentName, version, totalThreads
         )}
         {threads.map((t) => (
           <div key={t.thread_id} className={`thread ${open === t.thread_id ? "open" : ""}`}>
-            <button className="thread-title" onClick={() => setOpen(open === t.thread_id ? null : t.thread_id)}>
-              <span>{t.title}</span>
-              <span className="muted small">{t.author} · {t.replies} {t.replies === 1 ? "reply" : "replies"}</span>
-            </button>
+            <div className="thread-row">
+              {voter(t.thread_id, t.votes ?? 0)}
+              <button className="thread-title" onClick={() => setOpen(open === t.thread_id ? null : t.thread_id)}>
+                <span>{t.title}</span>
+                <span className="muted small">{t.author} · {t.replies} {t.replies === 1 ? "reply" : "replies"}</span>
+              </button>
+            </div>
             {open === t.thread_id ? (
               <div className="replies">
                 {posts.map((p) => (
