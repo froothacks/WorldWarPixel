@@ -89,6 +89,32 @@ class Canvas:
         swapped.byteswap()
         return swapped.tobytes()
 
+    def regions(self, tile: int = 64, limit: int = 10) -> list[dict[str, int]]:
+        """Busiest tiles: bounds, how many pixels are painted (non-zero) and the dominant colour."""
+        out: list[dict[str, int]] = []
+        for y0 in range(0, self.height, tile):
+            for x0 in range(0, self.width, tile):
+                counts = [0] * len(PALETTE)
+                for yy in range(y0, min(y0 + tile, self.height)):
+                    row = yy * self.width
+                    for v in self.pixels[row + x0 : row + min(x0 + tile, self.width)]:
+                        counts[v] += 1
+                painted = sum(counts[1:])
+                if painted:
+                    dominant = max(range(1, len(PALETTE)), key=counts.__getitem__)
+                    out.append(
+                        {
+                            "x0": x0,
+                            "y0": y0,
+                            "x1": min(x0 + tile, self.width) - 1,
+                            "y1": min(y0 + tile, self.height) - 1,
+                            "painted": painted,
+                            "color": dominant,
+                        }
+                    )
+        out.sort(key=lambda r: r["painted"], reverse=True)
+        return out[:limit]
+
     def to_png(self, max_side: int = 640) -> tuple[bytes, int]:
         """Palette PNG of the canvas, nearest-neighbour downsampled so no side exceeds max_side.
 

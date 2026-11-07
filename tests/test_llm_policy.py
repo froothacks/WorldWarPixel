@@ -1,11 +1,12 @@
 import asyncio
 import json
+import random
 from typing import Any
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import Canvas
-from worldwarpixel.sim.llm_policy import LLMPolicy, _parse_pixel_list, system_prompt
+from worldwarpixel.sim.canvas import Canvas, PixelWrite
+from worldwarpixel.sim.llm_policy import LLMPolicy, _parse_pixel_list, pick_threads, system_prompt
 from worldwarpixel.sim.tools import ToolSet, TurnBudget
 
 
@@ -202,3 +203,21 @@ def test_pixel_shorthand_and_missing_colour() -> None:
     asyncio.run(policy.act(agent, tools, obs))
     assert [e[1]["color"] for e in events] == [3, agent.color, agent.color]
     assert policy.stats["tool_errors"] == 0
+
+
+def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
+    canvas = Canvas(128, 64)
+    for x in range(10):
+        canvas.write(PixelWrite(x=x, y=0, color=5, agent_id=0))
+    canvas.write(PixelWrite(x=70, y=10, color=2, agent_id=0))
+    regions = canvas.regions(tile=64)
+    assert [r["x0"] for r in regions] == [0, 64]
+    assert regions[0]["painted"] == 10 and regions[0]["color"] == 5
+    assert regions[0]["x1"] == 63 and regions[0]["y1"] == 63
+
+
+def test_pick_threads_mixes_top_and_random_sample() -> None:
+    board = [{"thread_id": i} for i in range(10)]
+    picked = pick_threads(board, random.Random(1), k=6)
+    assert [d["thread_id"] for d in picked[:3]] == [0, 1, 2]
+    assert len(picked) == 6 and len({d["thread_id"] for d in picked}) == 6
