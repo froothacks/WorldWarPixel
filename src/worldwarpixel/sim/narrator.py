@@ -37,19 +37,31 @@ PROMPT_POSTS = 20
 BODY_CHARS = 200
 
 SYSTEM_PROMPT = (
-    "You are the narrator of WorldWarPixel, an r/place-style world where many AI agents from "
-    "different countries paint one shared pixel canvas and talk on a public message board. "
-    "You watch everything and brief the human audience: what the conversation is about, who is "
-    "painting what and where, alliances, conflicts and trends. Be concrete and vivid but short; "
-    "name agents, countries and threads from the digest, never invent any.\n\n"
+    "You are the live commentator of WorldWarPixel, an r/place-style world where AI agents from "
+    "many countries paint one shared pixel canvas and argue, scheme and team up on a public "
+    "message board. Every minute you brief the human audience like a sports or war commentator: "
+    "what changed, who did it to whom, and why it matters.\n\n"
+    "Lead with the most dramatic development in the 'Notable events' list: a drawing that just "
+    "appeared or was finished, a raid that wrecked someone's flag, a repair or counter-attack, "
+    "a group forming around one project, a fresh argument or alliance on the board, someone "
+    "abandoning their corner to invade another. Quote agents' own words from the board when "
+    "they are juicy. Give coordinates so viewers can find things. Keep storylines going from "
+    "your previous headlines but never repeat one. Skip raw statistics unless they are the "
+    "story. Be concrete, vivid and short; only name agents, countries, drawings and threads "
+    "that appear in the digest, never invent any.\n\n"
     "Reply with JSON only, in this shape:\n"
-    '{"headline": "one line", "bullets": ["2 to 4 short bullets"], '
+    '{"headline": "one punchy line", "bullets": ["2 to 4 short bullets, each a different '
+    'storyline"], '
     '"highlights": [{"type": "thread", "id": 4, "label": "short label"}, '
     '{"type": "agent", "id": 12, "label": "short label"}, '
     '{"type": "region", "x": 0, "y": 0, "w": 64, "h": 64, "label": "short label"}]}\n'
     "Highlights are links for the viewer: only use thread ids, agent ids and regions that appear "
     "in the digest."
 )
+DRAW_TOOLS = ("draw_flag", "draw_text", "draw_shape")
+MAX_ACTIONS = 600
+MOVE_DISTANCE = 120
+"""An agent whose drawing position jumps this far between windows 'moved'."""
 
 
 class NarratorModel(Protocol):
@@ -93,6 +105,11 @@ class Window:
     overwrites: Counter[tuple[int, int]] = field(default_factory=Counter)
     claimed_blank: int = 0
     new_posts: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_NEW_POSTS))
+    actions: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_ACTIONS))
+    raids: Counter[tuple[int, int]] = field(default_factory=Counter)
+    """(raider, victim) -> pixels painted inside the victim's current drawing."""
+    repairs: Counter[int] = field(default_factory=Counter)
+    """agent -> pixels of its own drawing taken back from someone else."""
 
 
 def canvas_png(canvas: Canvas, max_side: int = MAX_IMAGE_SIDE) -> bytes:
@@ -195,6 +212,24 @@ def _int(value: Any) -> int | None:
         return None
 
 
+def _project_bbox(tool: str, args: dict[str, Any]) -> tuple[int, int, int, int]:
+    """Approximate footprint of a draw_* call as (x0, y0, x1, y1), inclusive."""
+    x, y = int(args.get("x", 0)), int(args.get("y", 0))
+    scale = max(1, int(args.get("scale") or 1))
+    if tool == "draw_flag":
+        w = int(args.get("width") or 24)
+        return x, y, x + w - 1, y + max(3, round(w * 2 / 3)) - 1
+    if tool == "draw_text":
+        n = max(1, len(str(args.get("text") or "?")))
+        return x, y, x + n * 4 * scale - 2, y + 5 * scale - 1
+    return x, y, x + 9 * scale - 1, y + 9 * scale - 1
+
+
+def _inside(bbox: tuple[int, int, int, int], x: int, y: int) -> bool:
+    x0, y0, x1, y1 = bbox
+    return x0 <= x <= x1 and y0 <= y <= y1
+
+
 class Narrator:
     """Watches one run and every `interval` seconds asks a model for a digest of what happened."""
 
@@ -219,6 +254,11 @@ class Narrator:
         self.stats = {"updates": 0, "answers": 0, "failures": 0}
         self.next_update_at: float | None = None
         self._window = Window(clock())
+        self._projects: dict[int, dict[str, Any]] = {}
+        """agent -> its current drawing (last draw_* action), kept across windows."""
+        self._announced: set[str] = set()
+        """Drawing keys already reported as started, so 'started' fires once."""
+        self._last_pos: dict[int, tuple[int, int]] = {}
         self._next_id = 1
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -262,14 +302,48 @@ class Narrator:
             ry = int(payload["y"]) * GRID // canvas.height
             w.regions[(rx, ry)] += 1
             prev = int(payload.get("prev_owner") or 0)
+            x, y = int(payload["x"]), int(payload["y"])
             if prev == 0:
                 w.claimed_blank += 1
             elif prev != agent_id:
                 w.overwrites[(agent_id, prev)] += 1
+                victim = self._projects.get(prev)
+                if victim and _inside(victim["bbox"], x, y):
+                    w.raids[(agent_id, prev)] += 1
+                mine = self._projects.get(agent_id)
+                if mine and _inside(mine["bbox"], x, y):
+                    w.repairs[agent_id] += 1
+        elif kind == "action":
+            self._observe_action(agent_id, payload)
         elif kind == "post":
             w.posts[agent_id] += 1
             w.thread_posts[int(payload["thread_id"])] += 1
             w.new_posts.append(payload)
+
+    def _observe_action(self, agent_id: int, payload: dict[str, Any]) -> None:
+        """Track what each agent is drawing (from the LLM policy's structured action events)."""
+        tool, args = str(payload.get("tool")), dict(payload.get("args") or {})
+        result = dict(payload.get("result") or {})
+        if "x" not in args or "y" not in args:
+            return
+        x, y = int(args["x"]), int(args["y"])
+        entry = {"ts": self._clock(), "agent_id": agent_id, "tool": tool, "args": args, **result}
+        self._window.actions.append(entry)
+        if tool not in DRAW_TOOLS:
+            return
+        what = str(args.get("country") or args.get("text") or args.get("shape") or "?")
+        key = f"{agent_id}:{tool}:{what}:{x}:{y}"
+        self._projects[agent_id] = {
+            "key": key,
+            "tool": tool,
+            "what": what,
+            "x": x,
+            "y": y,
+            "bbox": _project_bbox(tool, args),
+            "remaining": int(result.get("remaining") or 0),
+            "done": bool(result.get("done")),
+            "ts": self._clock(),
+        }
 
     # -- digest ----------------------------------------------------------------------------
 
@@ -342,7 +416,24 @@ class Narrator:
             }
             for (aid, victim), n in w.overwrites.most_common(TOP_N)
         ]
+        events, drawings = self._notable(w, top_agents, threads, overwrites)
+        conversations: list[dict[str, Any]] = []
+        for x in threads[:6]:
+            recent = [p for p in w.new_posts if int(p["thread_id"]) == x["thread_id"]][-3:]
+            conversations.append(
+                {
+                    "thread_id": x["thread_id"],
+                    "title": x["title"],
+                    "posts": [
+                        f"{run.agent_name(int(p['author_id']))}: {str(p['body'])[:160]}"
+                        for p in recent
+                    ],
+                }
+            )
         return {
+            "events": events,
+            "drawings": drawings,
+            "conversations": conversations,
             "run_id": run.id,
             "state": run.state,
             "canvas": {"width": run.canvas.width, "height": run.canvas.height},
@@ -364,6 +455,154 @@ class Narrator:
             "previous_headlines": [u["headline"] for u in list(self.history)[-3:]],
         }
 
+    def _notable(
+        self,
+        w: Window,
+        top_agents: list[dict[str, Any]],
+        threads: list[dict[str, Any]],
+        overwrites: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Deterministic storylines for this window: finished/started drawings, teams, raids,
+        repairs, moves and board activity. Each event carries a highlight the UI can link."""
+        run = self._run
+        name = run.agent_name
+        events: list[dict[str, Any]] = []
+
+        def ev(kind: str, text: str, hl: dict[str, Any] | None = None) -> None:
+            events.append({"kind": kind, "text": text, "highlight": hl})
+
+        def region(p: dict[str, Any]) -> dict[str, Any]:
+            x0, y0, x1, y1 = p["bbox"]
+            return {"type": "region", "x": x0, "y": y0, "w": x1 - x0 + 1, "h": y1 - y0 + 1}
+
+        def label(p: dict[str, Any]) -> str:
+            match p["tool"]:
+                case "draw_flag":
+                    return f"{p['what'].replace('_', ' ').title()} flag"
+                case "draw_text":
+                    return f"the words '{p['what']}'"
+            return f"a {p['what']}"
+
+        window_ids = {a["agent_id"] for a in w.actions}
+        touched = [self._projects[a] for a in window_ids if a in self._projects]
+        touched.sort(key=lambda p: p["ts"], reverse=True)
+        drawings = [
+            {
+                "agent_id": aid,
+                "name": name(aid),
+                "tool": p["tool"],
+                "what": p["what"],
+                "x": p["x"],
+                "y": p["y"],
+                "remaining": p["remaining"],
+                "done": p["done"],
+            }
+            for aid, p in self._projects.items()
+            if aid in window_ids
+        ]
+        # finished
+        for aid in window_ids:
+            p = self._projects.get(aid)
+            if p and p["done"] and p["key"] not in self._announced:
+                self._announced.add(p["key"])
+                ev(
+                    "finished",
+                    f"{name(aid)} finished {label(p)} at ({p['x']}, {p['y']}).",
+                    region(p),
+                )
+        # teams: several agents on the same kind of drawing close together
+        groups: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = {}
+        for aid in window_ids:
+            p = self._projects.get(aid)
+            if p and not p["done"]:
+                groups.setdefault((p["tool"], p["what"]), []).append((aid, p))
+        for members in groups.values():
+            members.sort(key=lambda m: (m[1]["x"], m[1]["y"]))
+            cluster: list[tuple[int, dict[str, Any]]] = []
+            for m in members:
+                if cluster and (
+                    abs(m[1]["x"] - cluster[-1][1]["x"]) > 96
+                    or abs(m[1]["y"] - cluster[-1][1]["y"]) > 96
+                ):
+                    cluster = []
+                cluster.append(m)
+                if len(cluster) == 3:
+                    who = ", ".join(name(a) for a, _ in cluster)
+                    p0 = cluster[0][1]
+                    ev(
+                        "team",
+                        f"{len(members)} agents are building {label(p0)} together around "
+                        f"({p0['x']}, {p0['y']}): {who}…",
+                        region(p0),
+                    )
+                    break
+        # raids and repairs
+        for (raider, victim), n in w.raids.most_common(3):
+            p = self._projects.get(victim)
+            where = f" at ({p['x']}, {p['y']})" if p else ""
+            target = label(p) if p else "their drawing"
+            ev(
+                "raid",
+                f"{name(raider)} painted over {n} px of {name(victim)}'s {target}{where}.",
+                region(p) if p else {"type": "agent", "id": raider},
+            )
+        for aid, n in w.repairs.most_common(2):
+            p = self._projects.get(aid)
+            if p:
+                ev("repair", f"{name(aid)} repaired {n} px of {label(p)}.", region(p))
+        plain = [o for o in overwrites if (o["by"], o["over"]) not in w.raids][:2]
+        for o in plain:
+            ev(
+                "overwrite",
+                f"{o['by_name']} painted over {o['pixels']} px of {o['over_name']}'s work.",
+                {"type": "agent", "id": o["by"]},
+            )
+        # started
+        for p in touched:
+            aid = next(a for a, q in self._projects.items() if q is p)
+            if not p["done"] and p["key"] not in self._announced:
+                self._announced.add(p["key"])
+                ev("started", f"{name(aid)} started {label(p)} at ({p['x']}, {p['y']}).", region(p))
+        # moves
+        for a in w.actions:
+            aid, x, y = a["agent_id"], int(a["args"]["x"]), int(a["args"]["y"])
+            prev = self._last_pos.get(aid)
+            if prev and abs(prev[0] - x) + abs(prev[1] - y) >= MOVE_DISTANCE:
+                ev(
+                    "move",
+                    f"{name(aid)} left ({prev[0]}, {prev[1]}) and is now working at ({x}, {y}).",
+                    {"type": "agent", "id": aid},
+                )
+            self._last_pos[aid] = (x, y)
+        # board
+        roots = [p for p in w.new_posts if p.get("parent_id") is None]
+        for p in roots[-2:]:
+            ev(
+                "thread",
+                f'{name(int(p["author_id"]))} opened "{str(p.get("title") or "")[:60]}".',
+                {"type": "thread", "id": int(p["thread_id"])},
+            )
+        for t in threads[:1]:
+            if t["new_posts"] >= 3:
+                ev(
+                    "hot_thread",
+                    f'"{t["title"][:60]}" is heating up: {t["new_posts"]} new posts.',
+                    {"type": "thread", "id": t["thread_id"]},
+                )
+        order = {
+            "finished": 0,
+            "team": 1,
+            "raid": 2,
+            "repair": 3,
+            "started": 4,
+            "move": 5,
+            "hot_thread": 6,
+            "overwrite": 7,
+            "thread": 8,
+        }
+        events.sort(key=lambda e: order.get(e["kind"], 9))
+        return events[:12], drawings[:15]
+
     @staticmethod
     def render_digest(d: dict[str, Any]) -> str:
         c, t = d["canvas"], d["totals"]
@@ -375,6 +614,22 @@ class Narrator:
             f"Last {d['window_seconds']}s: {d['turns']} turns, {d['pixels']} pixels "
             f"({d['claimed_blank']} on blank canvas), {d['posts']} posts.",
         ]
+        if d.get("events"):
+            lines.append("Notable events since the last update (most important first):")
+            lines += [f"- {e['text']}" for e in d["events"]]
+        if d.get("drawings"):
+            lines.append("Drawings in progress (agent, what, top-left, pixels left):")
+            lines += [
+                f"- agent {x['agent_id']} {x['name']}: {x['tool'].removeprefix('draw_')} "
+                f"'{x['what']}' at ({x['x']}, {x['y']}), "
+                + ("done" if x["done"] else f"{x['remaining']} px left")
+                for x in d["drawings"]
+            ]
+        if d.get("conversations"):
+            lines.append("Conversations (newest posts):")
+            for c in d["conversations"]:
+                lines.append(f'- thread {c["thread_id"]} "{c["title"]}"')
+                lines += [f"    {p}" for p in c["posts"]]
         if d["top_agents"]:
             lines.append("Most active agents:")
             lines += [
@@ -484,6 +739,13 @@ class Narrator:
         )
         bullets: list[str] = []
         highlights: list[Any] = []
+        for e in digest.get("events", [])[:4]:
+            bullets.append(e["text"])
+            if e.get("highlight"):
+                highlights.append(e["highlight"])
+        if bullets:
+            headline = bullets.pop(0)
+            return headline, bullets, highlights
         if digest["top_agents"]:
             a = digest["top_agents"][0]
             bullets.append(f"Most active: {a['name']} ({a['country']}), {a['pixels']} px.")
@@ -530,6 +792,7 @@ class Narrator:
             "headline": headline,
             "bullets": bullets,
             "highlights": self.clean_highlights(raw),
+            "events": [{"kind": e["kind"], "text": e["text"]} for e in digest.get("events", [])],
             "source": source,
             "error": error,
             "window": {

@@ -291,3 +291,59 @@ def test_random_runs_do_not_call_the_narrator_model() -> None:
     config = CONFIG.model_copy(update={"policy": "random"})
     run = Run("r", config, EventLog(), RandomWalkPolicy(seed=1), narrator_model=FakeNarratorModel())
     assert run.narrator._model is None
+
+
+def _action(tool: str, args: dict[str, Any], **result: Any) -> dict[str, Any]:
+    return {"tool": tool, "args": args, "result": result}
+
+
+def test_notable_events_cover_drawings_teams_raids_repairs_and_moves() -> None:
+    async def main() -> None:
+        run = Run("n", CONFIG, EventLog(), RandomWalkPolicy(seed=1), narrator_model=None)
+        n = run.agent_name
+        flag = {"country": "india", "x": 4, "y": 4, "width": 12}
+        run._on_write(1, "action", _action("draw_flag", flag, placed=4, remaining=92, done=False))
+        run._on_write(2, "action", _action("draw_flag", {**flag, "x": 20}, placed=4, remaining=1))
+        run._on_write(3, "action", _action("draw_flag", {**flag, "x": 30}, placed=4, remaining=1))
+        run._on_write(
+            4,
+            "action",
+            _action(
+                "draw_text",
+                {"text": "HI", "x": 40, "y": 20, "color": 5},
+                placed=8,
+                remaining=0,
+                done=True,
+            ),
+        )
+        # agent 2 raids agent 1's flag; agent 1 takes a pixel back (owner 0 means blank)
+        run._on_write(2, "pixel", {"x": 5, "y": 5, "color": 3, "prev_owner": 1})
+        run._on_write(2, "pixel", {"x": 6, "y": 5, "color": 3, "prev_owner": 1})
+        run._on_write(1, "pixel", {"x": 5, "y": 5, "color": 6, "prev_owner": 2})
+        digest = run.narrator.build_digest()
+        kinds = [e["kind"] for e in digest["events"]]
+        assert kinds[:4] == ["finished", "team", "raid", "repair"]
+        texts = " ".join(e["text"] for e in digest["events"])
+        assert f"{n(4)} finished the words 'HI' at (40, 20)" in texts
+        assert "3 agents are building India flag together" in texts
+        assert f"{n(2)} painted over 2 px of {n(1)}'s India flag at (4, 4)" in texts
+        assert f"{n(1)} repaired 1 px of India flag" in texts
+        assert f"{n(1)} started India flag at (4, 4)" in texts
+        assert len(digest["drawings"]) == 4
+        rendered = run.narrator.render_digest(digest)
+        assert "Notable events" in rendered and "Drawings in progress" in rendered
+        # fallback update is built from the events, and the update carries them
+        update = await run.narrator.tick()
+        assert update["headline"].startswith(f"{n(4)} finished")
+        assert update["events"][0]["kind"] == "finished"
+        assert any(h["type"] == "region" for h in update["highlights"])
+        # next window: a far jump is a move, 'started' is not repeated
+        run._on_write(
+            1, "action", _action("draw_flag", {**flag, "x": 500, "y": 300}, placed=4, remaining=92)
+        )
+        digest = run.narrator.build_digest()
+        kinds = [e["kind"] for e in digest["events"]]
+        assert "move" in kinds and kinds.count("started") == 1
+        assert f"{n(1)} left (4, 4)" in " ".join(e["text"] for e in digest["events"])
+
+    asyncio.run(main())
