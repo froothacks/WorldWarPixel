@@ -182,8 +182,23 @@ class ToolSet:
         self._spend("views", 1)
         return {"x": x, "y": y, "rows": self._canvas.view(x, y, w, h)}
 
+    def _own_words(self, *texts: str) -> None:
+        """Reject posts that parrot the organiser's pinned 📢 notices instead of answering them."""
+        if any("📢" in t or "ANNOUNCEMENT:" in t for t in texts):
+            raise ToolError(
+                "do not copy the 📢 notice; answer it in your own words with reply(thread_id=...)"
+            )
+
     def post_thread(self, title: str, body: str) -> dict[str, Any]:
         self._check("posts", 1)
+        self._own_words(title, body)
+        norm = title.strip().casefold()
+        for t in self._board.threads():
+            if (t.title or "").casefold() == norm:
+                raise ToolError(
+                    f"a thread titled {title.strip()!r} already exists (thread {t.id}); "
+                    "reply in it instead of starting another"
+                )
         try:
             post = self._board.post_thread(self._agent_id, title, body, self._clock())
         except BoardError as e:
@@ -194,6 +209,7 @@ class ToolSet:
 
     def reply(self, thread_id: int, body: str, parent_id: int | None = None) -> dict[str, Any]:
         self._check("posts", 1)
+        self._own_words(body)
         try:
             post = self._board.reply(self._agent_id, thread_id, body, self._clock(), parent_id)
         except BoardError as e:
