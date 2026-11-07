@@ -476,3 +476,29 @@ def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:
     asyncio.run(policy.act(agent, tools, obs))
     assert policy.stats["failures"] == 1 and len(slept) == 1
     assert llm_policy.RATE_LIMIT_BACKOFF[0] <= slept[0] <= llm_policy.RATE_LIMIT_BACKOFF[1]
+
+
+def test_tool_calls_left_in_text_are_parsed_and_run() -> None:
+    from worldwarpixel.sim.llm_policy import _text_tool_calls
+
+    text, calls = _text_tool_calls(
+        "Painting. <tool_call>place_pixels<arg_key>pixels</arg_key>"
+        "<arg_value>1,1,3 2,1,3</arg_value></tool_call>"
+        "<tool_call>reply<arg_key>thread_id</arg_key><arg_value>4</arg_value>"
+        "<arg_key>body</arg_key><arg_value>cut off mid"
+    )
+    assert text == "Painting. "
+    assert [(c.function.name, json.loads(c.function.arguments)) for c in calls] == [
+        ("place_pixels", {"pixels": "1,1,3 2,1,3"})
+    ]
+
+    agent, tools, obs, _ = _setup()
+    content = (
+        "Hi. <tool_call>place_pixels<arg_key>pixels</arg_key>"
+        "<arg_value>1,1,3 2,1,3</arg_value></tool_call>"
+    )
+    client = FakeClient([_response(content, [])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "<tool_call>" not in thought and "placed 2 px" in thought
+    assert policy.stats["no_tools"] == 0

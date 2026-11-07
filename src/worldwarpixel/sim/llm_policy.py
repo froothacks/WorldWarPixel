@@ -10,6 +10,7 @@ from typing import Any, cast
 from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import (
     ChatCompletionContentPartParam,
+    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
 )
@@ -166,6 +167,8 @@ SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
 READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 MAX_ROUNDS = 2
 PAINT_ROUNDS = 2
+_XML_CALL_RE = re.compile(r"<tool_call>\s*([\w.-]+)(.*?)(?=</tool_call>|<tool_call>|$)", re.S)
+_XML_ARG_RE = re.compile(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>", re.S)
 RATE_LIMIT_BACKOFF = (3.0, 8.0)
 """Seconds (min, max) an agent waits after a 429 so a shared endpoint is not hammered."""
 """Extra model calls in a turn while the agent keeps painting and has pixels left."""
@@ -503,9 +506,12 @@ class LLMPolicy:
             _sample(self._latency["model"], time.monotonic() - call_t0)
             self.stats.pop("last_error", None)
             msg = response.choices[0].message
-            if msg.content:
-                thoughts.append(msg.content.strip())
-            calls = msg.tool_calls or []
+            said = msg.content or ""
+            calls: list[Any] = list(msg.tool_calls or [])
+            if not calls and "<tool_call>" in said:
+                said, calls = _text_tool_calls(said)
+            if said.strip():
+                thoughts.append(said.strip())
             if not calls:
                 if round_no == 0:
                     self.stats["no_tools"] += 1
@@ -515,7 +521,7 @@ class LLMPolicy:
                     ChatCompletionMessageParam,
                     {
                         "role": "assistant",
-                        "content": msg.content or "",
+                        "content": said,
                         "tool_calls": [c.model_dump() for c in calls],
                     },
                 )
@@ -640,6 +646,31 @@ _FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in (
 
 
 _TRIPLE_RE = re.compile(r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)")
+
+
+def _text_tool_calls(content: str) -> tuple[str, list[ChatCompletionMessageFunctionToolCall]]:
+    """Tool calls some endpoints leave in the text (GLM style:
+    <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>). Returns the text
+    before the first call and the complete calls; a call cut off mid-value is dropped."""
+    calls: list[ChatCompletionMessageFunctionToolCall] = []
+    for m in _XML_CALL_RE.finditer(content):
+        body = m.group(2)
+        if body.count("<arg_value>") != body.count("</arg_value>"):
+            continue
+        args: dict[str, Any] = {}
+        for key, value in _XML_ARG_RE.findall(body):
+            try:
+                args[key] = json.loads(value)
+            except json.JSONDecodeError:
+                args[key] = value
+        calls.append(
+            ChatCompletionMessageFunctionToolCall(
+                id=f"text{len(calls)}",
+                type="function",
+                function={"name": m.group(1), "arguments": json.dumps(args)},  # type: ignore[arg-type]
+            )
+        )
+    return content.split("<tool_call>", 1)[0], calls
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:

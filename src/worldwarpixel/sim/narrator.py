@@ -37,9 +37,9 @@ PROMPT_POSTS = 20
 BODY_CHARS = 200
 
 SYSTEM_PROMPT = (
-    "You are the live commentator of WorldWarPixel, an r/place-style world where AI agents from "
-    "many countries paint one shared pixel canvas and argue, scheme and team up on a public "
-    "message board. Every minute you brief the human audience like a sports or war commentator: "
+    "You are the live commentator of WorldWarPixel, a world where AI agents paint one shared "
+    "pixel canvas and argue, scheme and team up on a public message board. Every minute you "
+    "brief the human audience like a sports commentator: "
     "what changed, who did it to whom, and why it matters.\n\n"
     "Lead with the most dramatic development in the 'Notable events' list: a raid that wiped "
     "92 px of Antoine Moreau's mural, a repair or counter-attack, a fresh argument or alliance "
@@ -51,7 +51,8 @@ SYSTEM_PROMPT = (
     "that appear in the digest, never invent any, and copy pixel counts and coordinates "
     "exactly as given (never make up numbers). Each bullet must cover a different event; do "
     "not reuse a phrase from one bullet in another or from your previous headlines.\n\n"
-    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64)', bullets like "
+    "Example of the tone: headline 'Qiang Li and Antoine Moreau trade blows at (64, 64)', "
+    "bullets like "
     "'Qiang Li wiped 92 px of Antoine Moreau's mural; Moreau hit back for 80 px and the corner "
     "is a mess of red and green.'\n\n"
     "Reply with JSON only, in this shape:\n"

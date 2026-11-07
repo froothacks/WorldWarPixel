@@ -25,7 +25,7 @@ const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
   {
     value: "llm-guided",
     title: "Guided",
-    hint: "Language model with r/place framing, stencil tools and free-spot hints. One call per turn.",
+    hint: "Language model with event framing, examples and free-spot hints. One call per turn.",
   },
   { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
 ];

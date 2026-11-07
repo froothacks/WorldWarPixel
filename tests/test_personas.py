@@ -159,7 +159,8 @@ SAMPLE = Respondent(
 
 def test_persona_text_is_the_respondents_own_answers_and_compact() -> None:
     text = persona_text("Rohan Mehta", SAMPLE, "India")
-    assert text.startswith("Rohan Mehta, a 41-year-old man from India")
+    assert text.startswith("Rohan Mehta, a 41-year-old man")
+    assert "Your home country is India." in text
     assert "place yourself at 4 on a 1 (left) to 10 (right) scale" in text
     assert "Hindu (Other Backward Castes)" in text
     sentences = [s for s in text.split(". ") if s]
@@ -172,12 +173,13 @@ def test_persona_text_is_the_respondents_own_answers_and_compact() -> None:
 def test_persona_text_skips_missing_answers() -> None:
     sparse = Respondent(source="synthetic", country_iso3="NGA", age=23, sex=2)
     text = persona_text("Ngozi Okafor", sparse, "Nigeria")
-    assert text.startswith("Ngozi Okafor, a 23-year-old woman from Nigeria")
+    assert text.startswith("Ngozi Okafor, a 23-year-old woman")
+    assert "from Nigeria" not in text and "Nigeria" in text
     assert "None" not in text and "left" not in text
     assert persona_text(
         "Li Wei", Respondent(source="synthetic", country_iso3="CHN", age=18, sex=1), "China"
-    ).startswith("Li Wei, an 18-year-old man from China")
-    assert "from the United States" in persona_text(
+    ).startswith("Li Wei, an 18-year-old man")
+    assert "home country is the United States" in persona_text(
         "Sam Hill",
         Respondent(source="synthetic", country_iso3="USA", age=30, sex=1),
         "United States",
@@ -242,6 +244,9 @@ def test_seed_agents_is_representative_named_and_reproducible() -> None:
         assert 0 <= a.home_x < 512 and 0 <= a.home_y < 320
     small = seed_agents(3, 64, 64, 1.0, random.Random(0))
     assert [a.country for a in small] and len(small) == 3
+    india = {a.color for a in agents if a.country == "India"}
+    loose = seed_agents(100, 512, 320, 10.0, random.Random(42), by_country=False)
+    assert len(india) == 1 and len({a.color for a in loose if a.country == "India"}) > 1
 
 
 def test_default_pool_picks_up_an_import_without_restart(

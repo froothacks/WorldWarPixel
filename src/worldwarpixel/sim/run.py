@@ -51,11 +51,12 @@ class RunConfig(BaseModel):
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    dispatch_interval: float = Field(
-        default=30.0,
+    dispatch_interval: float | None = Field(
+        default=None,
         ge=0,
         le=3600,
-        description="Seconds between World News dispatches (0 = off)",
+        description="Seconds between World News dispatches (0 = off; None = off in free-for-all, "
+        "else 30)",
     )
     post_cooldown_turns: int = Field(
         default=3, ge=0, le=100, description="Turns an agent sits out posting after it posts"
@@ -64,7 +65,7 @@ class RunConfig(BaseModel):
     seed: int | None = None
     policy: Literal["llm", "llm-guided", "random"] = Field(
         default="llm",
-        description="llm: free-for-all; llm-guided: adds r/place framing, stencils and hints",
+        description="llm: free-for-all; llm-guided: adds event framing, examples and hints",
     )
     model: str | None = Field(
         default=None,
@@ -129,7 +130,12 @@ class Run:
         self.hub = Hub()
         self.rng = random.Random(config.seed)
         self.agents = agents or seed_agents(
-            config.agents, config.width, config.height, config.cooldown, self.rng
+            config.agents,
+            config.width,
+            config.height,
+            config.cooldown,
+            self.rng,
+            by_country=config.policy != "llm",
         )
         self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
@@ -142,7 +148,13 @@ class Run:
             self.canvas,
             self.agents,
             publish=lambda post: self._on_write(DISPATCH_ID, "post", post.to_dict()),
-            interval=config.dispatch_interval,
+            interval=(
+                config.dispatch_interval
+                if config.dispatch_interval is not None
+                else 0.0
+                if config.policy == "llm"
+                else 30.0
+            ),
         )
         self._agent_turns: dict[int, int] = dict.fromkeys(self.by_id, 0)
         self._last_post_turn: dict[int, int] = {}
