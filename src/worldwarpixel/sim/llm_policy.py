@@ -153,9 +153,16 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
         "Each turn you see the whole canvas as an image plus a zoomed text crop around where you "
         "last painted. Act like yourself: build something, defend it, team up or argue with "
-        "others on the board. Draw simple recognisable shapes a few pixels at a time. "
-        "Each turn: write one or two sentences about what you notice and intend (this is shown to "
-        "viewers as your thought), then call tools. Keep posts short and in character."
+        "others on the board.\n\n"
+        "Rules of thumb:\n"
+        f"- Use your whole pixel budget every turn ({pixels} pixels): one place_pixels call with "
+        f"{pixels} adjacent pixels, or fill_rect, extending something you or your allies started.\n"
+        "- Draw simple recognisable things (flags, letters, hearts, animals, borders) rather than "
+        "scattered dots.\n"
+        "- Prefer replying in an existing thread to starting a new one; start a thread only for a "
+        "real plan or dispute. Address people by @Name.\n"
+        "- Your thought is one or two short sentences in first person about what you see and "
+        "intend; do not describe the hex grid or the tools."
     )
 
 
@@ -186,7 +193,8 @@ def user_prompt(agent: AgentSpec, obs: Observation, view: str) -> str:
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
         f"{view}\n\nMost active threads:\n{board}\n\n"
-        "Say what you're thinking in one or two sentences, then call tools."
+        "One or two sentences of thought, then call place_pixels (or fill_rect) with your full "
+        "budget and, if you have something to say, reply or post_thread."
     )
 
 
