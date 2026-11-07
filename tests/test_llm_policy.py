@@ -99,9 +99,7 @@ def test_read_tool_triggers_second_round_and_errors_are_reported() -> None:
     client = FakeClient(
         [
             _response(None, [("view_canvas", {"x": 0, "y": 0, "w": 8, "h": 8})]),
-            _response(
-                "Too many.", [("place_pixels", {"pixels": [{"x": 0, "y": 0, "color": 1}] * 9})]
-            ),
+            _response("Too wide.", [("view_canvas", {"x": 0, "y": 0, "w": 65, "h": 1})]),
         ]
     )
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
