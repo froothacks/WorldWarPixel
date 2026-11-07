@@ -570,6 +570,7 @@ class Narrator:
     def state(self) -> dict[str, Any]:
         return {
             "interval": self.interval,
+            "model": self._model is not None,
             "next_update_at": self.next_update_at,
             "stats": dict(self.stats),
             "updates": list(self.history),

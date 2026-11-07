@@ -3,6 +3,7 @@ import type { NarratorHighlight, NarratorState, NarratorUpdate, RunStats } from 
 
 interface Props {
   narrator: NarratorState | null;
+  paused: boolean;
   stats: RunStats;
   threads: number;
   onHighlight: (highlight: NarratorHighlight) => void;
@@ -11,20 +12,28 @@ interface Props {
 
 const CHIP_ICON = { agent: "@", thread: "#", region: "⌖" } as const;
 
-export default function NarratorDock({ narrator, stats, threads, onHighlight, onAsk }: Props) {
+export default function NarratorDock({ narrator, paused, stats, threads, onHighlight, onAsk }: Props) {
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now() / 1000);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
   const updates = narrator?.updates ?? [];
   const count = updates.length;
+  const hasModel = narrator?.model ?? true;
 
-  // Newest update at the bottom, like a chat: follow it as it arrives.
+  // Newest update at the bottom, like a chat: follow it as it arrives, unless the
+  // viewer has scrolled up to read (or click) older cards.
   useEffect(() => {
     const el = bodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && followRef.current) el.scrollTop = el.scrollHeight;
   }, [count, pending]);
+
+  const onScroll = () => {
+    const el = bodyRef.current;
+    if (el) followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now() / 1000), 1000);
@@ -51,13 +60,14 @@ export default function NarratorDock({ narrator, stats, threads, onHighlight, on
   const lastUpdate = [...updates].reverse().find((u) => u.kind === "update");
   const nextAt = lastUpdate ? lastUpdate.ts + interval : narrator?.next_update_at ?? null;
   const countdown = nextAt === null ? null : Math.max(0, Math.round(nextAt - now));
+  const status = paused ? " · paused" : countdown !== null ? ` · next in ${countdown} s` : "";
 
   return (
     <footer className="narrator">
       <div className="narrator-head">
         <strong>Narrator</strong>
         <span className="muted small">
-          every {interval} s{countdown !== null && ` · next in ${countdown} s`}
+          every {interval} s{status}
           {narrator && narrator.stats.failures > 0 && ` · ${narrator.stats.failures} failed model calls`}
         </span>
         <span className="spacer" />
@@ -65,7 +75,7 @@ export default function NarratorDock({ narrator, stats, threads, onHighlight, on
           {stats.turns.toLocaleString()} turns · {stats.pixels.toLocaleString()} px · {stats.posts.toLocaleString()} posts · {threads} threads
         </span>
       </div>
-      <div className="narrator-body" ref={bodyRef}>
+      <div className="narrator-body" ref={bodyRef} onScroll={onScroll}>
         {count === 0 && (
           <p className="narrator-empty small">
             {narrator ? `Waiting for the first update (every ${interval} s). Ask a question below in the meantime.` : "Connecting…"}
@@ -78,13 +88,13 @@ export default function NarratorDock({ narrator, stats, threads, onHighlight, on
       </div>
       <form className="narrator-ask" onSubmit={submit}>
         <input
-          placeholder="Ask the narrator… e.g. who is winning the top-left corner?"
+          placeholder={hasModel ? "Ask the narrator… e.g. who is winning the top-left corner?" : "No narrator model for this run (random agents) — stats-only updates"}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          disabled={pending || !narrator}
+          disabled={pending || !narrator || !hasModel}
           maxLength={500}
         />
-        <button type="submit" disabled={pending || !narrator || !question.trim()}>
+        <button type="submit" disabled={pending || !narrator || !hasModel || !question.trim()}>
           {pending ? "Asking…" : "Ask"}
         </button>
         {error && <span className="error" title={error}>{error}</span>}

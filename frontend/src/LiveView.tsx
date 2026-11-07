@@ -194,7 +194,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <Board runId={initial.id} threads={threads} agentName={agentName} version={boardVersion} totalThreads={run.threads} open={openThread} onOpen={setOpenThread} />
         )}
       </div>
-      <NarratorDock narrator={narrator} stats={run.stats} threads={run.threads} onHighlight={onHighlight} onAsk={ask} />
+      <NarratorDock narrator={narrator} paused={run.state !== "running"} stats={run.stats} threads={run.threads} onHighlight={onHighlight} onAsk={ask} />
     </div>
   );
 }

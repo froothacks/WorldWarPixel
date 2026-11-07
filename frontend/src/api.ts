@@ -128,6 +128,7 @@ export interface NarratorUpdate {
 
 export interface NarratorState {
   interval: number;
+  model: boolean;
   next_update_at: number | null;
   stats: NarratorStats;
   updates: NarratorUpdate[];
