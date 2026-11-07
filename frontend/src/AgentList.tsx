@@ -7,12 +7,14 @@ interface Props {
   selected: number | null;
   lastThought: Map<number, string>;
   onSelect: (id: number | null) => void;
+  /** Kept mounted while the drawer is open so the filter and Show more state survive. */
+  hidden?: boolean;
 }
 
 /** Rows rendered at once; with thousands of agents the DOM gets heavy, so the rest load on demand. */
 const MAX_ROWS = 400;
 
-export default function AgentList({ agents, palette, selected, lastThought, onSelect }: Props) {
+export default function AgentList({ agents, palette, selected, lastThought, onSelect, hidden = false }: Props) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(MAX_ROWS);
   const matching = useMemo(() => {
@@ -23,7 +25,7 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
   const active = agents.filter((a) => a.status !== "idle").length;
 
   return (
-    <aside className="agents">
+    <aside className="agents" style={hidden ? { display: "none" } : undefined}>
       <header className="panel-head">
         <span className="label">Agents</span>
         <span className="count">
