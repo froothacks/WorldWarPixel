@@ -1,8 +1,10 @@
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
+from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import RESYNC
@@ -66,3 +68,19 @@ def test_god_endpoints() -> None:
         assert client.post(f"/runs/{rid}/god/clear-canvas").status_code == 200
         assert client.get(f"/runs/{rid}/threads").json() == []
         client.post(f"/runs/{rid}/stop")
+
+
+def test_god_endpoints_can_be_locked_with_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOD_TOKEN", "s3cret")
+    get_settings.cache_clear()
+    try:
+        with TestClient(app) as client:
+            rid = client.post("/runs", json={**CONFIG.model_dump(), "policy": "random"}).json()[
+                "id"
+            ]
+            assert client.post(f"/runs/{rid}/god/clear-board").status_code == 403
+            ok = client.post(f"/runs/{rid}/god/clear-board", headers={"X-God-Token": "s3cret"})
+            assert ok.status_code == 200
+            client.post(f"/runs/{rid}/stop")
+    finally:
+        get_settings.cache_clear()

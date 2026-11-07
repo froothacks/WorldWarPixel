@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     agent_vision: bool = True
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
+    god_token: SecretStr = SecretStr("")
+    """When set, god-mode endpoints require this value in the X-God-Token header."""
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"

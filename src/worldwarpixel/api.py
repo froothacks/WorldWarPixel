@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -15,6 +16,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
+from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
@@ -123,6 +125,16 @@ async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     return run.summary()
 
 
+def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
+    """God endpoints are open unless GOD_TOKEN is configured; then the header must match."""
+    expected = get_settings().god_token.get_secret_value()
+    if expected and not secrets.compare_digest(x_god_token or "", expected):
+        raise HTTPException(403, "god mode requires a valid X-God-Token")
+
+
+GodDep = Annotated[None, Depends(require_god)]
+
+
 class GodPixels(BaseModel):
     pixels: list[tuple[int, int, int]] = Field(max_length=50_000)
     erase: bool = False
@@ -139,27 +151,31 @@ class GodPace(BaseModel):
 
 
 @router.post("/{run_id}/god/pixels")
-async def god_pixels(run_id: str, body: GodPixels, manager: ManagerDep) -> dict[str, Any]:
+async def god_pixels(
+    run_id: str, body: GodPixels, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
     run = manager.get(run_id)
     return {"placed": run.god_paint(body.pixels, body.erase)}
 
 
 @router.post("/{run_id}/god/clear-canvas")
-async def god_clear_canvas(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+async def god_clear_canvas(run_id: str, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = manager.get(run_id)
     run.god_clear_canvas()
     return run.summary()
 
 
 @router.post("/{run_id}/god/clear-board")
-async def god_clear_board(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+async def god_clear_board(run_id: str, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = manager.get(run_id)
     run.god_clear_board()
     return run.summary()
 
 
 @router.post("/{run_id}/god/announce", status_code=201)
-async def god_announce(run_id: str, body: GodAnnouncement, manager: ManagerDep) -> dict[str, Any]:
+async def god_announce(
+    run_id: str, body: GodAnnouncement, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
     run = manager.get(run_id)
     try:
         return run.god_announce(body.title, body.body)
@@ -168,7 +184,7 @@ async def god_announce(run_id: str, body: GodAnnouncement, manager: ManagerDep) 
 
 
 @router.post("/{run_id}/god/pace")
-async def god_pace(run_id: str, body: GodPace, manager: ManagerDep) -> dict[str, Any]:
+async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = manager.get(run_id)
     run.god_set_pace(body.cooldown, body.pixels_per_turn)
     return run.summary()
