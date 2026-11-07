@@ -65,6 +65,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
   const history = fresh?.thoughts ?? [];
   // The snapshot's agent list is static; the detail fetch has where the agent is painting now.
   const pos = fresh ?? agent;
+  const card = fresh?.persona_card ?? {};
   const thoughts = [...liveThoughts, ...history]
     .filter((t) => (seen.has(t.ts) ? false : (seen.add(t.ts), true)))
     .sort((a, b) => b.ts - a.ts)
@@ -87,21 +88,21 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
           <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
           <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
         </dl>
-        <p className="small persona">{agent.persona}</p>
-        {agent.persona_card && Object.keys(agent.persona_card).length > 0 && (
+        <p className="small persona">{fresh?.persona ?? "Loading persona…"}</p>
+        {Object.keys(card).length > 0 && (
           <details className="prompt">
             <summary className="muted small">
-              Persona card · {agent.persona_card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}
-              {agent.persona_card.survey_country && agent.persona_card.survey_country !== agent.country
-                ? ` (proxy: ${agent.persona_card.survey_country})`
+              Persona card · {card.source === "wvs7" ? "WVS Wave 7 respondent" : "synthetic respondent"}
+              {card.survey_country && card.survey_country !== agent.country
+                ? ` (proxy: ${card.survey_country})`
                 : ""}
             </summary>
             <dl className="facts small">
-              {CARD_FIELDS.filter(([key]) => agent.persona_card[key] != null && agent.persona_card[key] !== "").map(
+              {CARD_FIELDS.filter(([key]) => card[key] != null && card[key] !== "").map(
                 ([key, label]) => (
                   <Fragment key={key}>
                     <dt>{label}</dt>
-                    <dd>{formatValue(agent.persona_card[key])}</dd>
+                    <dd>{formatValue(card[key])}</dd>
                   </Fragment>
                 ),
               )}
