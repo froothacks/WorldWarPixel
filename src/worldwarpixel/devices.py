@@ -233,6 +233,7 @@ async def device_socket(websocket: WebSocket) -> None:
     seen = 0
     app = websocket.app
     busy: asyncio.Task[None] | None = None
+    clip_run: Run | None = None
 
     async def push() -> None:
         nonlocal seen
@@ -255,11 +256,10 @@ async def device_socket(websocket: WebSocket) -> None:
         seen = run.societies.moves
         await websocket.send_json(device_state(run, device, voice))
 
-    async def finish(pcm: bytes) -> None:
+    async def finish(pcm: bytes, run: Run | None) -> None:
         voice.update(status="transcribing", error=None)
         try:
             await push()
-            run = current_run(app.state.runs)
             if run is None:
                 raise ValueError("no running world with societies")
             transcript = await transcribe(app, pcm, rate)
@@ -302,6 +302,7 @@ async def device_socket(websocket: WebSocket) -> None:
             elif kind == "voice.start":
                 rate = int(data.get("rate", RATE))
                 clip = bytearray()
+                clip_run = current_run(app.state.runs)
                 voice.update(status="listening", error=None)
             elif kind == "voice.cancel":
                 clip = None
@@ -309,7 +310,7 @@ async def device_socket(websocket: WebSocket) -> None:
             elif kind == "voice.end" and clip is not None:
                 pcm, clip = bytes(clip), None
                 if busy is None or busy.done():
-                    busy = asyncio.create_task(finish(pcm))
+                    busy = asyncio.create_task(finish(pcm, clip_run))
     except WebSocketDisconnect:
         pass
     finally:
