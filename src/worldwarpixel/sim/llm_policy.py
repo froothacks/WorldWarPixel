@@ -412,9 +412,12 @@ class LLMPolicy:
         reasoning_effort: str = "",
     ) -> None:
         self._client = client
-        self._extra_body: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
-        if reasoning_effort:
-            self._extra_body["reasoning_effort"] = reasoning_effort
+        # GLM ignores reasoning_effort and thinks until the token cap when enable_thinking is off.
+        self._extra_body: dict[str, Any] = (
+            {"reasoning_effort": reasoning_effort}
+            if reasoning_effort
+            else {"chat_template_kwargs": {"enable_thinking": False}}
+        )
         self._guided = guided
         self._model = model
         self._timeout = timeout

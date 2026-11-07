@@ -450,6 +450,7 @@ def test_reasoning_effort_is_sent_only_when_configured() -> None:
     first, second = client.chat.completions.requests
     assert "reasoning_effort" not in first["extra_body"]
     assert second["extra_body"]["reasoning_effort"] == "low"
+    assert "chat_template_kwargs" not in second["extra_body"]
 
 
 def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:

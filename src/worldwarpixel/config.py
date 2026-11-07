@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     agent_text_only: str = ""
     """Comma-separated agent model ids that get no canvas image (images make GLM ramble)."""
     agent_reasoning_effort: str = ""
-    """Sent as reasoning_effort on agent calls when set ("low" keeps GLM-style thinkers brief)."""
+    """reasoning_effort for AGENT_ENDPOINTS models, replacing enable_thinking=False ("low")."""
     narrator_model: str | None = None
     agent_vision: bool = True
     modal_key: SecretStr = SecretStr("")
