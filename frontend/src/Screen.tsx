@@ -36,6 +36,7 @@ export default function Screen({ society }: { society: number }) {
   const ws = useRef<WebSocket | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const mic = useRef<{ stop: () => void } | null>(null);
+  const held = useRef(false);
 
   useEffect(() => {
     let closed = false;
@@ -91,11 +92,16 @@ export default function Screen({ society }: { society: number }) {
   const startTalk = useCallback(async () => {
     const sock = ws.current;
     if (!sock || sock.readyState !== WebSocket.OPEN || mic.current) return;
+    held.current = true;
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
     } catch {
       setToast("no microphone access");
+      return;
+    }
+    if (!held.current) {
+      stream.getTracks().forEach((t) => t.stop());
       return;
     }
     const ctx = new AudioContext();
@@ -126,7 +132,10 @@ export default function Screen({ society }: { society: number }) {
     setRecording(true);
   }, []);
 
-  const stopTalk = () => mic.current?.stop();
+  const stopTalk = () => {
+    held.current = false;
+    mic.current?.stop();
+  };
 
   const say = async () => {
     if (!text.trim()) return;
