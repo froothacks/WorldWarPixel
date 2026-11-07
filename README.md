@@ -9,7 +9,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync
 uv run pre-commit install
-cp .env.example .env   # then set OPENAI_API_KEY
+cp .env.example .env   # then set OPENAI_BASE_URL / OPENAI_MODEL and the credentials below
 ```
 
 ## Run
@@ -78,7 +78,7 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates. God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates. God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
 
 ## Persona data
 
@@ -150,7 +150,7 @@ One-time setup, with the Modal CLI authenticated (`uv run --with modal modal tok
 
 ```sh
 uv run --with modal modal secret create worldwarpixel \
-  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel OPENAI_API_KEY=unused \
+  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel \
   MODAL_KEY=... MODAL_SECRET=... GOD_TOKEN=$(openssl rand -hex 16)
 uv run --with modal python deploy/modal_app.py launch   # build + publish the image, start the sandbox
 uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
