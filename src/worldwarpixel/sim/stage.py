@@ -414,6 +414,7 @@ class Stage:
             ev.set()
 
     async def _verdict(self) -> None:
+        debate = self.debate_id
         tally = self.tally()
         by_id = self._run.by_id
         a, b = (by_id[i] for i in self.debaters)
@@ -446,7 +447,8 @@ class Stage:
             )
         self.stats["debates"] += 1
         await self._play(await self._narrator_line(text, "Narrator", "verdict"))
-        self.end_debate()
+        if self.debate_id == debate and self.phase == "voting":
+            self.end_debate()
 
     async def _play(self, line: dict[str, Any]) -> None:
         self._emit(line)

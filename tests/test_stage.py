@@ -95,6 +95,38 @@ def test_auto_stage_with_one_agent_waits_before_retrying() -> None:
     asyncio.run(main())
 
 
+def test_old_verdict_does_not_end_a_new_debate() -> None:
+    async def main() -> None:
+        run = make_run(speech=FakeSpeech(seconds=0.5))
+        run.stage.lines_per_debate = 1
+        run.stage.vote_seconds = 0.01
+        await run.start()
+        run.stage.start_debate(1, 2)
+
+        await wait_for(lambda: run.stage.phase == "voting")
+        await wait_for(lambda: any(line["kind"] == "verdict" for line in run.stage.transcript))
+
+        old_debate = run.stage.debate_id
+        run.stage.end_debate()
+        run.stage.lines_per_debate = 10
+        run.stage.start_debate(3, 4)
+        new_debate = run.stage.debate_id
+        await asyncio.sleep(0.6)
+        phase, debaters, debate_id = (
+            run.stage.phase,
+            run.stage.debaters,
+            run.stage.debate_id,
+        )
+        await run.stop()
+
+        assert new_debate != old_debate
+        assert phase == "debating"
+        assert debaters == [3, 4]
+        assert debate_id == new_debate
+
+    asyncio.run(main())
+
+
 def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
     async def main() -> None:
         model, speech = FakeModel(), FakeSpeech()
