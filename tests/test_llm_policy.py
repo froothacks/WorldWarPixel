@@ -3,22 +3,18 @@ import json
 import random
 from typing import Any
 
-import pytest
-
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.llm_policy import (
     LLMPolicy,
     _canonical_tool,
-    _match_name,
     _parse_pixel_list,
     pick_threads,
     system_prompt,
     user_prompt,
 )
-from worldwarpixel.sim.stencils import FLAGS, flag_cells, shape_cells, text_cells
-from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+from worldwarpixel.sim.tools import ToolSet, TurnBudget
 
 
 class _Obj:
@@ -145,6 +141,40 @@ def test_system_prompt_does_not_assign_a_usual_colour() -> None:
     agent, *_ = _setup()
     prompt = system_prompt(agent, 64, 40, 4, 1)
     assert "usual colour" not in prompt.lower()
+
+
+def test_only_pixels_are_exposed_as_a_drawing_tool() -> None:
+    agent, _, obs, _ = _setup()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    names = [tool["function"]["name"] for tool in policy._tools_for(obs)]
+    removed = (
+        "draw_" + "flag",
+        "draw_" + "text",
+        "draw_" + "shape",
+        "fill" + "_rect",
+    )
+    assert [name for name in names if name == "place_pixels" or name in removed] == ["place_pixels"]
+    prompt = system_prompt(agent, 64, 40, 4, 1)
+    assert all(name not in prompt for name in removed)
+
+
+def test_removed_tool_calls_use_the_unknown_tool_error_path() -> None:
+    async def main() -> None:
+        agent, tools, obs, _ = _setup()
+        removed = (
+            "draw_" + "flag",
+            "draw_" + "text",
+            "draw_" + "shape",
+            "fill" + "_rect",
+            "draw_" + "flag_on_canvas",
+        )
+        client = FakeClient([_response(None, [(name, {}) for name in removed])])
+        policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+        thought = await policy.act(agent, tools, obs)
+        assert all(f"unknown tool {name}" in thought for name in removed)
+        assert policy.stats["tool_errors"] == len(removed)
+
+    asyncio.run(main())
 
 
 def test_follow_up_failure_keeps_completed_actions() -> None:
@@ -294,66 +324,16 @@ def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
     assert "post_thread" not in names and "reply" not in names
 
 
-def test_flag_cells_have_expected_layout() -> None:
-    cells = {(x, y): c for x, y, c in flag_cells("india", 10, 20, 30)}
-    assert cells[(10, 20)] == 6 and cells[(10, 39)] == 10  # orange top, green bottom
-    assert cells[(25, 30)] == 13  # dark blue disc in the centre
-    assert len(cells) == 30 * 20
-
-
-def test_text_cells_render_letters() -> None:
-    cells = text_cells("HI", 0, 0, 5)
-    assert all(c == 5 for _, _, c in cells)
-    assert (0, 0, 5) in cells and (1, 0, 5) not in cells  # H has a gap in the top row
-    assert max(x for x, _, _ in cells) == 6  # second glyph starts at x=4
-
-
-def test_paint_stencil_is_progressive_and_skips_matching_pixels() -> None:
-    canvas, board = Canvas(32, 32), Board()
-    cells = shape_cells("heart", 0, 0, 5, 3)
-
-    def fresh() -> ToolSet:
-        return ToolSet(canvas, board, 1, TurnBudget(pixels=10), lambda k, p: None, lambda: 0.0)
-
-    tools = fresh()
-    first = tools.paint_stencil(cells)
-    assert first["placed"] == 10 and first["remaining"] == len(cells) - 10 and not first["done"]
-    for _ in range(10):
-        out = fresh().paint_stencil(cells)
-        if out["done"]:
-            break
-    assert all(canvas.get(x, y) == c for x, y, c in cells)
-    assert fresh().paint_stencil(cells)["placed"] == 0
-    # Another agent's same-coloured pixel is reclaimed rather than skipped.
-    canvas.write(PixelWrite(cells[0][0], cells[0][1], cells[0][2], agent_id=2))
-    assert fresh().paint_stencil(cells)["placed"] == 1 and canvas.owner(*cells[0][:2]) == 1
-
-
-def test_paint_stencil_paints_colour_changes_before_claiming_blank_cells() -> None:
-    canvas, board = Canvas(64, 64), Board()
-    cells = flag_cells("japan", 0, 0, 24)  # mostly white on a white canvas
-    tools = ToolSet(canvas, board, 1, TurnBudget(pixels=8), lambda k, p: None, lambda: 0.0)
-    tools.paint_stencil(cells)
-    assert sum(1 for x, y, c in cells if c == 5 and canvas.get(x, y) == 5) == 8
-
-
-def test_match_name_handles_sloppy_country_strings() -> None:
-    assert _match_name("Flag of India", FLAGS, "usa") == "india"
-    assert _match_name("United States", FLAGS, "india") == "usa"
-    assert _match_name("Narnia", FLAGS, "japan") == "japan"
-
-
 def test_invented_tool_names_map_onto_real_tools() -> None:
     assert _canonical_tool("put_pixels") == "place_pixels"
     assert _canonical_tool("draw_image") == "view_canvas"
     assert _canonical_tool("see_canvas") == "view_canvas"
     assert _canonical_tool("reply") == "reply"
     assert _canonical_tool("view_thread") == "read_thread"
-    assert _canonical_tool("draw_flag_on_canvas") == "draw_flag"
     assert _canonical_tool("teleport") == "teleport"
 
 
-def test_successful_tool_calls_emit_action_events() -> None:
+def test_successful_pixel_calls_emit_action_events() -> None:
     canvas, board = Canvas(64, 40), Board()
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentSpec(1, "Priya Raman", "India", 5, 10, 10, 1.0, "Priya.")
@@ -362,61 +342,16 @@ def test_successful_tool_calls_emit_action_events() -> None:
     )
     obs = Observation(1.0, tools.budget, 64, 40, [])
     client = FakeClient(
-        [_response("Flag.", [("draw_flag", {"country": "india", "x": 2, "y": 2, "width": 9})])]
+        [
+            _response(
+                "Painting.",
+                [("place_pixels", {"pixels": [{"x": 2, "y": 2, "color": 5}]})],
+            )
+        ]
     )
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     asyncio.run(policy.act(agent, tools, obs))
     actions = [p for k, p in events if k == "action"]
-    assert len(actions) == 1 and actions[0]["tool"] == "draw_flag"
-    assert actions[0]["args"]["country"] == "india" and actions[0]["result"]["placed"] == 40
-
-
-def test_new_drawing_on_top_of_another_agents_drawing_is_shifted_alongside() -> None:
-    canvas, board = Canvas(128, 64), Board()
-    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
-    first = AgentSpec(1, "A", "India", 5, 0, 0, 1.0, "A.")
-    second = AgentSpec(2, "B", "Japan", 6, 0, 0, 1.0, "B.")
-    flag = {"country": "india", "x": 10, "y": 10, "width": 12}
-
-    def tools_for(agent: AgentSpec) -> ToolSet:
-        return ToolSet(
-            canvas, board, agent.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0
-        )
-
-    a1 = dict(flag)
-    policy._dispatch(first, tools_for(first), "draw_flag", a1)
-    policy._projects[first.id] = ("draw_flag", a1, 100)
-    a2 = dict(flag)
-    policy._dispatch(second, tools_for(second), "draw_flag", a2)
-    assert a2["x"] == 24 and a2["y"] == 10 and a2["moved"]
-    # a scaled text's footprint is respected, and a drawing that cannot fit to the right goes left
-    third = AgentSpec(3, "C", "Peru", 7, 0, 0, 1.0, "C.")
-    policy._projects[second.id] = ("draw_text", {"text": "HI", "x": 60, "y": 10, "scale": 3}, 5)
-    a3 = {"shape": "heart", "x": 60, "y": 10, "color": 5, "scale": 1}
-    policy._dispatch(third, tools_for(third), "draw_shape", a3)
-    assert a3["x"] == 60 + 2 * 4 * 3 + 2
-    policy._projects[second.id] = (
-        "draw_flag",
-        {"country": "japan", "x": 100, "y": 10, "width": 36},
-        5,
-    )
-    a4 = {"country": "peru", "x": 100, "y": 10, "width": 20}
-    policy._dispatch(third, tools_for(third), "draw_flag", a4)
-    assert a4["x"] == 100 - 20 - 2
-    # no room right, left or below: the drawing stays put instead of leaving the canvas
-    small = Canvas(40, 20)
-    tiny = ToolSet(small, board, third.id, TurnBudget(pixels=4), lambda k, p: None, lambda: 0.0)
-    policy._projects[second.id] = (
-        "draw_flag",
-        {"country": "japan", "x": 2, "y": 2, "width": 36},
-        5,
-    )
-    a5 = {"country": "peru", "x": 2, "y": 2, "width": 36}
-    policy._dispatch(third, tiny, "draw_flag", a5)
-    assert (a5["x"], a5["y"]) == (2, 2) and "moved" not in a5
-    with pytest.raises(ToolError):
-        tiny.paint_stencil([(100, 100, 5)])
-    # the first agent continuing its own flag is never moved
-    again = dict(flag)
-    policy._dispatch(first, tools_for(first), "draw_flag", again)
-    assert again["x"] == 10 and "moved" not in again
+    assert len(actions) == 1 and actions[0]["tool"] == "place_pixels"
+    assert actions[0]["args"] == {"count": 1, "x": 2, "y": 2}
+    assert actions[0]["result"]["placed"] == 1
