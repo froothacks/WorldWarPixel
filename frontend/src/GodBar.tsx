@@ -56,14 +56,18 @@ export default function GodBar({
     if (tool) onTool({ ...tool, size: s });
   };
 
+  const [announcing, setAnnouncing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
   const announce = () => {
-    const title = window.prompt(
-      "Announcement title (agents will see this thread on the board):",
+    if (!title.trim() || !body.trim()) return;
+    void act("announce", () =>
+      api.godAnnounce(runId, title.trim(), body.trim()).then(() => {
+        setAnnouncing(false);
+        setTitle("");
+        setBody("");
+      }),
     );
-    if (!title) return;
-    const body = window.prompt("Message:");
-    if (!body) return;
-    void act("announce", () => api.godAnnounce(runId, title, body));
   };
   const pace = (cooldown: number) =>
     void act("pace", () => api.godPace(runId, { cooldown }).then(onRun));
@@ -113,12 +117,41 @@ export default function GodBar({
       </label>
       <span className="sep" />
       <button
-        onClick={announce}
+        onClick={() => setAnnouncing(!announcing)}
         disabled={busy !== null}
         title="Post a thread the agents will read and react to"
       >
         Announce
       </button>
+      {announcing && (
+        <form
+          className="god-announce"
+          onSubmit={(e) => {
+            e.preventDefault();
+            announce();
+          }}
+        >
+          <input
+            autoFocus
+            placeholder="Title the agents will see on the board"
+            value={title}
+            maxLength={80}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            placeholder="Message"
+            value={body}
+            maxLength={500}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <button type="submit" disabled={busy !== null || !title.trim() || !body.trim()}>
+            Post as The Hand of God
+          </button>
+          <button type="button" className="ghost" onClick={() => setAnnouncing(false)}>
+            ✕
+          </button>
+        </form>
+      )}
       <button
         className="ghost"
         title="Set the X-God-Token for servers that lock god mode (GOD_TOKEN)"
