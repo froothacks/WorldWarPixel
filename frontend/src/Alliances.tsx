@@ -11,40 +11,25 @@ interface Props {
   hidden?: boolean;
 }
 
-interface Node {
-  country: string;
-  agents: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-}
-
 const POLL_MS = 3000;
-/** Only the strongest relations are drawn; random brains raid everyone, which is unreadable as a graph. */
-const MAX_EDGES = 60;
-const MAX_NODES = 40;
-const TICKS_PER_UPDATE = 150;
+/** Keep the picture readable: a handful of the most active countries and their strongest ties. */
+const MAX_NODES = 10;
+const MAX_EDGES = 14;
 
-type Relation = "allies" | "rivals" | "tense";
+type Relation = "allies" | "rivals";
 
-function relation(e: WorldEdge): Relation {
-  const raids = e.raids_ab + e.raids_ba;
-  if (raids === 0) return "allies";
-  if (e.talk === 0) return "rivals";
-  const r = raids / (raids + e.talk * 10);
-  return r > 0.6 ? "rivals" : r < 0.3 ? "allies" : "tense";
-}
-
-const STROKE: Record<Relation, string> = { allies: "#7aa7ff", rivals: "#e5534b", tense: "#d9b44a" };
+const weight = (e: WorldEdge) => e.talk * 10 + e.raids_ab + e.raids_ba;
+const relation = (e: WorldEdge): Relation => (e.talk * 10 >= e.raids_ab + e.raids_ba ? "allies" : "rivals");
+const STROKE: Record<Relation, string> = {
+  allies: "#7aa7ff",
+  rivals: "#e5534b",
+};
 
 export default function Alliances({ runId, running, agents, palette, highlight, onHighlight, hidden = false }: Props) {
   const [graph, setGraph] = useState<WorldGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 300, h: 300 });
   const wrap = useRef<HTMLDivElement>(null);
-  const nodes = useRef(new Map<string, Node>());
-  const [pos, setPos] = useState(new Map<string, Node>());
 
   useEffect(() => {
     let cancelled = false;
@@ -99,163 +84,125 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
 
   const shown = useMemo(() => {
     if (!graph) return { nodes: [] as string[], edges: [] as WorldEdge[] };
-    const weight = (e: WorldEdge) => e.talk * 10 + e.raids_ab + e.raids_ba;
-    const strongest = [...graph.edges].sort((a, b) => weight(b) - weight(a));
-    const floor = strongest.length ? weight(strongest[0]) * 0.05 : 0;
-    const edges: WorldEdge[] = [];
-    const names: string[] = [];
-    const keep = new Set<string>();
-    for (const e of strongest) {
-      if (edges.length >= MAX_EDGES || weight(e) < floor) break;
-      const add = [e.a, e.b].filter((n) => !keep.has(n));
-      if (keep.size + add.length > MAX_NODES) continue;
-      for (const n of add) {
-        keep.add(n);
-        names.push(n);
-      }
-      edges.push(e);
+    const activity = new Map<string, number>();
+    for (const e of graph.edges) {
+      activity.set(e.a, (activity.get(e.a) ?? 0) + weight(e));
+      activity.set(e.b, (activity.get(e.b) ?? 0) + weight(e));
     }
-    if (names.length === 0)
-      for (const n of [...graph.nodes].sort((a, b) => b.agents - a.agents).slice(0, 12)) names.push(n.country);
-    return { nodes: names, edges };
-  }, [graph]);
-
-  // Fruchterman-Reingold with a cooling temperature: a short burst of ticks after each poll,
-  // positions persist between polls so the picture does not jump.
-  useEffect(() => {
-    if (!graph) return;
-    const { w, h } = size;
-    if (w < 40 || h < 40) return;
     const pop = new Map(graph.nodes.map((n) => [n.country, n.agents]));
-    const live = nodes.current;
-    for (const name of shown.nodes) {
-      const n = live.get(name);
-      if (n) n.agents = pop.get(name) ?? 1;
-      else {
-        const a = Math.random() * Math.PI * 2;
-        const r = Math.min(w, h) * (0.2 + Math.random() * 0.2);
-        live.set(name, { country: name, agents: pop.get(name) ?? 1, x: w / 2 + Math.cos(a) * r, y: h / 2 + Math.sin(a) * r, vx: 0, vy: 0 });
-      }
-    }
-    for (const k of [...live.keys()]) if (!shown.nodes.includes(k)) live.delete(k);
-    const list = [...live.values()];
-    const maxW = shown.edges.reduce((m, e) => Math.max(m, e.talk * 10 + e.raids_ab + e.raids_ba), 1);
-    const k = Math.sqrt((w * h) / Math.max(2, list.length)) * 0.8;
-    let t = Math.min(w, h) / 6;
-    const cool = Math.pow(1 / t, 1 / TICKS_PER_UPDATE);
-    let ticks = 0;
-    let raf = 0;
-    const step = () => {
-      for (const n of list) {
-        n.vx = (w / 2 - n.x) * 0.05;
-        n.vy = (h / 2 - n.y) * 0.05;
-      }
-      for (let i = 0; i < list.length; i++)
-        for (let j = i + 1; j < list.length; j++) {
-          const a = list[i];
-          const b = list[j];
-          let dx = a.x - b.x;
-          let dy = a.y - b.y;
-          let d = Math.hypot(dx, dy);
-          if (d < 1) {
-            dx = Math.random() - 0.5;
-            dy = Math.random() - 0.5;
-            d = 1;
-          }
-          const f = (k * k) / d;
-          a.vx += (dx / d) * f;
-          a.vy += (dy / d) * f;
-          b.vx -= (dx / d) * f;
-          b.vy -= (dy / d) * f;
-        }
-      for (const e of shown.edges) {
-        const a = live.get(e.a);
-        const b = live.get(e.b);
-        if (!a || !b) continue;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const d = Math.max(1, Math.hypot(dx, dy));
-        const strength = 0.3 + (0.7 * (e.talk * 10 + e.raids_ab + e.raids_ba)) / maxW;
-        const f = ((d * d) / k) * strength;
-        a.vx += (dx / d) * f;
-        a.vy += (dy / d) * f;
-        b.vx -= (dx / d) * f;
-        b.vy -= (dy / d) * f;
-      }
-      for (const n of list) {
-        const d = Math.hypot(n.vx, n.vy);
-        const m = Math.min(d, t) / Math.max(d, 1e-6);
-        n.x = Math.min(w - 28, Math.max(28, n.x + n.vx * m));
-        n.y = Math.min(h - 28, Math.max(28, n.y + n.vy * m));
-      }
-      t = Math.max(0.5, t * cool);
-      setPos(new Map(list.map((n) => [n.country, { ...n }])));
-      if (++ticks < TICKS_PER_UPDATE) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [graph, shown, size]);
+    const top = [...activity.keys()].sort((a, b) => activity.get(b)! - activity.get(a)!).slice(0, MAX_NODES);
+    if (highlight && pop.has(highlight) && !top.includes(highlight)) top.splice(MAX_NODES - 1, 1, highlight);
+    const keep = new Set(top);
+    const edges = graph.edges
+      .filter((e) => keep.has(e.a) && keep.has(e.b))
+      .sort((a, b) => weight(b) - weight(a))
+      .slice(0, MAX_EDGES);
+    // Seat by population so the ring order only changes when the cast does.
+    const nodes = top.sort((a, b) => (pop.get(b) ?? 0) - (pop.get(a) ?? 0) || a.localeCompare(b));
+    return { nodes, edges };
+  }, [graph, highlight]);
 
-  const radius = (agents: number) => 5 + Math.sqrt(agents) * 2.2;
+  const layout = useMemo(() => {
+    const { w, h } = size;
+    const cx = w / 2;
+    const cy = h / 2;
+    // an ellipse uses the tall, narrow panel; labels sit above/below their node and are clamped inside
+    const rx = Math.max(30, w / 2 - 30);
+    const ry = Math.max(30, h / 2 - 30);
+    const pos = new Map<string, { x: number; y: number; angle: number }>();
+    shown.nodes.forEach((name, i) => {
+      const angle = -Math.PI / 2 + (i / Math.max(1, shown.nodes.length)) * Math.PI * 2;
+      pos.set(name, { x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry, angle });
+    });
+    return { pos, cx, cy };
+  }, [shown, size]);
+
+  const pop = useMemo(() => new Map(graph?.nodes.map((n) => [n.country, n.agents]) ?? []), [graph]);
+  const maxPop = Math.max(1, ...shown.nodes.map((n) => pop.get(n) ?? 1));
+  const maxW = Math.max(1, ...shown.edges.map(weight));
+  const radius = (country: string) => 5 + 9 * Math.sqrt((pop.get(country) ?? 1) / maxPop);
   const edgeTitle = (e: WorldEdge) =>
-    `${e.a} ↔ ${e.b}: ${e.talk} replies/mentions · ${e.a} overpainted ${e.raids_ab.toLocaleString()} px of ${e.b}, ${e.b} overpainted ${e.raids_ba.toLocaleString()} px of ${e.a}`;
-  const rivals = graph ? graph.edges.filter((e) => relation(e) === "rivals").sort((a, b) => b.raids_ab + b.raids_ba - a.raids_ab - a.raids_ba).slice(0, 3) : [];
-  const allies = graph ? graph.edges.filter((e) => relation(e) === "allies").sort((a, b) => b.talk - a.talk).slice(0, 3) : [];
+    `${e.a} ↔ ${e.b}: ${e.talk} messages · ${e.a} painted over ${e.raids_ab.toLocaleString()} px of ${e.b}, ${e.b} over ${e.raids_ba.toLocaleString()} px of ${e.a}`;
+  const rivals = graph
+    ? graph.edges
+        .filter((e) => relation(e) === "rivals")
+        .sort((a, b) => weight(b) - weight(a))
+        .slice(0, 3)
+    : [];
+  const allies = graph
+    ? graph.edges
+        .filter((e) => e.talk > 0)
+        .sort((a, b) => b.talk - a.talk)
+        .slice(0, 3)
+    : [];
+  const short = (name: string) => (name.length > 12 ? `${name.slice(0, 11)}…` : name);
+  const touches = (e: WorldEdge) => !highlight || e.a === highlight || e.b === highlight;
+
   return (
     <aside className="agents alliances" style={hidden ? { display: "none" } : undefined}>
       <header className="panel-head">
         <span className="label">Alliances</span>
-        <span className="count">{graph ? `${graph.edges.length} relations` : "…"}</span>
+        <span className="count">
+          <span style={{ color: STROKE.allies }}>talk</span> · <span style={{ color: STROKE.rivals }}>raids</span>
+        </span>
         {highlight && (
           <button className="ghost" onClick={() => onHighlight(null)}>
             clear
           </button>
         )}
       </header>
-      <p className="muted small pad legend">
-        <span style={{ color: STROKE.allies }}>— talk</span> (replies, @mentions) <span style={{ color: STROKE.rivals }}>— raids</span> (painting over
-        each other) <span style={{ color: STROKE.tense }}>— mixed</span> (colour follows whichever dominates). Node size is population. Click a country to light up
-        its land.
-      </p>
       <div className="graph" ref={wrap}>
         {error && <p className="muted small pad">{error}</p>}
         {graph && shown.edges.length === 0 && <p className="muted small pad empty">No cross-border replies or raids yet.</p>}
         <svg width={size.w} height={size.h}>
           {shown.edges.map((e) => {
-            const a = pos.get(e.a);
-            const b = pos.get(e.b);
+            const a = layout.pos.get(e.a);
+            const b = layout.pos.get(e.b);
             if (!a || !b) return null;
             const rel = relation(e);
-            const dim = highlight && highlight !== e.a && highlight !== e.b;
+            const on = touches(e);
+            // bow each chord toward the centre so crossing lines stay distinguishable
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            const qx = mx + (layout.cx - mx) * 0.45;
+            const qy = my + (layout.cy - my) * 0.45;
             return (
-              <line
+              <path
                 key={`${e.a}|${e.b}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
+                d={`M${a.x},${a.y} Q${qx},${qy} ${b.x},${b.y}`}
+                fill="none"
                 stroke={STROKE[rel]}
-                strokeOpacity={dim ? 0.12 : 0.7}
-                strokeWidth={1 + Math.log2(1 + e.talk + e.raids_ab + e.raids_ba)}
-                strokeDasharray={rel === "rivals" ? "4 3" : undefined}
+                strokeOpacity={on ? 0.85 : 0.08}
+                strokeWidth={1 + 4 * (weight(e) / maxW)}
+                strokeLinecap="round"
               >
                 <title>{edgeTitle(e)}</title>
-              </line>
+              </path>
             );
           })}
           {shown.nodes.map((name) => {
-            const n = pos.get(name);
+            const n = layout.pos.get(name);
             if (!n) return null;
-            const r = radius(n.agents);
-            const dim = highlight && highlight !== name;
+            const r = radius(name);
+            const on = !highlight || highlight === name || shown.edges.some((e) => touches(e) && (e.a === name || e.b === name));
+            const label = short(name);
+            const half = label.length * 3 + 2;
+            const above = Math.sin(n.angle) < -0.3;
             return (
-              <g key={name} className="node" opacity={dim ? 0.35 : 1} onClick={() => onHighlight(highlight === name ? null : name)}>
-                <circle cx={n.x} cy={n.y} r={r} fill={colorOf.get(name) ?? "#888"} stroke={highlight === name ? "#fff" : "#0b0b0c"} strokeWidth={highlight === name ? 2 : 1} />
-                <text x={n.x} y={n.y + r + 11} textAnchor={n.x < 50 ? "start" : n.x > size.w - 50 ? "end" : "middle"}>
-                  {name}
+              <g key={name} className="node" opacity={on ? 1 : 0.3} onClick={() => onHighlight(highlight === name ? null : name)}>
+                <circle
+                  cx={n.x}
+                  cy={n.y}
+                  r={r}
+                  fill={colorOf.get(name) ?? "#888"}
+                  stroke={highlight === name ? "#fff" : "#0b0b0c"}
+                  strokeWidth={highlight === name ? 2 : 1}
+                />
+                <text x={Math.min(size.w - half, Math.max(half, n.x))} y={above ? n.y - r - 4 : n.y + r + 11} textAnchor="middle">
+                  {label}
                 </text>
                 <title>
-                  {name} · {n.agents} agents
+                  {name} · {pop.get(name) ?? 0} agents
                 </title>
               </g>
             );
@@ -271,7 +218,9 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
               </span>
               {rivals.map((e) => (
                 <button key={`${e.a}|${e.b}`} className="rel" onClick={() => onHighlight(e.raids_ab >= e.raids_ba ? e.a : e.b)} title={edgeTitle(e)}>
-                  {e.raids_ab >= e.raids_ba ? `${e.a} → ${e.b}` : `${e.b} → ${e.a}`}
+                  <span className="rel-name">
+                    {e.a} vs {e.b}
+                  </span>
                   <span className="muted">{(e.raids_ab + e.raids_ba).toLocaleString()} px</span>
                 </button>
               ))}
@@ -280,11 +229,13 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
           {allies.length > 0 && (
             <div>
               <span className="label" style={{ color: STROKE.allies }}>
-                Allies
+                Talking
               </span>
               {allies.map((e) => (
                 <button key={`${e.a}|${e.b}`} className="rel" onClick={() => onHighlight(e.a)} title={edgeTitle(e)}>
-                  {e.a} ↔ {e.b}
+                  <span className="rel-name">
+                    {e.a} ↔ {e.b}
+                  </span>
                   <span className="muted">{e.talk} msgs</span>
                 </button>
               ))}

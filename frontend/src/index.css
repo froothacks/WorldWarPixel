@@ -187,11 +187,11 @@ button.text:hover { background: none; color: var(--text); }
 .graph text { font-size: 10px; fill: var(--muted); pointer-events: none; }
 .graph .node:hover text { fill: var(--text); }
 .graph .empty { position: absolute; left: 0; right: 0; top: 40%; text-align: center; }
-.legend { line-height: 1.5; }
 .rel-lists { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 8px 14px 10px; border-top: 1px solid var(--border); }
 .rel-lists .label { display: block; margin-bottom: 4px; }
 .rel { display: flex; justify-content: space-between; gap: 6px; width: 100%; height: auto; border: 0; border-radius: 0; padding: 3px 0; font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; }
 .rel .muted { flex: none; }
+.rel-name { overflow: hidden; text-overflow: ellipsis; }
 .rel:hover { background: none; color: #fff; }
 .rel .muted { font-family: var(--mono); font-size: 11px; }
 .agent-main { display: flex; flex-direction: column; min-width: 0; }
