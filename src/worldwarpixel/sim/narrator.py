@@ -353,8 +353,12 @@ class Narrator:
         y0, y1 = bucket_span(ry, canvas.height)
         return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
 
-    def build_digest(self, window: Window | None = None) -> dict[str, Any]:
-        """Structured summary of the window; also what gets rendered into the prompt."""
+    def build_digest(self, window: Window | None = None, commit: bool = False) -> dict[str, Any]:
+        """Structured summary of the window; also what gets rendered into the prompt.
+
+        commit=True marks the window's started/finished drawings as announced (used by tick);
+        a plain look (ask, API) leaves them to be reported in the next scheduled update.
+        """
         run, w = self._run, window if window is not None else self._window
         by_id = run.by_id
         now = self._clock()
@@ -416,7 +420,7 @@ class Narrator:
             }
             for (aid, victim), n in w.overwrites.most_common(TOP_N)
         ]
-        events, drawings = self._notable(w, top_agents, threads, overwrites)
+        events, drawings = self._notable(w, top_agents, threads, overwrites, commit)
         conversations: list[dict[str, Any]] = []
         for x in threads[:6]:
             recent = [p for p in w.new_posts if int(p["thread_id"]) == x["thread_id"]][-3:]
@@ -461,12 +465,14 @@ class Narrator:
         top_agents: list[dict[str, Any]],
         threads: list[dict[str, Any]],
         overwrites: list[dict[str, Any]],
+        commit: bool,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Deterministic storylines for this window: finished/started drawings, teams, raids,
         repairs, moves and board activity. Each event carries a highlight the UI can link."""
         run = self._run
         name = run.agent_name
         events: list[dict[str, Any]] = []
+        announce: set[str] = set()
 
         def ev(kind: str, text: str, hl: dict[str, Any] | None = None) -> None:
             events.append({"kind": kind, "text": text, "highlight": hl})
@@ -504,7 +510,7 @@ class Narrator:
         for aid in window_ids:
             p = self._projects.get(aid)
             if p and p["done"] and p["key"] not in self._announced:
-                self._announced.add(p["key"])
+                announce.add(p["key"])
                 ev(
                     "finished",
                     f"{name(aid)} finished {label(p)} at ({p['x']}, {p['y']}).",
@@ -561,19 +567,25 @@ class Narrator:
         for p in touched:
             aid = next(a for a, q in self._projects.items() if q is p)
             if not p["done"] and p["key"] not in self._announced:
-                self._announced.add(p["key"])
+                announce.add(p["key"])
                 ev("started", f"{name(aid)} started {label(p)} at ({p['x']}, {p['y']}).", region(p))
-        # moves
+        # moves (compared with where each agent worked before this window)
+        moved: set[int] = set()
+        last = dict(self._last_pos)
         for a in w.actions:
             aid, x, y = a["agent_id"], int(a["args"]["x"]), int(a["args"]["y"])
             prev = self._last_pos.get(aid)
-            if prev and abs(prev[0] - x) + abs(prev[1] - y) >= MOVE_DISTANCE:
+            if prev and aid not in moved and abs(prev[0] - x) + abs(prev[1] - y) >= MOVE_DISTANCE:
+                moved.add(aid)
                 ev(
                     "move",
                     f"{name(aid)} left ({prev[0]}, {prev[1]}) and is now working at ({x}, {y}).",
                     {"type": "agent", "id": aid},
                 )
-            self._last_pos[aid] = (x, y)
+            last[aid] = (x, y)
+        if commit:
+            self._announced |= announce
+            self._last_pos = last
         # board
         roots = [p for p in w.new_posts if p.get("parent_id") is None]
         for p in roots[-2:]:
@@ -815,7 +827,7 @@ class Narrator:
         """Summarise the window since the last update, then start a new window."""
         async with self._lock:
             window, self._window = self._window, Window(self._clock())
-            update = await self._compose(self.build_digest(window), "update", None)
+            update = await self._compose(self.build_digest(window, commit=True), "update", None)
             self._emit(update)
             return update
 

@@ -121,6 +121,7 @@ export interface NarratorUpdate {
   headline: string;
   bullets: string[];
   highlights: NarratorHighlight[];
+  events?: { kind: string; text: string }[];
   source: "model" | "fallback";
   error: string | null;
   window: { seconds: number; turns: number; pixels: number; posts: number };
