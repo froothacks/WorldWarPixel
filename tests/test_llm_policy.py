@@ -106,7 +106,7 @@ def test_read_tool_triggers_second_round_and_errors_are_reported() -> None:
     )
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
-    assert "budget exceeded" in thought and events == []
+    assert "view size" in thought and events == []
     assert policy.stats["calls"] == 2 and policy.stats["tool_errors"] == 1
     tool_msgs = [m for m in client.chat.completions.requests[1]["messages"] if m["role"] == "tool"]
     assert "rows" in tool_msgs[0]["content"]
