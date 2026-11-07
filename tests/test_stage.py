@@ -82,6 +82,19 @@ async def wait_for(cond: Any, timeout: float = 3.0) -> None:
         await asyncio.sleep(0.01)
 
 
+def test_auto_stage_with_one_agent_waits_before_retrying() -> None:
+    async def main() -> None:
+        run = make_run(config=CONFIG.model_copy(update={"agents": 1}))
+        run.stage.auto = True
+
+        await asyncio.wait_for(run.stage._step(), 3)
+
+        assert run.stage.phase == "idle"
+        assert run.stage._next_auto_at > run.stage._clock()
+
+    asyncio.run(main())
+
+
 def test_debate_alternates_voices_votes_and_announces_the_verdict() -> None:
     async def main() -> None:
         model, speech = FakeModel(), FakeSpeech()

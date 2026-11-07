@@ -369,8 +369,11 @@ class Stage:
             return
         if self.phase == "idle":
             if self.auto and self._clock() >= self._next_auto_at:
-                with contextlib.suppress(StageBusy):
+                try:
                     self.start_debate()
+                except StageBusy:
+                    self._next_auto_at = self._clock() + self.break_seconds
+                    await self._idle(1.0)
                 return
             await self._idle(1.0)
         elif self.phase == "debating":
