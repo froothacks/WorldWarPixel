@@ -24,7 +24,10 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
   }, [runId, agent.id]);
 
   const seen = new Set<number>();
-  const history = detail?.id === agent.id ? detail.thoughts : [];
+  const fresh = detail?.id === agent.id ? detail : null;
+  const history = fresh?.thoughts ?? [];
+  // The snapshot's agent list is static; the detail fetch has where the agent is painting now.
+  const pos = fresh ?? agent;
   const thoughts = [...liveThoughts, ...history]
     .filter((t) => (seen.has(t.ts) ? false : (seen.add(t.ts), true)))
     .sort((a, b) => b.ts - a.ts)
@@ -40,7 +43,7 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
       </header>
       <dl className="facts">
         <dt>Country</dt><dd>{agent.country}</dd>
-        <dt>Home</dt><dd>({agent.home_x}, {agent.home_y})</dd>
+        <dt>Position</dt><dd>({pos.home_x}, {pos.home_y})</dd>
         <dt>Cooldown</dt><dd>{agent.cooldown}s</dd>
         <dt>Pixels held</dt><dd>{pixelsOwned.toLocaleString()}</dd>
       </dl>
