@@ -5,7 +5,7 @@ from typing import Any
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas
-from worldwarpixel.sim.llm_policy import LLMPolicy, system_prompt
+from worldwarpixel.sim.llm_policy import LLMPolicy, _parse_pixel_list, system_prompt
 from worldwarpixel.sim.tools import ToolSet, TurnBudget
 
 
@@ -179,8 +179,16 @@ def test_double_encoded_pixel_list_is_accepted() -> None:
 
 def test_truncated_pixel_string_is_salvaged() -> None:
     agent, tools, obs, events = _setup()
-    broken = '[{"x": 3, "y": 4, "color": 2}, {"x": 5, "y": 4, color: 2}, {"x": 6, "y'
+    broken = (
+        '[{"x": 3, "y": 4, "color": 2}, {color: 2, "x": 5, "y": 4}, {"x": 6, "y": 9}, {"x": 7, "y'
+    )
     client = FakeClient([_response("Line.", [("place_pixels", {"pixels": broken})])])
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
+
+
+def test_incomplete_pixel_objects_are_skipped() -> None:
+    assert _parse_pixel_list(
+        '[{"x": 1, "y": 2}, {"x": 9, "y": 9, "color": 3}, {"x": 4, "color'
+    ) == [{"x": 9, "y": 9, "color": 3}]
