@@ -73,6 +73,14 @@ def test_fill_rect_charges_every_cell() -> None:
         tools.fill_rect(0, 0, 32, 32, 5)
 
 
+def test_fill_rect_checks_budget_before_building_cells(monkeypatch: pytest.MonkeyPatch) -> None:
+    tools, _ = make(TurnBudget(pixels=8))
+    monkeypatch.setattr(tools._canvas, "in_bounds", lambda _x, _y: True)
+
+    with pytest.raises(ToolError, match="budget"):
+        tools.fill_rect(0, 0, 4096, 4096, 1)
+
+
 def test_invalid_pixels_are_rejected_before_writing() -> None:
     tools, events = make()
     with pytest.raises(ToolError, match="off the canvas"):
