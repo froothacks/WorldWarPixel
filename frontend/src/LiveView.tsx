@@ -18,6 +18,7 @@ import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
 import Board from "./Board";
 import NarratorDock from "./NarratorDock";
+import Timelapse from "./Timelapse";
 
 interface Props {
   run: RunSummary;
@@ -159,7 +160,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     [agents],
   );
   const agentName = useCallback(
-    (id: number) => (id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`)),
+    (id: number) =>
+      id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`),
     [agentMap],
   );
   const lastThought = useMemo(() => {
@@ -215,6 +217,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       .then(setRun)
       .catch((e: Error) => alert(e.message));
   const [god, setGod] = useState(false);
+  const [timelapse, setTimelapse] = useState(false);
   const [tool, setTool] = useState<GodTool | null>(null);
   const paint = useCallback(
     (pixels: [number, number, number][], erase: boolean) => {
@@ -252,6 +255,12 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             title="Intervene: paint, erase, clear, announce, change the pace"
           >
             ⚡ God mode
+          </button>
+          <button
+            onClick={() => setTimelapse(true)}
+            title="Replay the canvas history so far"
+          >
+            ⏱ Timelapse
           </button>
           {run.state === "running" && (
             <button onClick={() => control("pause")}>Pause</button>
@@ -319,6 +328,13 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           />
         )}
       </div>
+      {timelapse && (
+        <Timelapse
+          runId={initial.id}
+          palette={palette}
+          onClose={() => setTimelapse(false)}
+        />
+      )}
       <NarratorDock
         narrator={narrator}
         paused={run.state !== "running"}

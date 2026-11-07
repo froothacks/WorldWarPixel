@@ -128,3 +128,10 @@ button.ghost { background: transparent; border-color: transparent; }
 .swatch { width: 18px; height: 18px; padding: 0; border: 2px solid transparent; border-radius: 3px; }
 .swatch.on { border-color: #fff; box-shadow: 0 0 0 1px #000 inset; }
 .canvas-brush { cursor: crosshair; }
+
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal-body { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; max-width: 92vw; max-height: 92vh; }
+.modal-body header { display: flex; align-items: center; gap: 10px; }
+.timelapse-canvas { width: min(80vw, 1024px); image-rendering: pixelated; background: #fff; border: 1px solid var(--border); }
+.timelapse-controls { display: flex; align-items: center; gap: 8px; }
+.timelapse-controls input[type="range"] { flex: 1; }
