@@ -172,6 +172,8 @@ class Run:
         elif kind == "post":
             self.stats["posts"] += 1
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
+        elif kind == "action":
+            self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
         self.log.append(self.id, self._clock(), kind, agent_id, payload)

@@ -131,6 +131,10 @@ class ToolSet:
             out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
         return out
 
+    def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:
+        """Log a successful tool call as a structured event (for the narrator and replay)."""
+        self._sink("action", {"tool": tool, "args": args, "result": result})
+
     @property
     def canvas_size(self) -> tuple[int, int]:
         return self._canvas.width, self._canvas.height
