@@ -1,0 +1,866 @@
+"""Narrator: periodic high-level commentary on what the agents are painting and saying."""
+
+import asyncio
+import base64
+import contextlib
+import json
+import logging
+import math
+import re
+import struct
+import time
+import zlib
+from collections import Counter, deque
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
+
+from worldwarpixel.sim.canvas import PALETTE, Canvas
+
+if TYPE_CHECKING:
+    from worldwarpixel.sim.run import Run
+
+log = logging.getLogger(__name__)
+
+UpdateKind = Literal["update", "answer"]
+
+MAX_HISTORY = 50
+MAX_IMAGE_SIDE = 128
+MAX_NEW_POSTS = 200
+GRID = 4
+"""The canvas is split into GRID x GRID regions for the change statistics."""
+TOP_N = 5
+PROMPT_POSTS = 20
+BODY_CHARS = 200
+
+SYSTEM_PROMPT = (
+    "You are the live commentator of WorldWarPixel, an r/place-style world where AI agents from "
+    "many countries paint one shared pixel canvas and argue, scheme and team up on a public "
+    "message board. Every minute you brief the human audience like a sports or war commentator: "
+    "what changed, who did it to whom, and why it matters.\n\n"
+    "Lead with the most dramatic development in the 'Notable events' list: a drawing that just "
+    "appeared or was finished, a raid that wrecked someone's flag, a repair or counter-attack, "
+    "a group forming around one project, a fresh argument or alliance on the board, someone "
+    "abandoning their corner to invade another. Quote agents' own words from the board when "
+    "they are juicy. Give coordinates so viewers can find things. Keep storylines going from "
+    "your previous headlines but never repeat one. Skip raw statistics unless they are the "
+    "story. Be concrete, vivid and short; only name agents, countries, drawings and threads "
+    "that appear in the digest, never invent any, and copy pixel counts and coordinates "
+    "exactly as given (never make up numbers). Each bullet must cover a different event; do "
+    "not reuse a phrase from one bullet in another or from your previous headlines.\n\n"
+    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64) while India's "
+    "flag is finished', bullets like 'Qiang Li wiped 92 px of Antoine Moreau's Brazil flag; "
+    "Moreau hit back for 80 px and the corner is a mess of red and green.'\n\n"
+    "Reply with JSON only, in this shape:\n"
+    '{"headline": "one punchy line", "bullets": ["2 to 4 short bullets, each a different '
+    'storyline"], '
+    '"highlights": [{"type": "thread", "id": 4, "label": "short label"}, '
+    '{"type": "agent", "id": 12, "label": "short label"}, '
+    '{"type": "region", "x": 0, "y": 0, "w": 64, "h": 64, "label": "short label"}]}\n'
+    "Highlights are links for the viewer: only use thread ids, agent ids and regions that appear "
+    "in the digest."
+)
+DRAW_TOOLS = ("draw_flag", "draw_text", "draw_shape")
+MAX_ACTIONS = 600
+MOVE_DISTANCE = 120
+"""An agent whose drawing position jumps this far between windows 'moved'."""
+
+
+class NarratorModel(Protocol):
+    """The one call the narrator needs from an LLM; tests swap in a fake."""
+
+    async def complete(self, messages: list[ChatCompletionMessageParam]) -> str: ...
+
+
+class OpenAINarratorModel:
+    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 60.0) -> None:
+        self._client = client
+        self.model = model
+        self._timeout = timeout
+
+    async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
+        response = await self._client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=700,
+            temperature=0.4,
+            timeout=self._timeout,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+        return response.choices[0].message.content or ""
+
+
+class NarratorUnavailable(Exception):
+    """The narrator could not get an answer from its model."""
+
+
+@dataclass(slots=True)
+class Window:
+    """Everything that happened since the previous update."""
+
+    started_at: float
+    turns: Counter[int] = field(default_factory=Counter)
+    pixels: Counter[int] = field(default_factory=Counter)
+    posts: Counter[int] = field(default_factory=Counter)
+    thread_posts: Counter[int] = field(default_factory=Counter)
+    regions: Counter[tuple[int, int]] = field(default_factory=Counter)
+    overwrites: Counter[tuple[int, int]] = field(default_factory=Counter)
+    claimed_blank: int = 0
+    new_posts: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_NEW_POSTS))
+    actions: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_ACTIONS))
+    raids: Counter[tuple[int, int]] = field(default_factory=Counter)
+    """(raider, victim) -> pixels painted inside the victim's current drawing."""
+    repairs: Counter[int] = field(default_factory=Counter)
+    """agent -> pixels of its own drawing taken back from someone else."""
+
+
+def canvas_png(canvas: Canvas, max_side: int = MAX_IMAGE_SIDE) -> bytes:
+    """The canvas as an RGB PNG, point-sampled down so neither side exceeds `max_side`."""
+    step = max(1, math.ceil(max(canvas.width, canvas.height) / max_side))
+    rgb = [bytes.fromhex(c[1:]) for c in PALETTE]
+    raw = bytearray()
+    for y in range(0, canvas.height, step):
+        raw.append(0)  # PNG filter type: none
+        row = y * canvas.width
+        for x in range(0, canvas.width, step):
+            raw += rgb[canvas.pixels[row + x]]
+    out_w = math.ceil(canvas.width / step)
+    out_h = math.ceil(canvas.height / step)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", out_w, out_h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw)))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _extract_json(text: str) -> Any:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text.split("\n", 1)[1] if "\n" in text else text
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if 0 <= start < end:
+            with contextlib.suppress(json.JSONDecodeError):
+                return json.loads(text[start : end + 1])
+    return None
+
+
+def parse_reply(text: str) -> tuple[str, list[str], list[Any]]:
+    """(headline, bullets, raw highlights) from the model's reply; tolerates plain text."""
+    data = _extract_json(text)
+    if isinstance(data, dict):
+        headline = str(data.get("headline") or "").strip()
+        raw_bullets = data.get("bullets")
+        bullets = (
+            [str(b).strip() for b in raw_bullets if str(b).strip()]
+            if isinstance(raw_bullets, list)
+            else []
+        )
+        highlights = data.get("highlights")
+        if headline:
+            return headline, bullets[:4], highlights if isinstance(highlights, list) else []
+    salvaged = _salvage_json(text)
+    if salvaged is not None:
+        return salvaged
+    lines = [ln.strip(" -*•\t") for ln in text.splitlines() if ln.strip(" -*•\t")]
+    if not lines:
+        return "(no response)", [], []
+    return lines[0], lines[1:5], []
+
+
+_JSON_STRING = r'"((?:[^"\\]|\\.)*)"'
+
+
+def _salvage_json(text: str) -> tuple[str, list[str], list[Any]] | None:
+    """Pull headline/bullets out of JSON the model truncated or mangled."""
+    m = re.search(r'"headline"\s*:\s*' + _JSON_STRING, text)
+    if not m:
+        return None
+    headline = _unescape(m.group(1))
+    bullets: list[str] = []
+    bm = re.search(r'"bullets"\s*:\s*\[(.*?)(?:\]|$)', text, re.S)
+    if bm:
+        for raw in re.findall(_JSON_STRING, bm.group(1)):
+            bullet = _unescape(raw).strip()
+            if bullet and bullet not in bullets:
+                bullets.append(bullet)
+    return headline, bullets[:4], []
+
+
+def _unescape(raw: str) -> str:
+    try:
+        return str(json.loads(f'"{raw}"'))
+    except json.JSONDecodeError:
+        return raw
+
+
+def bucket_span(i: int, size: int) -> tuple[int, int]:
+    """[start, end) of grid bucket `i` along a side of `size`; inverse of `x * GRID // size`."""
+    return -(-i * size // GRID), -(-(i + 1) * size // GRID)
+
+
+def _int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _project_bbox(tool: str, args: dict[str, Any]) -> tuple[int, int, int, int]:
+    """Approximate footprint of a draw_* call as (x0, y0, x1, y1), inclusive."""
+    x, y = int(args.get("x", 0)), int(args.get("y", 0))
+    scale = max(1, int(args.get("scale") or 1))
+    if tool == "draw_flag":
+        w = int(args.get("width") or 24)
+        return x, y, x + w - 1, y + max(3, round(w * 2 / 3)) - 1
+    if tool == "draw_text":
+        n = max(1, len(str(args.get("text") or "?")))
+        return x, y, x + n * 4 * scale - 2, y + 5 * scale - 1
+    return x, y, x + 9 * scale - 1, y + 9 * scale - 1
+
+
+def _inside(bbox: tuple[int, int, int, int], x: int, y: int) -> bool:
+    x0, y0, x1, y1 = bbox
+    return x0 <= x <= x1 and y0 <= y <= y1
+
+
+class Narrator:
+    """Watches one run and every `interval` seconds asks a model for a digest of what happened."""
+
+    def __init__(
+        self,
+        run: "Run",
+        model: NarratorModel | None,
+        running: asyncio.Event,
+        interval: float = 60.0,
+        include_image: bool = True,
+        clock: Callable[[], float] = time.time,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self._run = run
+        self._model = model
+        self._running = running
+        self.interval = interval
+        self.include_image = include_image
+        self._clock = clock
+        self._sleep = sleep
+        self.history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
+        self.stats = {"updates": 0, "answers": 0, "failures": 0}
+        self.next_update_at: float | None = None
+        self._window = Window(clock())
+        self._projects: dict[int, dict[str, Any]] = {}
+        """agent -> its current drawing (last draw_* action), kept across windows."""
+        self._announced: set[str] = set()
+        """Drawing keys already reported as started, so 'started' fires once."""
+        self._last_pos: dict[int, tuple[int, int]] = {}
+        self._next_id = 1
+        self._task: asyncio.Task[None] | None = None
+        self._lock = asyncio.Lock()
+
+    # -- lifecycle -------------------------------------------------------------------------
+
+    def start(self) -> None:
+        if self._task is None:
+            self._window = Window(self._clock())
+            self._task = asyncio.create_task(self._loop())
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        self.next_update_at = None
+
+    async def _loop(self) -> None:
+        while True:
+            self.next_update_at = self._clock() + self.interval
+            await self._sleep(self.interval)
+            await self._running.wait()
+            try:
+                await self.tick()
+            except Exception:  # keep narrating even if one update blows up
+                log.exception("narrator tick failed")
+
+    # -- observation -----------------------------------------------------------------------
+
+    def observe_turn(self, agent_id: int) -> None:
+        self._window.turns[agent_id] += 1
+
+    def observe_write(self, agent_id: int, kind: str, payload: dict[str, Any]) -> None:
+        w = self._window
+        if kind == "pixel":
+            w.pixels[agent_id] += 1
+            canvas = self._run.canvas
+            rx = int(payload["x"]) * GRID // canvas.width
+            ry = int(payload["y"]) * GRID // canvas.height
+            w.regions[(rx, ry)] += 1
+            prev = int(payload.get("prev_owner") or 0)
+            x, y = int(payload["x"]), int(payload["y"])
+            if prev == 0:
+                w.claimed_blank += 1
+            elif prev != agent_id:
+                w.overwrites[(agent_id, prev)] += 1
+                victim = self._projects.get(prev)
+                if victim and _inside(victim["bbox"], x, y):
+                    w.raids[(agent_id, prev)] += 1
+                mine = self._projects.get(agent_id)
+                if mine and _inside(mine["bbox"], x, y):
+                    w.repairs[agent_id] += 1
+        elif kind == "action":
+            self._observe_action(agent_id, payload)
+        elif kind == "post":
+            w.posts[agent_id] += 1
+            w.thread_posts[int(payload["thread_id"])] += 1
+            w.new_posts.append(payload)
+
+    def _observe_action(self, agent_id: int, payload: dict[str, Any]) -> None:
+        """Track what each agent is drawing (from the LLM policy's structured action events)."""
+        tool, args = str(payload.get("tool")), dict(payload.get("args") or {})
+        result = dict(payload.get("result") or {})
+        if "x" not in args or "y" not in args:
+            return
+        x, y = int(args["x"]), int(args["y"])
+        entry = {"ts": self._clock(), "agent_id": agent_id, "tool": tool, "args": args, **result}
+        self._window.actions.append(entry)
+        if tool not in DRAW_TOOLS:
+            return
+        what = str(args.get("country") or args.get("text") or args.get("shape") or "?")
+        key = f"{agent_id}:{tool}:{what}:{x}:{y}"
+        self._projects[agent_id] = {
+            "key": key,
+            "tool": tool,
+            "what": what,
+            "x": x,
+            "y": y,
+            "bbox": _project_bbox(tool, args),
+            "remaining": int(result.get("remaining") or 0),
+            "done": bool(result.get("done")),
+            "ts": self._clock(),
+        }
+
+    # -- digest ----------------------------------------------------------------------------
+
+    def _region_box(self, rx: int, ry: int) -> dict[str, int]:
+        canvas = self._run.canvas
+        x0, x1 = bucket_span(rx, canvas.width)
+        y0, y1 = bucket_span(ry, canvas.height)
+        return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+
+    def build_digest(self, window: Window | None = None, commit: bool = False) -> dict[str, Any]:
+        """Structured summary of the window; also what gets rendered into the prompt.
+
+        commit=True marks the window's started/finished drawings as announced (used by tick);
+        a plain look (ask, API) leaves them to be reported in the next scheduled update.
+        """
+        run, w = self._run, window if window is not None else self._window
+        by_id = run.by_id
+        now = self._clock()
+
+        countries: Counter[str] = Counter()
+        for aid, n in w.pixels.items():
+            if aid in by_id:
+                countries[by_id[aid].country] += n
+        seen = set(w.turns) | set(w.pixels) | set(w.posts)
+        active = Counter({aid: w.pixels[aid] + 10 * w.posts[aid] for aid in seen})
+        top_agents = [
+            {
+                "id": aid,
+                "name": by_id[aid].name,
+                "country": by_id[aid].country,
+                "turns": w.turns[aid],
+                "pixels": w.pixels[aid],
+                "posts": w.posts[aid],
+            }
+            for aid, _ in active.most_common(TOP_N)
+            if aid in by_id
+        ]
+        threads = []
+        for tid, n in w.thread_posts.most_common(TOP_N):
+            posts = run.board.thread(tid)
+            if posts:
+                threads.append(
+                    {
+                        "thread_id": tid,
+                        "title": posts[0].title,
+                        "author": run.agent_name(posts[0].author_id),
+                        "new_posts": n,
+                        "replies": len(posts) - 1,
+                    }
+                )
+        new_posts = []
+        for p in list(w.new_posts)[-PROMPT_POSTS:]:
+            root = run.board.get(int(p["thread_id"]))
+            body = str(p["body"])
+            new_posts.append(
+                {
+                    "thread_id": p["thread_id"],
+                    "title": root.title if root else None,
+                    "author": run.agent_name(int(p["author_id"])),
+                    "body": body[:BODY_CHARS] + ("…" if len(body) > BODY_CHARS else ""),
+                }
+            )
+        regions = [
+            {**self._region_box(rx, ry), "changes": n}
+            for (rx, ry), n in w.regions.most_common(TOP_N)
+        ]
+        overwrites = [
+            {
+                "by": aid,
+                "by_name": run.agent_name(aid),
+                "over": victim,
+                "over_name": run.agent_name(victim),
+                "pixels": n,
+            }
+            for (aid, victim), n in w.overwrites.most_common(TOP_N)
+        ]
+        events, drawings = self._notable(w, top_agents, threads, overwrites, commit)
+        conversations: list[dict[str, Any]] = []
+        for x in threads[:6]:
+            recent = [p for p in w.new_posts if int(p["thread_id"]) == x["thread_id"]][-3:]
+            conversations.append(
+                {
+                    "thread_id": x["thread_id"],
+                    "title": x["title"],
+                    "posts": [
+                        f"{run.agent_name(int(p['author_id']))}: {str(p['body'])[:160]}"
+                        for p in recent
+                    ],
+                }
+            )
+        return {
+            "events": events,
+            "drawings": drawings,
+            "conversations": conversations,
+            "run_id": run.id,
+            "state": run.state,
+            "canvas": {"width": run.canvas.width, "height": run.canvas.height},
+            "agents_total": len(run.agents),
+            "countries_total": len({a.country for a in run.agents}),
+            "threads_total": len(run.board.threads()),
+            "totals": dict(run.stats),
+            "window_seconds": round(now - w.started_at, 1),
+            "turns": sum(w.turns.values()),
+            "pixels": sum(w.pixels.values()),
+            "posts": sum(w.posts.values()),
+            "claimed_blank": w.claimed_blank,
+            "top_agents": top_agents,
+            "countries": [{"country": c, "pixels": n} for c, n in countries.most_common(TOP_N)],
+            "active_threads": threads,
+            "new_posts": new_posts,
+            "regions": regions,
+            "overwrites": overwrites,
+            "previous_headlines": [u["headline"] for u in list(self.history)[-3:]],
+        }
+
+    def _notable(
+        self,
+        w: Window,
+        top_agents: list[dict[str, Any]],
+        threads: list[dict[str, Any]],
+        overwrites: list[dict[str, Any]],
+        commit: bool,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Deterministic storylines for this window: finished/started drawings, teams, raids,
+        repairs, moves and board activity. Each event carries a highlight the UI can link."""
+        run = self._run
+        name = run.agent_name
+        events: list[dict[str, Any]] = []
+        announce: set[str] = set()
+
+        def ev(kind: str, text: str, hl: dict[str, Any] | None = None) -> None:
+            events.append({"kind": kind, "text": text, "highlight": hl})
+
+        def region(p: dict[str, Any]) -> dict[str, Any]:
+            x0, y0, x1, y1 = p["bbox"]
+            return {"type": "region", "x": x0, "y": y0, "w": x1 - x0 + 1, "h": y1 - y0 + 1}
+
+        def label(p: dict[str, Any]) -> str:
+            match p["tool"]:
+                case "draw_flag":
+                    w = p["what"]
+                    pretty = (
+                        w.upper() if w in ("usa", "uk", "eu", "un") else w.replace("_", " ").title()
+                    )
+                    return f"{pretty} flag"
+                case "draw_text":
+                    return f"the words '{p['what']}'"
+            return f"a {p['what']}"
+
+        window_ids = {a["agent_id"] for a in w.actions}
+        touched = [self._projects[a] for a in window_ids if a in self._projects]
+        touched.sort(key=lambda p: p["ts"], reverse=True)
+        drawings = [
+            {
+                "agent_id": aid,
+                "name": name(aid),
+                "tool": p["tool"],
+                "what": p["what"],
+                "x": p["x"],
+                "y": p["y"],
+                "remaining": p["remaining"],
+                "done": p["done"],
+            }
+            for aid, p in self._projects.items()
+            if aid in window_ids
+        ]
+        # finished
+        for aid in window_ids:
+            p = self._projects.get(aid)
+            if p and p["done"] and p["key"] not in self._announced:
+                announce.add(p["key"])
+                ev(
+                    "finished",
+                    f"{name(aid)} finished {label(p)} at ({p['x']}, {p['y']}).",
+                    region(p),
+                )
+        # teams: several agents on the same kind of drawing close together
+        groups: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = {}
+        for aid in window_ids:
+            p = self._projects.get(aid)
+            if p and not p["done"]:
+                groups.setdefault((p["tool"], p["what"]), []).append((aid, p))
+        for members in groups.values():
+            members.sort(key=lambda m: (m[1]["x"], m[1]["y"]))
+            cluster: list[tuple[int, dict[str, Any]]] = []
+            for m in members:
+                if cluster and (
+                    abs(m[1]["x"] - cluster[-1][1]["x"]) > 96
+                    or abs(m[1]["y"] - cluster[-1][1]["y"]) > 96
+                ):
+                    cluster = []
+                cluster.append(m)
+                if len(cluster) == 3:
+                    who = ", ".join(name(a) for a, _ in cluster)
+                    p0 = cluster[0][1]
+                    ev(
+                        "team",
+                        f"{len(members)} agents are building {label(p0)} together around "
+                        f"({p0['x']}, {p0['y']}): {who}…",
+                        region(p0),
+                    )
+                    break
+        # raids and repairs
+        for (raider, victim), n in w.raids.most_common(3):
+            p = self._projects.get(victim)
+            where = f" at ({p['x']}, {p['y']})" if p else ""
+            target = label(p) if p else "their drawing"
+            ev(
+                "raid",
+                f"{name(raider)} painted over {n} px of {name(victim)}'s {target}{where}.",
+                region(p) if p else {"type": "agent", "id": raider},
+            )
+        for aid, n in w.repairs.most_common(2):
+            p = self._projects.get(aid)
+            if p:
+                ev("repair", f"{name(aid)} repaired {n} px of {label(p)}.", region(p))
+        plain = [o for o in overwrites if (o["by"], o["over"]) not in w.raids][:2]
+        for o in plain:
+            ev(
+                "overwrite",
+                f"{o['by_name']} painted over {o['pixels']} px of {o['over_name']}'s work.",
+                {"type": "agent", "id": o["by"]},
+            )
+        # started
+        for p in touched:
+            aid = next(a for a, q in self._projects.items() if q is p)
+            if not p["done"] and p["key"] not in self._announced:
+                announce.add(p["key"])
+                ev("started", f"{name(aid)} started {label(p)} at ({p['x']}, {p['y']}).", region(p))
+        # moves (compared with where each agent worked before this window)
+        moved: set[int] = set()
+        last = dict(self._last_pos)
+        for a in w.actions:
+            aid, x, y = a["agent_id"], int(a["args"]["x"]), int(a["args"]["y"])
+            prev = self._last_pos.get(aid)
+            if prev and aid not in moved and abs(prev[0] - x) + abs(prev[1] - y) >= MOVE_DISTANCE:
+                moved.add(aid)
+                ev(
+                    "move",
+                    f"{name(aid)} left ({prev[0]}, {prev[1]}) and is now working at ({x}, {y}).",
+                    {"type": "agent", "id": aid},
+                )
+            last[aid] = (x, y)
+        if commit:
+            self._announced |= announce
+            self._last_pos = last
+        # board
+        roots = [p for p in w.new_posts if p.get("title")]
+        for p in roots[-2:]:
+            ev(
+                "thread",
+                f'{name(int(p["author_id"]))} opened "{str(p.get("title") or "")[:60]}".',
+                {"type": "thread", "id": int(p["thread_id"])},
+            )
+        for t in threads[:1]:
+            if t["new_posts"] >= 3:
+                ev(
+                    "hot_thread",
+                    f'"{t["title"][:60]}" is heating up: {t["new_posts"]} new posts.',
+                    {"type": "thread", "id": t["thread_id"]},
+                )
+        order = {
+            "finished": 0,
+            "team": 1,
+            "raid": 2,
+            "repair": 3,
+            "started": 4,
+            "move": 5,
+            "hot_thread": 6,
+            "overwrite": 7,
+            "thread": 8,
+        }
+        events.sort(key=lambda e: order.get(e["kind"], 9))
+        return events[:12], drawings[:15]
+
+    @staticmethod
+    def render_digest(d: dict[str, Any]) -> str:
+        c, t = d["canvas"], d["totals"]
+        lines = [
+            f"Run {d['run_id']} ({d['state']}): {c['width']}x{c['height']} canvas, "
+            f"{d['agents_total']} agents from {d['countries_total']} countries, "
+            f"{d['threads_total']} threads. Totals: {t['turns']} turns, {t['pixels']} pixels, "
+            f"{t['posts']} posts.",
+            f"Last {d['window_seconds']}s: {d['turns']} turns, {d['pixels']} pixels "
+            f"({d['claimed_blank']} on blank canvas), {d['posts']} posts.",
+        ]
+        if d.get("events"):
+            lines.append("Notable events since the last update (most important first):")
+            lines += [f"- {e['text']}" for e in d["events"]]
+        if d.get("drawings"):
+            lines.append("Drawings in progress (agent, what, top-left, pixels left):")
+            lines += [
+                f"- agent {x['agent_id']} {x['name']}: {x['tool'].removeprefix('draw_')} "
+                f"'{x['what']}' at ({x['x']}, {x['y']}), "
+                + ("done" if x["done"] else f"{x['remaining']} px left")
+                for x in d["drawings"]
+            ]
+        if d.get("conversations"):
+            lines.append("Conversations (newest posts):")
+            for c in d["conversations"]:
+                lines.append(f'- thread {c["thread_id"]} "{c["title"]}"')
+                lines += [f"    {p}" for p in c["posts"]]
+        if d["top_agents"]:
+            lines.append("Most active agents:")
+            lines += [
+                f"- agent {a['id']} {a['name']} ({a['country']}): {a['pixels']} px, "
+                f"{a['posts']} posts, {a['turns']} turns"
+                for a in d["top_agents"]
+            ]
+        if d["countries"]:
+            lines.append(
+                "Pixels by country: "
+                + ", ".join(f"{x['country']} {x['pixels']}" for x in d["countries"])
+            )
+        if d["regions"]:
+            lines.append("Canvas regions with most change (x, y, w, h):")
+            lines += [
+                f"- region ({r['x']}, {r['y']}, {r['w']}, {r['h']}): {r['changes']} px"
+                for r in d["regions"]
+            ]
+        if d["overwrites"]:
+            lines.append("Overwrites:")
+            lines += [
+                f"- {o['by_name']} (agent {o['by']}) painted over {o['over_name']} "
+                f"(agent {o['over']}): {o['pixels']} px"
+                for o in d["overwrites"]
+            ]
+        if d["active_threads"]:
+            lines.append("Most active threads:")
+            lines += [
+                f'- thread {x["thread_id"]} "{x["title"]}" by {x["author"]}: '
+                f"{x['new_posts']} new posts, {x['replies']} replies total"
+                for x in d["active_threads"]
+            ]
+        if d["new_posts"]:
+            lines.append("New posts (oldest first):")
+            lines += [
+                f"- [thread {p['thread_id']}] {p['author']}: {p['body']}" for p in d["new_posts"]
+            ]
+        else:
+            lines.append("No new posts.")
+        if d["previous_headlines"]:
+            lines.append("Your previous headlines: " + " | ".join(d["previous_headlines"]))
+        return "\n".join(lines)
+
+    # -- composing updates -----------------------------------------------------------------
+
+    def _messages(self, digest: dict[str, Any], question: str | None) -> list[Any]:
+        text = self.render_digest(digest)
+        if question:
+            text += (
+                f"\n\nA viewer asks: {question}\nAnswer them from the digest, in the same JSON "
+                "shape: headline is the direct answer in one line, bullets add detail."
+            )
+        else:
+            text += "\n\nWrite the next update."
+        content: Any = text
+        if self.include_image:
+            png = base64.b64encode(canvas_png(self._run.canvas)).decode()
+            content = [
+                {"type": "text", "text": text + "\nThe image is the current canvas, scaled down."},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png}"}},
+            ]
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": content},
+        ]
+
+    def clean_highlights(self, raw: list[Any]) -> list[dict[str, Any]]:
+        """Keep only highlights that point at real threads, agents and on-canvas regions."""
+        run = self._run
+        out: list[dict[str, Any]] = []
+        for h in raw[:8]:
+            if not isinstance(h, dict):
+                continue
+            label = str(h.get("label") or "")[:80]
+            match h.get("type"):
+                case "thread":
+                    tid = _int(h.get("id"))
+                    posts = run.board.thread(tid) if tid is not None else []
+                    if not posts:
+                        continue
+                    out.append({"type": "thread", "id": tid, "label": label or posts[0].title})
+                case "agent":
+                    aid = _int(h.get("id"))
+                    agent = run.by_id.get(aid) if aid is not None else None
+                    if agent is None:
+                        continue
+                    label = label or f"{agent.name} ({agent.country})"
+                    out.append({"type": "agent", "id": aid, "label": label})
+                case "region":
+                    box = [_int(h.get(k)) for k in ("x", "y", "w", "h")]
+                    if any(v is None for v in box):
+                        continue
+                    x, y, w, hh = (v or 0 for v in box)
+                    x, y = max(0, x), max(0, y)
+                    w, hh = min(w, run.canvas.width - x), min(hh, run.canvas.height - y)
+                    if w <= 0 or hh <= 0:
+                        continue
+                    label = label or f"({x}, {y}) {w}x{hh}"
+                    out.append({"type": "region", "x": x, "y": y, "w": w, "h": hh, "label": label})
+        return out
+
+    def fallback_update(self, digest: dict[str, Any]) -> tuple[str, list[str], list[Any]]:
+        """Stats-only update used when the model is missing or fails."""
+        headline = (
+            f"{digest['turns']} turns, {digest['pixels']} pixels and {digest['posts']} posts "
+            f"in the last {round(digest['window_seconds'])}s"
+        )
+        bullets: list[str] = []
+        highlights: list[Any] = []
+        for e in digest.get("events", [])[:4]:
+            bullets.append(e["text"])
+            if e.get("highlight"):
+                highlights.append(e["highlight"])
+        if bullets:
+            headline = bullets.pop(0)
+            return headline, bullets, highlights
+        if digest["top_agents"]:
+            a = digest["top_agents"][0]
+            bullets.append(f"Most active: {a['name']} ({a['country']}), {a['pixels']} px.")
+            highlights.append({"type": "agent", "id": a["id"]})
+        if digest["regions"]:
+            r = digest["regions"][0]
+            bullets.append(f"Hottest region: ({r['x']}, {r['y']}), {r['changes']} px changed.")
+            highlights.append({"type": "region", **{k: r[k] for k in ("x", "y", "w", "h")}})
+        if digest["active_threads"]:
+            t = digest["active_threads"][0]
+            bullets.append(f'Busiest thread: "{t["title"]}", {t["new_posts"]} new posts.')
+            highlights.append({"type": "thread", "id": t["thread_id"]})
+        if digest["overwrites"]:
+            o = digest["overwrites"][0]
+            bullets.append(f"{o['by_name']} painted over {o['over_name']} ({o['pixels']} px).")
+        return headline, bullets, highlights
+
+    async def _compose(
+        self, digest: dict[str, Any], kind: UpdateKind, question: str | None
+    ) -> dict[str, Any]:
+        source = "model"
+        error: str | None = None
+        if self._model is None:
+            source, error = "fallback", None
+            headline, bullets, raw = self.fallback_update(digest)
+        else:
+            try:
+                reply = await self._model.complete(
+                    cast(list[ChatCompletionMessageParam], self._messages(digest, question))
+                )
+                headline, bullets, raw = parse_reply(reply)
+            except Exception as e:  # network / API errors are not fatal for the run
+                self.stats["failures"] += 1
+                log.warning("narrator model call failed: %s", e)
+                if kind == "answer":
+                    raise NarratorUnavailable(f"{type(e).__name__}: {e}") from e
+                source, error = "fallback", f"model call failed: {type(e).__name__}"
+                headline, bullets, raw = self.fallback_update(digest)
+        highlights = self.clean_highlights(raw)
+        if not highlights and kind == "update":
+            highlights = self.clean_highlights(
+                [e["highlight"] for e in digest.get("events", []) if e.get("highlight")][:5]
+            )
+        update = {
+            "id": self._next_id,
+            "ts": self._clock(),
+            "kind": kind,
+            "question": question,
+            "headline": headline,
+            "bullets": bullets,
+            "highlights": highlights,
+            "events": [{"kind": e["kind"], "text": e["text"]} for e in digest.get("events", [])],
+            "source": source,
+            "error": error,
+            "window": {
+                "seconds": digest["window_seconds"],
+                "turns": digest["turns"],
+                "pixels": digest["pixels"],
+                "posts": digest["posts"],
+            },
+        }
+        self._next_id += 1
+        return update
+
+    def _emit(self, update: dict[str, Any]) -> None:
+        self.history.append(update)
+        self.stats["answers" if update["kind"] == "answer" else "updates"] += 1
+        self._run.record("narrator.update", None, update)
+        self._run.hub.publish("narrator.update", **update, stats=dict(self.stats))
+
+    async def tick(self) -> dict[str, Any]:
+        """Summarise the window since the last update, then start a new window."""
+        async with self._lock:
+            window, self._window = self._window, Window(self._clock())
+            update = await self._compose(self.build_digest(window, commit=True), "update", None)
+            self._emit(update)
+            return update
+
+    async def ask(self, question: str) -> dict[str, Any]:
+        """Answer a viewer's question from the current window; does not reset it."""
+        if self._model is None:
+            raise NarratorUnavailable("narrator model not configured")
+        async with self._lock:
+            update = await self._compose(self.build_digest(), "answer", question.strip())
+            self._emit(update)
+            return update
+
+    # -- read model ------------------------------------------------------------------------
+
+    def state(self) -> dict[str, Any]:
+        return {
+            "interval": self.interval,
+            "model": self._model is not None,
+            "next_update_at": self.next_update_at,
+            "stats": dict(self.stats),
+            "updates": list(self.history),
+        }

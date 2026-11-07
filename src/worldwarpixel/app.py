@@ -1,14 +1,24 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
+from worldwarpixel.api import RunManager, random_policy
+from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
 from worldwarpixel.llm import ChatService
+from worldwarpixel.sim.agents import Policy
+from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.llm_policy import LLMPolicy
+from worldwarpixel.sim.narrator import OpenAINarratorModel
+from worldwarpixel.sim.run import RunConfig
 
 
 class Message(BaseModel):
@@ -42,17 +52,42 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value() or None,
+        api_key=settings.openai_api_key.get_secret_value() or "none",
         base_url=settings.openai_base_url,
         timeout=settings.request_timeout,
+        default_headers=settings.default_headers() or None,
     ) as client:
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
-        yield
+        agent_model = settings.agent_model or settings.openai_model
+
+        def make_policy(config: RunConfig) -> Policy:
+            if config.policy == "llm":
+                return LLMPolicy(
+                    client,
+                    agent_model,
+                    timeout=settings.request_timeout,
+                    vision=settings.agent_vision,
+                )
+            return random_policy(config)
+
+        app.state.runs = RunManager(
+            EventLog(settings.event_log_path),
+            settings.max_active_runs,
+            make_policy,
+            OpenAINarratorModel(
+                client, settings.narrator_model or settings.openai_model, settings.request_timeout
+            ),
+        )
+        try:
+            yield
+        finally:
+            await app.state.runs.shutdown()
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
+app.include_router(runs_router)
 
 
 def get_chat_service(request: Request) -> ChatService:
@@ -78,3 +113,20 @@ async def chat(body: ChatRequest, service: ChatServiceDep) -> ChatResponse:
 async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchChatResponse:
     replies = await service.chat_many([_to_params(c) for c in body.conversations], body.model)
     return BatchChatResponse(replies=replies)
+
+
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+API_PREFIXES = {"runs", "chat", "health", "docs", "redoc", "openapi.json"}
+
+
+async def frontend(path: str) -> FileResponse:
+    """SPA fallback: unknown non-API paths get index.html; unknown API paths stay 404."""
+    if path.split("/", 1)[0] in API_PREFIXES:
+        raise HTTPException(404, "not found")
+    return FileResponse(FRONTEND_DIST / "index.html")
+
+
+if FRONTEND_DIST.is_dir():
+    # Serve the built React app from the same process. API routes above take precedence.
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+    app.add_api_route("/{path:path}", frontend, include_in_schema=False)
