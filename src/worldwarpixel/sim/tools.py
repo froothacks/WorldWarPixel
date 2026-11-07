@@ -97,6 +97,10 @@ class ToolSet:
         cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
         return self.place_pixels(cells)
 
+    @property
+    def canvas_size(self) -> tuple[int, int]:
+        return self._canvas.width, self._canvas.height
+
     def png(self, max_side: int = 640) -> tuple[bytes, int]:
         """Free full-canvas image used to build the observation."""
         return self._canvas.to_png(max_side)
