@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import secrets
+import time
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -19,12 +20,16 @@ from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
+from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import Run, RunConfig
 from worldwarpixel.sim.timelapse import build_timelapse
+
+MAX_RESTORED = 8
+"""Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
 
 
 class RunManager:
@@ -42,6 +47,8 @@ class RunManager:
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
         self.runs: dict[str, Run] = {}
+        self._restored: list[str] = []
+        self._loading: dict[str, asyncio.Task[Run | None]] = {}
 
     def active(self) -> list[Run]:
         return [r for r in self.runs.values() if r.state != "stopped"]
@@ -62,14 +69,44 @@ class RunManager:
             raise HTTPException(404, f"run {run_id} not found")
         return run
 
-    async def delete(self, run_id: str) -> None:
-        run = self.runs.pop(run_id, None)
-        if run is None:
+    async def fetch(self, run_id: str) -> Run:
+        """A run in memory, or a finished one rebuilt from the event log (e.g. pre-restart)."""
+        run = self.runs.get(run_id)
+        if run is not None:
+            return run
+        task = self._loading.get(run_id)
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(restore_run, self.log, run_id))
+            self._loading[run_id] = task
+            task.add_done_callback(lambda _: self._loading.pop(run_id, None))
+        restored = await task
+        if restored is None:
             raise HTTPException(404, f"run {run_id} not found")
+        if run_id not in self.runs:
+            self.runs[run_id] = restored
+            self._restored.append(run_id)
+            while len(self._restored) > MAX_RESTORED:
+                old = self.runs.pop(self._restored.pop(0), None)
+                if old is not None:
+                    old.hub.close_all()
+        return self.runs[run_id]
+
+    async def summaries(self) -> list[dict[str, Any]]:
+        """Runs in memory plus the finished runs only the event log still knows about."""
+        live = [r.summary() for r in self.runs.values()]
+        archived = await asyncio.to_thread(archived_summaries, self.log, set(self.runs))
+        return live + archived
+
+    async def delete(self, run_id: str) -> None:
+        run = await self.fetch(run_id)
+        self.runs.pop(run_id, None)
+        if run_id in self._restored:
+            self._restored.remove(run_id)
         try:
             await run.stop()
         finally:
             run.hub.close_all()
+            self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
@@ -98,31 +135,31 @@ async def create_run(config: RunConfig, manager: ManagerDep) -> dict[str, Any]:
 
 @router.get("")
 async def list_runs(manager: ManagerDep) -> list[dict[str, Any]]:
-    return [r.summary() for r in manager.runs.values()]
+    return await manager.summaries()
 
 
 @router.get("/{run_id}")
 async def get_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    return manager.get(run_id).summary()
+    return (await manager.fetch(run_id)).summary()
 
 
 @router.post("/{run_id}/pause")
 async def pause_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     run.pause()
     return run.summary()
 
 
 @router.post("/{run_id}/resume")
 async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     run.resume()
     return run.summary()
 
 
 @router.post("/{run_id}/stop")
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     await run.stop()
     return run.summary()
 
@@ -157,7 +194,7 @@ class GodPace(BaseModel):
 async def god_pixels(
     run_id: str, body: GodPixels, manager: ManagerDep, _god: GodDep
 ) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     try:
         return {"placed": run.god_paint(body.pixels, body.erase)}
     except ValueError as e:
@@ -166,14 +203,14 @@ async def god_pixels(
 
 @router.post("/{run_id}/god/clear-canvas")
 async def god_clear_canvas(run_id: str, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     run.god_clear_canvas()
     return run.summary()
 
 
 @router.post("/{run_id}/god/clear-board")
 async def god_clear_board(run_id: str, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     run.god_clear_board()
     return run.summary()
 
@@ -182,7 +219,7 @@ async def god_clear_board(run_id: str, manager: ManagerDep, _god: GodDep) -> dic
 async def god_announce(
     run_id: str, body: GodAnnouncement, manager: ManagerDep, _god: GodDep
 ) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     try:
         return run.god_announce(body.title, body.body)
     except BoardError as e:
@@ -191,7 +228,7 @@ async def god_announce(
 
 @router.post("/{run_id}/god/pace")
 async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     run.god_set_pace(body.cooldown, body.pixels_per_turn, body.pixel_interval)
     return run.summary()
 
@@ -204,12 +241,12 @@ async def delete_run(run_id: str, manager: ManagerDep) -> None:
 
 @router.get("/{run_id}/agents")
 async def list_agents(run_id: str, manager: ManagerDep) -> list[dict[str, Any]]:
-    return manager.get(run_id).agent_list()
+    return (await manager.fetch(run_id)).agent_list()
 
 
 @router.get("/{run_id}/agents/{agent_id}")
 async def get_agent(run_id: str, agent_id: int, manager: ManagerDep) -> dict[str, Any]:
-    detail = manager.get(run_id).agent_detail(agent_id)
+    detail = (await manager.fetch(run_id)).agent_detail(agent_id)
     if detail is None:
         raise HTTPException(404, f"agent {agent_id} not found")
     return detail
@@ -217,13 +254,13 @@ async def get_agent(run_id: str, agent_id: int, manager: ManagerDep) -> dict[str
 
 @router.get("/{run_id}/threads")
 async def list_threads(run_id: str, manager: ManagerDep) -> list[dict[str, Any]]:
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     return run.board.listing(limit=100, name_of=run.agent_name)
 
 
 @router.get("/{run_id}/threads/{thread_id}")
 async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[dict[str, Any]]:
-    posts = manager.get(run_id).board.thread(thread_id)
+    posts = (await manager.fetch(run_id)).board.thread(thread_id)
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
@@ -232,12 +269,12 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
 @router.get("/{run_id}/world")
 async def get_world(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     """Country nodes plus talk (replies, @mentions) and raid (overpainting) edges."""
-    return manager.get(run_id).world.snapshot()
+    return (await manager.fetch(run_id)).world.snapshot()
 
 
 @router.get("/{run_id}/canvas")
 async def get_canvas(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    canvas = manager.get(run_id).canvas
+    canvas = (await manager.fetch(run_id)).canvas
     rows = canvas.view(0, 0, canvas.width, canvas.height)
     return {"width": canvas.width, "height": canvas.height, "rows": rows}
 
@@ -249,7 +286,7 @@ async def get_events(
     after: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
 ) -> list[dict[str, Any]]:
-    manager.get(run_id)
+    await manager.fetch(run_id)
     events = manager.log.read(run_id, after_id=after, limit=limit)
     return [
         {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
@@ -264,7 +301,7 @@ async def get_timelapse(
     frames: Annotated[int, Query(ge=1, le=600)] = 120,
 ) -> Response:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     data = await asyncio.to_thread(
         build_timelapse, manager.log, run_id, run.canvas.width, run.canvas.height, frames
     )
@@ -278,13 +315,13 @@ class NarratorQuestion(BaseModel):
 @router.get("/{run_id}/narrator")
 async def get_narrator(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     """The narrator's update history (newest last) plus its interval and stats."""
-    return manager.get(run_id).narrator.state()
+    return (await manager.fetch(run_id)).narrator.state()
 
 
 @router.post("/{run_id}/narrator/ask")
 async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep) -> dict[str, Any]:
     """Answer a viewer's question from the current digest; also streamed as `narrator.update`."""
-    run = manager.get(run_id)
+    run = await manager.fetch(run_id)
     if run.state == "stopped":
         raise HTTPException(409, "run is stopped")
     try:
@@ -296,8 +333,9 @@ async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep)
 @router.websocket("/{run_id}/ws")
 async def run_socket(websocket: WebSocket, run_id: str) -> None:
     manager: RunManager = websocket.app.state.runs
-    run = manager.runs.get(run_id)
-    if run is None:
+    try:
+        run = await manager.fetch(run_id)
+    except HTTPException:
         await websocket.close(code=4004, reason="run not found")
         return
     await websocket.accept()
