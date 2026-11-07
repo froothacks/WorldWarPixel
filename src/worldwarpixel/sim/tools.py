@@ -26,6 +26,8 @@ class SocietyAccess(Protocol):
 
     def rename(self, name: str) -> dict[str, Any]: ...
 
+    def invite(self, name: str) -> dict[str, Any]: ...
+
 
 @dataclass(slots=True)
 class TurnBudget:
@@ -34,6 +36,7 @@ class TurnBudget:
     views: int = 3
     reads: int = 3
     votes: int = 1
+    invites: int = 1
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -42,6 +45,7 @@ class TurnBudget:
             "views": self.views,
             "reads": self.reads,
             "votes": self.votes,
+            "invites": self.invites,
         }
 
 
@@ -226,6 +230,12 @@ class ToolSet:
 
     def name_society(self, name: str) -> dict[str, Any]:
         return self._society_call(lambda: self.societies.rename(name))  # type: ignore[union-attr]
+
+    def invite(self, name: str) -> dict[str, Any]:
+        self._check("invites", 1)
+        out = self._society_call(lambda: self.societies.invite(name))  # type: ignore[union-attr]
+        self._spend("invites", 1)
+        return out
 
     def read_thread(self, thread_id: int) -> dict[str, Any]:
         self._check("reads", 1)

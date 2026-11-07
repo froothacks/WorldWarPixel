@@ -41,6 +41,8 @@ class Observation:
     """The agent's own society: id, name, members and the current murmur (if any)."""
     societies: list[dict[str, Any]] | None = None
     """Every society's id, name and member count, when the run has societies."""
+    memory: list[str] | None = None
+    """The agent's own last few turns (thought plus what it did), oldest first."""
 
 
 class Policy(Protocol):

@@ -239,6 +239,11 @@ SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
         {"society_id": {"type": "integer"}},
     ),
     _fn("name_society", "Rename the society you are in.", {"name": {"type": "string"}}),
+    _fn(
+        "invite",
+        "Invite someone (by name) to join the society you are in.",
+        {"name": {"type": "string"}},
+    ),
 ]
 
 READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
@@ -371,11 +376,24 @@ def society_lines(obs: Observation) -> str:
     text = (
         f"The people here are split into societies; each has its own threads. You are in society "
         f'{me["id"]} "{me["name"]}" ({me["members"]} people). Other societies: {others}. '
-        "You can peek_society, join_society or name_society.\n"
+        "You can peek_society, join_society, name_society or invite someone to your society.\n"
     )
+    for key, label in (
+        ("invites", "Invitations"),
+        ("moves", "Recent moves"),
+        ("contacts", "People you have talked with recently"),
+    ):
+        if me.get(key):
+            text += f"{label}: {'; '.join(me[key])}.\n"
     if me.get("murmur"):
         text += f"People in your society have been saying: {me['murmur']}\n"
     return text
+
+
+def memory_lines(obs: Observation) -> str:
+    if not obs.memory:
+        return ""
+    return "Your last turns:\n" + "\n".join(f"- {m}" for m in obs.memory) + "\n"
 
 
 def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
@@ -386,7 +404,7 @@ def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     return (
         f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post, "
         f"{obs.budget.votes} vote.\n"
-        f"{look}{society_lines(obs)}\nTop threads on {where}:\n{board}"
+        f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}"
     )
 
 
@@ -730,6 +748,8 @@ class LLMPolicy:
                 return tools.join_society(int(a["society_id"]))
             case "name_society":
                 return tools.name_society(str(a["name"]))
+            case "invite":
+                return tools.invite(str(a["name"]))
         raise ToolError(f"unknown tool {name}")
 
 
@@ -908,4 +928,6 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             return f'joined society {result.get("society")} "{result.get("name")}"'
         case "name_society":
             return f'renamed my society to "{result.get("name")}"'
+        case "invite":
+            return f"invited {result.get('invited')} to society {result.get('society')}"
     return name

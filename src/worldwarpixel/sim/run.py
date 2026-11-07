@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import random
+import re
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -53,6 +54,9 @@ GOD_ID = 65535
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
+MEMORY_TURNS = 3  # own past turns shown to an agent
+CONTACTS_SHOWN = 5
+MENTION = re.compile(r"@(\w+)")
 MAX_GOD_PIXELS = 50_000
 
 
@@ -95,6 +99,8 @@ class Run:
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
         }
+        self.contacts: dict[int, dict[int, float]] = {a.id: {} for a in self.agents}
+        """Who each agent has recently talked with (shared threads, @mentions, invitations)."""
         self.stats = {"pixels": 0, "posts": 0, "turns": 0, "errors": 0}
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
@@ -112,6 +118,32 @@ class Run:
     @property
     def by_id(self) -> dict[int, AgentSpec]:
         return {a.id: a for a in self.agents}
+
+    def find_agent(self, name: str) -> int | None:
+        """Resolve a name as agents write it: full name, or a unique first name or prefix."""
+        key = " ".join(name.strip().lstrip("@").split()).lower()
+        if not key:
+            return None
+        names = [(a.id, a.name.lower()) for a in self.agents]
+        for hits in (
+            [i for i, n in names if n == key],
+            [i for i, n in names if n.split()[0] == key],
+            [i for i, n in names if n.startswith(key)],
+        ):
+            if len(hits) == 1:
+                return hits[0]
+        return None
+
+    def meet(self, a: int, b: int) -> None:
+        if a == b or a not in self.contacts or b not in self.contacts:
+            return
+        now = self._clock()
+        for x, y in ((a, b), (b, a)):
+            seen = self.contacts[x]
+            seen[y] = now
+            if len(seen) > 16:
+                for old in sorted(seen, key=seen.__getitem__)[:-8]:
+                    del seen[old]
 
     def agent_name(self, agent_id: int) -> str:
         if agent_id == GOD_ID:
@@ -297,13 +329,17 @@ class Run:
             board=self._announcement_digest()
             + self.board.digest(name_of=self.agent_name, society=society),
         )
+        now = self._clock()
+        obs.memory = [
+            f"{_ago(now - t['ts'])} ago: {t['thought'][:240]}"
+            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
+        ]
         if self.societies is not None and society is not None:
-            now = self._clock()
-            mine = self.societies.get(society)
             obs.society = {
-                **mine.to_dict(),
+                **self.societies.get(society).to_dict(),
                 "members": self.societies.size(society),
                 "murmur": self.societies.murmur(society, now),
+                **self._social_facts(agent.id, society, now),
             }
             obs.societies = [
                 {**s.to_dict(), "members": self.societies.size(s.id)}
@@ -325,6 +361,34 @@ class Run:
         self._set_status(agent.id, "idle")
 
     # -- societies -------------------------------------------------------------------------
+
+    def _social_facts(self, agent_id: int, society: int, now: float) -> dict[str, list[str]]:
+        """Plain facts about the agent's people: where its contacts are, who moved, invitations."""
+        assert self.societies is not None
+        socs = self.societies
+
+        def where(s: int) -> str:
+            return "here" if s == society else f'in {s} "{socs.get(s).name}"'
+
+        seen = self.contacts.get(agent_id, {})
+        recent = sorted(seen, key=seen.__getitem__, reverse=True)[:CONTACTS_SHOWN]
+        moves = []
+        for m in socs.recent_moves(society, now):
+            if m.agent_id == agent_id:
+                continue
+            who = self.agent_name(m.agent_id)
+            if m.dst == society:
+                moves.append(f'{who} arrived from {m.src} "{socs.get(m.src).name}"')
+            else:
+                moves.append(f'{who} left for {m.dst} "{socs.get(m.dst).name}"')
+        return {
+            "contacts": [f"{self.agent_name(c)} ({where(socs.of(c))})" for c in recent],
+            "moves": moves,
+            "invites": [
+                f'{self.agent_name(i.src)} invited you to {i.society} "{socs.get(i.society).name}"'
+                for i in socs.pending(agent_id, now)
+            ],
+        }
 
     def society_summary(self) -> list[dict[str, Any]]:
         return self.societies.summary(self._clock()) if self.societies else []
@@ -355,6 +419,11 @@ class Run:
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
+            for p in self.board.thread(int(payload["thread_id"]))[-6:]:
+                self.meet(agent_id, p.author_id)
+            for word in MENTION.findall(str(payload.get("body", ""))):
+                if (other := self.find_agent(word)) is not None:
+                    self.meet(agent_id, other)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
@@ -462,6 +531,25 @@ class _SocietyAccess:
         run.hub.publish("society.joined", agent_id=m.agent_id, **payload)
         return {"society": m.dst, "name": self._societies.get(m.dst).name}
 
+    def invite(self, name: str) -> dict[str, Any]:
+        run = self._run
+        target = run.find_agent(name)
+        if target is None:
+            raise ValueError(f"nobody here is called {name!r}")
+        if target == self._agent_id:
+            raise ValueError("you cannot invite yourself")
+        inv = self._societies.invite(self._agent_id, target, run._clock())
+        run.meet(self._agent_id, target)
+        payload = {
+            "agent": run.agent_name(self._agent_id),
+            "target_id": target,
+            "target": run.agent_name(target),
+            "society": inv.society,
+        }
+        run._record("society.invite", self._agent_id, payload)
+        run.hub.publish("society.invited", agent_id=self._agent_id, **payload)
+        return {"invited": payload["target"], "society": inv.society}
+
     def rename(self, name: str) -> dict[str, Any]:
         run = self._run
         s = self._societies.rename(self.current(), name)
@@ -469,3 +557,7 @@ class _SocietyAccess:
         run._record("society.renamed", self._agent_id, payload)
         run.hub.publish("society.renamed", agent_id=self._agent_id, **payload)
         return payload
+
+
+def _ago(seconds: float) -> str:
+    return f"{seconds:.0f} s" if seconds < 90 else f"{seconds / 60:.0f} min"

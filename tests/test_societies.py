@@ -249,3 +249,53 @@ def test_agent_votes_are_throttled() -> None:
     assert tools().vote_thread(thread.id, up=False)["votes"] == 0
     with pytest.raises(ToolError):
         tools().vote_thread(999)
+
+
+def test_invites_contacts_moves_and_memory_reach_the_prompt() -> None:
+    from worldwarpixel.sim.run import _SocietyAccess
+    from worldwarpixel.sim.tools import ToolSet
+
+    run = _run()
+    socs = run.societies
+    assert socs is not None
+    a, b = run.agents[0], run.agents[1]
+    assert socs.of(a.id) != socs.of(b.id)
+    assert run.find_agent("@" + b.name.split()[0].upper()) in (b.id, None)
+    assert run.find_agent(b.name) == b.id and run.find_agent("nobody at all") is None
+
+    tools = ToolSet(
+        run.canvas,
+        run.board,
+        a.id,
+        TurnBudget(),
+        lambda k, p: None,
+        run._clock,
+        _SocietyAccess(run, a.id),
+    )
+    assert tools.invite(b.name) == {"invited": b.name, "society": socs.of(a.id)}
+    with pytest.raises(ToolError, match="budget"):
+        tools.invite(b.name)
+    facts = run._social_facts(b.id, socs.of(b.id), run._clock())
+    assert facts["invites"] == [
+        f'{a.name} invited you to {socs.of(a.id)} "{socs.get(socs.of(a.id)).name}"'
+    ]
+    assert facts["contacts"][0].startswith(a.name)
+
+    _SocietyAccess(run, b.id).join(socs.of(a.id))
+    assert socs.pending(b.id, run._clock()) == []
+    moved = run._social_facts(a.id, socs.of(a.id), run._clock())["moves"]
+    assert moved and moved[0].startswith(f"{b.name} arrived from")
+
+    obs = Observation(
+        elapsed=1,
+        budget=TurnBudget(),
+        canvas_width=32,
+        canvas_height=32,
+        board=[],
+        society={**socs.get(0).to_dict(), "members": 2, "murmur": None, **facts},
+        societies=[{**s.to_dict(), "members": 2} for s in socs.societies],
+        memory=["5 s ago: I peeked at Blue"],
+    )
+    text = user_prompt(a, obs)
+    assert "Your last turns:\n- 5 s ago: I peeked at Blue" in text
+    assert "Invitations: " in text and "People you have talked with recently: " in text

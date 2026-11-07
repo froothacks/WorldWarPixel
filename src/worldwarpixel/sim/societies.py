@@ -15,6 +15,10 @@ SOCIETY_NAMES = ("Red", "Blue", "Green", "Yellow", "Purple", "Cyan")
 MURMUR_WINDOW = 900.0
 """Seconds a murmur stays in members' prompts before it fades."""
 MIGRATION_WINDOW = 60.0
+INVITE_WINDOW = 900.0
+"""Seconds an invitation stays in the invitee's prompt."""
+MOVES_WINDOW = 600.0
+"""Seconds members keep hearing about who arrived or left."""
 MAX_NAME = 40
 
 
@@ -43,6 +47,13 @@ class Migration:
     dst: int
 
 
+@dataclass(slots=True)
+class Invite:
+    ts: float
+    src: int
+    society: int
+
+
 @dataclass
 class Societies:
     """Membership, names, murmurs and the migration history of one run."""
@@ -55,6 +66,8 @@ class Societies:
     migrations: deque[Migration] = field(default_factory=lambda: deque(maxlen=500))
     moves: int = 0
     """Total joins ever, so readers can tell what is new after the deque wraps."""
+    invites: dict[int, dict[int, Invite]] = field(default_factory=dict)
+    """Invitee -> inviter -> their latest invitation."""
 
     def __post_init__(self) -> None:
         self.societies = [
@@ -88,10 +101,37 @@ class Societies:
             raise SocietyError(f"you moved recently; you can move again in {wait:.0f} s")
         self.members[agent_id] = society_id
         self.last_switch[agent_id] = now
+        self.invites.pop(agent_id, None)
         m = Migration(now, agent_id, src, society_id)
         self.migrations.append(m)
         self.moves += 1
         return m
+
+    def invite(self, src: int, target: int, now: float) -> Invite:
+        """`src` invites `target` into the society `src` is in now."""
+        society = self.members[src]
+        if self.members[target] == society:
+            raise SocietyError("they are already in your society")
+        inv = Invite(now, src, society)
+        self.invites.setdefault(target, {})[src] = inv
+        return inv
+
+    def pending(self, target: int, now: float, limit: int = 3) -> list[Invite]:
+        """Live invitations to a society `target` is not in, newest last."""
+        here = self.members[target]
+        live = [
+            i
+            for i in self.invites.get(target, {}).values()
+            if now - i.ts < INVITE_WINDOW and i.society != here
+        ]
+        return sorted(live, key=lambda i: i.ts)[-limit:]
+
+    def recent_moves(self, society_id: int, now: float, limit: int = 5) -> list[Migration]:
+        """Arrivals and departures of this society in the last MOVES_WINDOW seconds."""
+        moves = [
+            m for m in self.migrations if now - m.ts < MOVES_WINDOW and society_id in (m.src, m.dst)
+        ]
+        return moves[-limit:]
 
     def rename(self, society_id: int, name: str) -> Society:
         name = " ".join(name.split())[:MAX_NAME]
