@@ -19,7 +19,6 @@ SMALL = {"width": 32, "height": 16, "agents": 3, "cooldown": 0.01, "jitter": 0, 
 @pytest.fixture
 def server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """Each ``TestClient(app)`` block is one server process sharing an on-disk event log."""
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("EVENT_LOG_PATH", str(tmp_path / "events.db"))
     get_settings.cache_clear()
     yield

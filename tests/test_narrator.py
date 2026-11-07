@@ -216,7 +216,6 @@ SMALL = {
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("EVENT_LOG_PATH", ":memory:")
     get_settings.cache_clear()
     with TestClient(app) as c:

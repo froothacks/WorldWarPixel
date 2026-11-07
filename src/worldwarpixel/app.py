@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
     )
     async with AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value() or "none",
+        api_key=settings.api_key(),
         base_url=settings.openai_base_url,
         timeout=settings.request_timeout,
         default_headers=settings.default_headers() or None,
