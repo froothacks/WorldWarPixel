@@ -159,15 +159,15 @@ export default function Board({ runId, threads, agentName, agentColor, onSelectA
 
   return (
     <aside className="board" hidden={hidden}>
-      <header className="board-header">
-        <strong>Message board</strong>
-        <span className="muted small">
+      <header className="panel-head">
+        <span className="label">Board</span>
+        <span className="count">
           {totalThreads} {totalThreads === 1 ? "thread" : "threads"}
           {unread > 0 && <span className="unread-count"> · {unread} new</span>}
         </span>
         {unread > 0 && (
           <button
-            className="ghost small mark-read"
+            className="ghost mark-read"
             onClick={() => setSeen(new Map(threads.map((t) => [t.thread_id, t.last_activity])))}
             title="Mark every thread as read"
           >

@@ -1,50 +1,50 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { NarratorHighlight, NarratorState, NarratorUpdate, RunStats } from "./api";
+import type { NarratorHighlight, NarratorState, NarratorUpdate } from "./api";
 
-const EVENT_ICON: Record<string, string> = {
-  finished: "✔",
-  team: "⚑",
-  raid: "⚔",
-  repair: "⛨",
-  overwrite: "✎",
-  started: "✦",
-  move: "➜",
-  thread: "✉",
-  hot_thread: "🔥",
+const EVENT_MARK: Record<string, string> = {
+  finished: "+",
+  team: "&",
+  raid: "x",
+  repair: "+",
+  overwrite: "~",
+  started: "*",
+  move: ">",
+  thread: "#",
+  hot_thread: "!",
 };
 
 interface Props {
   narrator: NarratorState | null;
   paused: boolean;
-  stats: RunStats;
-  threads: number;
   onHighlight: (highlight: NarratorHighlight) => void;
   onAsk: (question: string) => Promise<void>;
 }
 
-const CHIP_ICON = { agent: "@", thread: "#", region: "⌖" } as const;
+const CHIP_PREFIX = { agent: "@", thread: "#", region: "" } as const;
 
-export default function NarratorDock({ narrator, paused, stats, threads, onHighlight, onAsk }: Props) {
+export default function NarratorDock({ narrator, paused, onHighlight, onAsk }: Props) {
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
   const [asked, setAsked] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now() / 1000);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const [showLog, setShowLog] = useState(false);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const logRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
   const updates = narrator?.updates ?? [];
   const count = updates.length;
+  const latest = updates.at(-1);
   const hasModel = narrator?.model ?? true;
 
-  // Newest update at the bottom, like a chat: follow it as it arrives, unless the
-  // viewer has scrolled up to read (or click) older cards.
+  // Newest entry at the bottom of the log: follow it unless the viewer scrolled up.
   useEffect(() => {
-    const el = bodyRef.current;
+    const el = logRef.current;
     if (el && followRef.current) el.scrollTop = el.scrollHeight;
-  }, [count, pending]);
+  }, [count, pending, showLog]);
 
   const onScroll = () => {
-    const el = bodyRef.current;
+    const el = logRef.current;
     if (el) followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
 
@@ -70,112 +70,144 @@ export default function NarratorDock({ narrator, paused, stats, threads, onHighl
     }
   };
 
+  const toggle = (id: number) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const interval = narrator?.interval ?? 60;
   const lastUpdate = [...updates].reverse().find((u) => u.kind === "update");
-  const nextAt = lastUpdate ? lastUpdate.ts + interval : narrator?.next_update_at ?? null;
+  const nextAt = lastUpdate ? lastUpdate.ts + interval : (narrator?.next_update_at ?? null);
   const countdown = nextAt === null ? null : Math.max(0, Math.round(nextAt - now));
-  const status = paused ? " · paused" : countdown !== null ? ` · next in ${countdown} s` : "";
+  const failures = narrator?.stats.failures ?? 0;
+  // A fresh answer opens by default; everything else is one line until clicked.
+  const isOpen = (u: NarratorUpdate) => expanded.has(u.id) !== (u.kind === "answer" && u.id === latest?.id);
 
   return (
     <footer className="narrator">
       <div className="narrator-head">
-        <strong>Narrator</strong>
-        <span className="muted small">
-          every {interval} s{status}
-          {narrator && narrator.stats.failures > 0 && ` · ${narrator.stats.failures} failed model calls`}
+        <span className="label">Narrator</span>
+        <span className="meta">
+          every {interval}s{paused ? " · paused" : countdown !== null ? ` · next ${countdown}s` : ""}
+          {failures > 0 && ` · ${failures} failed`}
         </span>
         <span className="spacer" />
-        <span className="muted small">
-          {stats.turns.toLocaleString()} turns · {stats.pixels.toLocaleString()} px · {stats.posts.toLocaleString()} posts · {threads} threads
-        </span>
-      </div>
-      <div className="narrator-body" ref={bodyRef} onScroll={onScroll}>
-        {count === 0 && (
-          <p className="narrator-empty small">
-            {narrator ? `Waiting for the first update (every ${interval} s). Ask a question below in the meantime.` : "Connecting…"}
-          </p>
-        )}
-        {updates.map((u) => (
-          <UpdateItem key={u.id} update={u} onHighlight={onHighlight} />
-        ))}
-        {pending && (
-          <>
-            <div className="narr-question">{asked}</div>
-            <p className="muted small">Narrator is thinking…</p>
-          </>
+        {count > 1 && (
+          <button type="button" className="text" onClick={() => setShowLog(!showLog)}>
+            {showLog ? "hide log" : `log (${count})`}
+          </button>
         )}
       </div>
+      {showLog ? (
+        <div className="narrator-log" ref={logRef} onScroll={onScroll}>
+          {updates.map((u) => (
+            <UpdateItem key={u.id} update={u} open={isOpen(u)} onToggle={() => toggle(u.id)} onHighlight={onHighlight} />
+          ))}
+        </div>
+      ) : latest ? (
+        <UpdateItem update={latest} open={isOpen(latest)} onToggle={() => toggle(latest.id)} onHighlight={onHighlight} />
+      ) : (
+        <p className="narrator-empty">{narrator ? `First update in ~${interval}s. You can ask a question now.` : "Connecting…"}</p>
+      )}
+      {pending && (
+        <div className="narr-pending">
+          {asked} <span className="faint">· thinking…</span>
+        </div>
+      )}
       <form className="narrator-ask" onSubmit={submit}>
         <input
-          placeholder={hasModel ? "Ask the narrator… e.g. who is winning the top-left corner?" : "No narrator model for this run (random agents) — stats-only updates"}
+          placeholder={hasModel ? "Ask the narrator, e.g. who holds the top-left corner?" : "No narrator model for this run (random agents)"}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           disabled={pending || !narrator || !hasModel}
           maxLength={500}
         />
+        {error && (
+          <span className="error" title={error}>
+            {error}
+          </span>
+        )}
         <button type="submit" disabled={pending || !narrator || !hasModel || !question.trim()}>
-          {pending ? "Asking…" : "Ask"}
+          {pending ? "asking…" : "ask"}
         </button>
-        {error && <span className="error" title={error}>{error}</span>}
       </form>
     </footer>
   );
 }
 
-function UpdateItem({ update: u, onHighlight }: { update: NarratorUpdate; onHighlight: Props["onHighlight"] }) {
-  const time = new Date(u.ts * 1000).toLocaleTimeString();
+interface ItemProps {
+  update: NarratorUpdate;
+  open: boolean;
+  onToggle: () => void;
+  onHighlight: Props["onHighlight"];
+}
+
+function UpdateItem({ update: u, open, onToggle, onHighlight }: ItemProps) {
+  const time = new Date(u.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const events = u.kind === "update" ? (u.events ?? []) : [];
+  const hasDetail = u.bullets.length > 0 || events.length > 0 || u.question !== null;
   return (
-    <>
-      {u.kind === "answer" && u.question && <div className="narr-question">{u.question}</div>}
-      <div className={`narr-item ${u.kind}`}>
-        <div className="narr-meta">
-          <span className="kind">{u.kind}</span>
-          <span>{time}</span>
-          {u.kind === "update" && (
-            <span>
-              · last {Math.round(u.window.seconds)} s: {u.window.turns} turns, {u.window.pixels} px, {u.window.posts} posts
-            </span>
-          )}
-          {u.source === "fallback" && (
-            <span title={u.error ?? undefined}>{u.error ? "· stats only, model unavailable" : "· stats only, no narrator model for this run"}</span>
-          )}
-        </div>
-        <div className="narr-headline">{u.headline}</div>
-        {u.bullets.length > 0 && (
-          <ul className="narr-bullets">
-            {u.bullets.map((b, i) => (
-              <li key={i}>{b}</li>
-            ))}
-          </ul>
-        )}
-        {u.kind === "update" && (u.events?.length ?? 0) > 0 && (
-          <details className="narr-events">
-            <summary>{u.events!.length} notable events</summary>
-            <ul>
-              {u.events!.map((e, i) => (
-                <li key={i} className={`ev ev-${e.kind}`}>
-                  <span className="ev-kind">{EVENT_ICON[e.kind] ?? "•"}</span> {e.text}
-                </li>
+    <div className={`narr-item ${u.kind} ${open ? "open" : ""}`}>
+      <div className="narr-row">
+        <span className="narr-time">{time}</span>
+        {u.kind === "answer" && <span className="narr-kind">Answer</span>}
+        <button type="button" className="narr-headline" onClick={onToggle} disabled={!hasDetail} title={open ? "Collapse" : "Expand"}>
+          {u.headline}
+        </button>
+        {u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
+        {hasDetail && <span className="narr-toggle">{open ? "−" : "+"}</span>}
+      </div>
+      {open && (
+        <div className="narr-detail">
+          {u.question && <div className="narr-question">{u.question}</div>}
+          {u.bullets.length > 0 && (
+            <ul className="narr-bullets">
+              {u.bullets.map((b, i) => (
+                <li key={i}>{b}</li>
               ))}
             </ul>
-          </details>
-        )}
-        {u.highlights.length > 0 && (
-          <div className="chips">
-            {u.highlights.map((h, i) => (
-              <button
-                key={i}
-                type="button"
-                className={`chip chip-${h.type}`}
-                title={h.type === "region" ? `Pan the canvas to (${h.x}, ${h.y}) ${h.w}×${h.h}` : h.type === "agent" ? "Select this agent" : "Open this thread"}
-                onClick={() => onHighlight(h)}
-              >
-                {CHIP_ICON[h.type]} {h.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </>
+          )}
+          {events.length > 0 && (
+            <details className="narr-events">
+              <summary>{events.length} events</summary>
+              <ul>
+                {events.map((e, i) => (
+                  <li key={i} className={`ev ev-${e.kind}`}>
+                    <span className="ev-kind">{EVENT_MARK[e.kind] ?? "·"}</span>
+                    {e.text}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <span className="narr-note">
+            {u.kind === "update" && `last ${Math.round(u.window.seconds)}s: ${u.window.turns} turns, ${u.window.pixels} px, ${u.window.posts} posts`}
+            {u.source === "fallback" && (u.error ? " · stats only, model unavailable" : " · stats only")}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Chips({ highlights, onHighlight }: { highlights: NarratorHighlight[]; onHighlight: Props["onHighlight"] }) {
+  return (
+    <span className="chips">
+      {highlights.map((h, i) => (
+        <button
+          key={i}
+          type="button"
+          className={`chip chip-${h.type}`}
+          title={h.type === "region" ? `Pan the canvas to (${h.x}, ${h.y}) ${h.w}×${h.h}` : h.type === "agent" ? "Select this agent" : "Open this thread"}
+          onClick={() => onHighlight(h)}
+        >
+          {CHIP_PREFIX[h.type]}
+          {h.label}
+        </button>
+      ))}
+    </span>
   );
 }
