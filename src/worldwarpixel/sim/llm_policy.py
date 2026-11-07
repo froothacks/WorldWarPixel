@@ -450,6 +450,8 @@ class LLMPolicy:
             return f"error: bad arguments ({e})"
         actions.append(_summarise(name, args, result))
         _track_position(agent, name, args, result)
+        if name not in ("view_canvas", "read_thread"):
+            tools.record_action(name, _public_args(name, args), result)
         return json.dumps(result)
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
@@ -644,6 +646,19 @@ def _track_position(
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
     elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
         agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
+
+
+def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Compact, JSON-safe view of a tool call's arguments for the event log."""
+    if name == "place_pixels":
+        px = args.get("pixels") or []
+        return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
+    keep = ("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape")
+    out = {k: v for k, v in args.items() if k in keep}
+    if name in ("post_thread", "reply"):
+        out["thread_id"] = args.get("thread_id")
+        out["title"] = str(args.get("title", ""))[:80] or None
+    return out
 
 
 def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
