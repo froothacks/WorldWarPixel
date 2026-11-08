@@ -118,6 +118,8 @@ args=(
 )
 if [ -n "$CLOUDSQL_INSTANCE" ]; then
   args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
+  # DATABASE_URL comes from Secret Manager (socket DSN), not the env file.
+  args+=(--update-secrets "DATABASE_URL=DATABASE_URL:latest")
 fi
 # KEY=value lines -> the YAML gcloud expects; Secret Manager wins for same-named keys.
 yaml="$(mktemp)"
