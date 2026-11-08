@@ -377,7 +377,7 @@ button.text:hover { background: none; color: var(--text); }
   .kpis .opt { display: none; }
 }
 
-.narr-row .narr-headline { border: 0; height: auto; padding: 0; text-align: left; background: none; font: inherit; font-size: 13.5px; line-height: 20px; color: var(--text); }
+.narr-row .narr-headline { border: 0; height: auto; padding: 0; text-align: left; background: none; font: inherit; font-size: 13.5px; line-height: 20px; color: var(--text); white-space: normal; overflow-wrap: anywhere; }
 .narr-row .narr-headline:disabled { opacity: 1; cursor: default; }
 
 /* societies */
