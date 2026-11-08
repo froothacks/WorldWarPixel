@@ -55,7 +55,7 @@ done
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
   --port 8080 --cpu 1 --memory 2Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
-  --concurrency 250 --timeout 3600 --session-affinity --execution-environment gen2
+  --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET"
   --add-volume-mount volume=data,mount-path=/data --service-account "$RUNTIME_SA"
 )
