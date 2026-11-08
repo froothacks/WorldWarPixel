@@ -85,7 +85,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
   );
 
   useEffect(() => {
-    fetch(`/runs/${runId}/timelapse?frames=240`)
+    fetch(`/runs/${runId}/timelapse`)
       .then((r) =>
         r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.statusText)),
       )
@@ -254,7 +254,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           <label className="small">
             fps
             <select value={fps} onChange={(e) => setFps(+e.target.value)}>
-              {[4, 8, 12, 24, 30].map((v) => (
+              {[4, 8, 12, 24, 30, 60].map((v) => (
                 <option key={v} value={v}>
                   {v}
                 </option>

@@ -42,15 +42,48 @@ def test_timelapse_frames_hold_deltas_and_honour_clears() -> None:
     assert _frames(build_timelapse(EventLog(), "none", 4, 2, 10)) == []
 
 
+def test_timelapse_defaults_to_one_frame_per_second() -> None:
+    log = EventLog()
+    log.append("r", 0.0, "pixel", 1, {"x": 0, "y": 0, "color": 5})
+    log.append("r", 0.5, "pixel", 1, {"x": 1, "y": 0, "color": 6})
+    log.append("r", 3.2, "pixel", 1, {"x": 2, "y": 0, "color": 7})
+
+    frames = _frames(build_timelapse(log, "r", 4, 1))
+
+    assert len(frames) == 4
+    assert frames[-1][1] == {2: 7}
+
+
+def test_timelapse_single_instant_has_one_frame() -> None:
+    log = EventLog()
+    log.append("r", 3.2, "pixel", 1, {"x": 0, "y": 0, "color": 5})
+
+    frames = _frames(build_timelapse(log, "r", 1, 1))
+
+    assert len(frames) == 1
+    assert frames[0][1] == {0: 5}
+
+
+def test_timelapse_clamps_explicit_frame_count_to_u16() -> None:
+    log = EventLog()
+    log.append("r", 0.0, "pixel", 1, {"x": 0, "y": 0, "color": 5})
+    log.append("r", 70_000.0, "pixel", 1, {"x": 0, "y": 0, "color": 6})
+
+    data = build_timelapse(log, "r", 1, 1, frames=100_000)
+
+    assert struct.unpack_from("<H", data, 0)[0] == 65_535
+
+
 def test_timelapse_endpoint() -> None:
     with TestClient(app) as client:
         cfg = {"width": 32, "height": 16, "agents": 2, "cooldown": 0.05, "policy": "random"}
         rid = client.post("/runs", json=cfg).json()["id"]
         client.post(f"/runs/{rid}/god/pixels", json={"pixels": [[1, 1, 5]]})
-        r = client.get(f"/runs/{rid}/timelapse", params={"frames": 3})
+        r = client.get(f"/runs/{rid}/timelapse")
         assert r.status_code == 200 and r.headers["content-type"] == "application/octet-stream"
         n, w, h = struct.unpack_from("<HHH", r.content, 0)
-        assert (w, h) == (32, 16) and 1 <= n <= 3
+        assert (w, h) == (32, 16) and n >= 1
+        assert client.get(f"/runs/{rid}/timelapse", params={"frames": 70_000}).status_code == 422
         client.post(f"/runs/{rid}/stop")
 
 

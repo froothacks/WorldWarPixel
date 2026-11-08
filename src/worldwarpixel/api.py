@@ -30,7 +30,7 @@ from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.speech import SpeechSynth, wav
-from worldwarpixel.sim.timelapse import build_timelapse
+from worldwarpixel.sim.timelapse import MAX_FRAMES, build_timelapse
 from worldwarpixel.sim.video import VideoError
 from worldwarpixel.videos import VideoStore
 
@@ -557,7 +557,7 @@ async def get_events(
 async def get_timelapse(
     run_id: str,
     manager: ManagerDep,
-    frames: Annotated[int, Query(ge=1, le=600)] = 120,
+    frames: Annotated[int | None, Query(ge=1, le=MAX_FRAMES)] = None,
 ) -> Response:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
     run = manager.runs.get(run_id)
