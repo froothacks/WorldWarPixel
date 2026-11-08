@@ -138,7 +138,10 @@ def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, A
     return {
         "type": "state",
         "run": run.id,
-        "society": {k: mine[k] for k in ("id", "name", "color", "members", "joined", "left")},
+        "society": {
+            **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
+            "name": interview.ascii_text(mine["name"]),
+        },
         "societies": [
             {
                 "id": s["id"],
