@@ -1,3 +1,4 @@
+import logging
 import struct
 import time
 from collections.abc import Iterator
@@ -113,7 +114,7 @@ def test_restore_run_reads_from_source_but_keeps_original_log() -> None:
 
 
 def test_archived_api_reads_use_and_close_readers(
-    server: None, monkeypatch: pytest.MonkeyPatch
+    server: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     with TestClient(app) as client:
         manager = client.app.state.runs  # type: ignore[attr-defined]
@@ -140,11 +141,15 @@ def test_archived_api_reads_use_and_close_readers(
 
         monkeypatch.setattr(manager.log, "reader", tracked_reader)
 
-        events = client.get(f"/runs/{run_id}/events")
+        with caplog.at_level(logging.INFO, logger="worldwarpixel.api"):
+            events = client.get(f"/runs/{run_id}/events")
         assert events.status_code == 200
         assert [event["kind"] for event in events.json()] == ["run.created", "pixel"]
         assert events.json()[1]["payload"] == {"x": 2, "y": 3, "color": 4}
         assert len(readers) == 2 and closed == readers
+        assert any(
+            "restored run archived pixels=1 in" in record.getMessage() for record in caplog.records
+        )
 
         timelapse = client.get(f"/runs/{run_id}/timelapse", params={"frames": 3})
         assert timelapse.status_code == 200
