@@ -688,14 +688,13 @@ static int http_get(const char *path, uint8_t *buf, int cap, int *out_len)
     esp_err_t err = esp_http_client_open(c, 0);
     int status = 0;
     if (err == ESP_OK) {
+        esp_http_client_fetch_headers(c);   /* parses the status line */
         status = esp_http_client_get_status_code(c);
         int len = 0;
         if (buf) {
             int r;
-            while ((r = esp_http_client_read(c, (char *)buf + len, cap - len)) > 0)
+            while (len < cap && (r = esp_http_client_read(c, (char *)buf + len, cap - len)) > 0)
                 len += r;
-        } else {
-            esp_http_client_fetch_headers(c);
         }
         if (out_len)
             *out_len = len;
