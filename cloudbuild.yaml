@@ -11,7 +11,6 @@ steps:
       - --cache-repo=${_CACHE_REPO}
       - --compressed-caching=false
       - --snapshot-mode=redo
-      - --use-new-run
 
 options:
   machineType: E2_HIGHCPU_8
