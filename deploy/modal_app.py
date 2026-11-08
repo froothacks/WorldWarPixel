@@ -2,7 +2,9 @@
 
 Sandboxes are capped at 24h and get a new tunnel URL each time, so this module also deploys an
 hourly ``keep_alive`` job (restarts the sandbox if it died, replaces it before the cap) and a
-``home`` web endpoint with a stable URL that redirects to whichever sandbox is current. The event
+``home`` web endpoint with a stable URL that redirects to whichever sandbox is current, plus the
+``worldwarpixel.com`` custom domains (Modal terminates their TLS; DNS must CNAME to
+``cname.modal.domains``). The event
 log is SQLite on the sandbox disk, backed up to a Volume (see ``serve.py``). Live runs are held
 in memory, so they end whenever the sandbox is replaced; they reopen as stopped runs from the log.
 
@@ -129,7 +131,7 @@ def keep_alive() -> None:
 
 @app.function(image=control_image)
 @modal.concurrent(max_inputs=100)
-@modal.asgi_app()
+@modal.asgi_app(custom_domains=["worldwarpixel.com", "www.worldwarpixel.com"])
 def home() -> Any:
     from fastapi import FastAPI, Request
     from fastapi.responses import PlainTextResponse, RedirectResponse, Response
