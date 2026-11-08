@@ -13,15 +13,16 @@ from collections.abc import Iterable
 from itertools import takewhile
 
 from worldwarpixel.sim.events import Event, EventStore
+from worldwarpixel.sim.migrations import CANVAS_KINDS
 
 MAX_FRAMES = 600
 PAGE = 10_000
 
 
-def iter_events(log: EventStore, run_id: str) -> Iterable[Event]:
+def iter_events(log: EventStore, run_id: str, *, canvas_only: bool = False) -> Iterable[Event]:
     after = 0
     while True:
-        page = log.read(run_id, after_id=after, limit=PAGE)
+        page = log.read(run_id, after_id=after, limit=PAGE, canvas_only=canvas_only)
         if not page:
             return
         yield from page
@@ -30,14 +31,14 @@ def iter_events(log: EventStore, run_id: str) -> Iterable[Event]:
         after = page[-1].id
 
 
-KINDS = ("pixel", "god.clear_canvas")
+KINDS = CANVAS_KINDS
 
 
 def _time_span(log: EventStore, run_id: str) -> tuple[float, float, int] | None:
     """(first ts, last ts, last event id) of the relevant events, or None if there are none."""
     t0 = t1 = None
     last_id = 0
-    for e in iter_events(log, run_id):
+    for e in iter_events(log, run_id, canvas_only=True):
         if e.kind in KINDS:
             t0 = e.ts if t0 is None else t0
             t1, last_id = e.ts, e.id
@@ -56,7 +57,7 @@ def build_timelapse(log: EventStore, run_id: str, width: int, height: int, frame
     state = bytearray(width * height)
     pending: dict[int, int] = {}
     written = 0
-    relevant = (e for e in iter_events(log, run_id) if e.kind in KINDS)
+    relevant = (e for e in iter_events(log, run_id, canvas_only=True) if e.kind in KINDS)
     # A live run keeps appending past the span; cut by id so a clock step never truncates it.
     events = takewhile(lambda e: e.id <= last_id, relevant)
     nxt = next(events, None)

@@ -254,7 +254,11 @@ def render_video(
     step = (t1 - t0) / frames if t1 > t0 else 0.0
     state = bytearray(width * height)
     pixels_so_far = 0
-    relevant = (e for e in iter_events(log, run_id) if e.kind in ("pixel", "god.clear_canvas"))
+    relevant = (
+        e
+        for e in iter_events(log, run_id, canvas_only=True)
+        if e.kind in ("pixel", "god.clear_canvas")
+    )
     events = takewhile(lambda e: e.id <= tl.last_id, relevant)
     nxt = next(events, None)
     posts_sorted = sorted(tl.posts, key=lambda p: p["ts"])

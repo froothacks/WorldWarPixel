@@ -28,7 +28,7 @@ def test_timelapse_frames_hold_deltas_and_honour_clears() -> None:
     log = EventLog()
     log.append("r", 0.0, "pixel", 1, {"x": 0, "y": 0, "color": 5})
     log.append("r", 1.0, "pixel", 1, {"x": 1, "y": 0, "color": 6})
-    log.append("r", 2.0, "post", 1, {"body": "ignored"})
+    log.append("r", 2.0, "agent.status", 1, {"status": "ignored"})
     log.append("r", 3.0, "pixel", 2, {"x": 0, "y": 0, "color": 7})
     log.append("r", 4.0, "god.clear_canvas", None, {})
     log.append("r", 5.0, "pixel", 2, {"x": 2, "y": 1, "color": 3})
@@ -60,11 +60,13 @@ def test_events_appended_after_the_span_was_measured_are_ignored() -> None:
 
         reads = 0
 
-        def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+        def read(
+            self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+        ) -> list[Event]:
             self.reads += 1
-            if self.reads == 3:  # first read of the second pass
+            if self.reads == 2:  # first read of the second pass
                 EventLog.append(self, run_id, 99.0, "pixel", 1, {"x": 3, "y": 0, "color": 7})
-            return super().read(run_id, after_id=after_id, limit=limit)
+            return super().read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
 
     log = GrowingLog()
     log.append("r", 1.0, "pixel", 1, {"x": 0, "y": 0, "color": 5})
@@ -84,9 +86,11 @@ def test_iter_events_stops_after_a_short_page(
             super().__init__()
             self.read_calls = 0
 
-        def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+        def read(
+            self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+        ) -> list[Event]:
             self.read_calls += 1
-            return super().read(run_id, after_id=after_id, limit=limit)
+            return super().read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
 
     log = CountingLog()
     for index in range(event_count):

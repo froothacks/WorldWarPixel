@@ -45,8 +45,10 @@ class Settings(BaseSettings):
     tts_model: str = "gpt-4o-mini-tts"
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
+    transcribe_model: str = "gpt-4o-mini-transcribe"
+    """Hosted model for society-screen voice clips, used when TTS_API_KEY is an OpenAI key."""
     whisper_model: str = "base"
-    """faster-whisper model size used to transcribe society-screen voice clips."""
+    """faster-whisper model size: the local fallback when there is no hosted transcription."""
     murmur_condense: bool = False
     """Rephrase voice transcripts into a rumour with the server's chat model."""
     voice_dump_dir: str = ""
@@ -56,7 +58,13 @@ class Settings(BaseSettings):
     event_log_path: str = "events.db"
     database_url: str | None = None
     """Postgres DSN for the event log; when set it replaces the SQLite event_log_path."""
+    event_log_flush_interval: float = 0.1
+    """Seconds the Postgres event writer waits to accumulate a batch before flushing."""
+    event_log_batch_size: int = 2000
+    """Max events the Postgres writer inserts per transaction."""
     max_active_runs: int = 4
+    resume_runs: bool = True
+    """Continue runs the previous server process interrupted on shutdown (e.g. a redeploy)."""
 
     @property
     def is_modal_endpoint(self) -> bool:

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from worldwarpixel.routing import EndpointPool, as_pool
+from worldwarpixel.routing import EndpointPool, as_pool, describe_endpoint
 from worldwarpixel.sim.canvas import PALETTE, Canvas
 
 if TYPE_CHECKING:
@@ -714,10 +714,11 @@ class Narrator:
                 headline, bullets, raw = parse_reply(reply)
             except Exception as e:  # network / API errors are not fatal for the run
                 self.stats["failures"] += 1
-                log.warning("narrator model call failed: %s", e)
+                where = describe_endpoint(e)
+                log.warning("narrator model call failed via %s: %s", where, e)
                 if kind == "answer":
-                    raise NarratorUnavailable(f"{type(e).__name__}: {e}") from e
-                source, error = "fallback", f"model call failed: {type(e).__name__}"
+                    raise NarratorUnavailable(f"via {where}: {type(e).__name__}: {e}") from e
+                source, error = "fallback", f"model call failed via {where}: {type(e).__name__}"
                 headline, bullets, raw = self.fallback_update(digest)
         highlights = self.clean_highlights(raw)
         if not highlights and kind == "update":

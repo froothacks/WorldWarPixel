@@ -226,8 +226,12 @@ def test_fallback_when_model_is_missing_or_fails() -> None:
         failing = FakeNarratorModel(fail=True)
         run2 = Run("g", CONFIG, EventLog(), RandomWalkPolicy(seed=1), narrator_model=failing)
         update = await run2.narrator.tick()
-        assert update["source"] == "fallback" and "RuntimeError" in update["error"]
-        with pytest.raises(NarratorUnavailable, match="RuntimeError"):
+        assert (
+            update["source"] == "fallback"
+            and "model call failed via unknown endpoint" in update["error"]
+        )
+        assert "RuntimeError" in update["error"]
+        with pytest.raises(NarratorUnavailable, match=r"via unknown endpoint.*RuntimeError"):
             await run2.narrator.ask("still there?")
         assert run2.narrator.stats == {"updates": 1, "answers": 0, "failures": 2}
 
