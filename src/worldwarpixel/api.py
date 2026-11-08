@@ -68,7 +68,7 @@ class RunManager:
     def __init__(
         self,
         log: EventStore,
-        max_active_runs: int = 4,
+        max_active_runs: int = 20,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,

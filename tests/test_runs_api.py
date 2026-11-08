@@ -120,7 +120,8 @@ def test_random_runs_ignore_the_model_field(client: TestClient) -> None:
 
 
 def test_active_run_cap(client: TestClient) -> None:
-    ids = [client.post("/runs", json=SMALL).json()["id"] for _ in range(4)]
+    cap = get_settings().max_active_runs
+    ids = [client.post("/runs", json=SMALL).json()["id"] for _ in range(cap)]
     assert client.post("/runs", json=SMALL).status_code == 409
     client.post(f"/runs/{ids[0]}/stop")
     assert client.post("/runs", json=SMALL).status_code == 201
