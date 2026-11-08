@@ -141,28 +141,22 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 
 ## Deploy to Modal
 
-`deploy/modal_app.py` runs the app (API + UI + WebSockets) in a single CPU [Modal Sandbox](https://modal.com/docs/guide/sandboxes). CPU Sandboxes are not preempted, but they live at most 24h and get a new tunnel URL each time, so the module also deploys:
+`deploy/modal_app.py` runs the app (API + UI + WebSockets) directly in one always-on, non-preemptible [Modal web container](https://modal.com/docs/guide/webhooks). It serves the app at a stable `*.modal.run` URL; there is no 24-hour Sandbox lifetime cap. A single WebSocket connection is limited to 24 hours. The app uses exactly one container because live run state is held in memory.
 
-- `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
-- `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. It also answers `worldwarpixel.com` and `www.worldwarpixel.com` (Modal custom domains; point both DNS records at `cname.modal.domains`). Share any of these URLs.
+Non-preemptible compute costs 3x the list price for CPU and memory, and the one container stays on continuously. The event log is SQLite on the container's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 60 seconds (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. A deploy replaces the container, so live runs stop and reopen as stopped runs from the saved log. Deploys may briefly overlap old and new containers, so up to 60 seconds of events from the old container can be lost.
 
-The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); they come back as stopped runs rebuilt from the saved log (up to 5 minutes of the latest events can be lost on a crash).
-
-One-time setup, with the Modal CLI authenticated (`uv run --with modal modal token new`):
+One-time setup, with the Modal CLI authenticated (`uv run --with modal==1.6.3 modal token new`):
 
 ```sh
-uv run --with modal modal secret create worldwarpixel \
+uv run --with modal==1.6.3 modal secret create worldwarpixel \
   OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel \
   MODAL_KEY=... MODAL_SECRET=... GOD_TOKEN=$(openssl rand -hex 16)
-uv run --with modal python deploy/modal_app.py launch   # build + publish the image, start the sandbox
-uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
+uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
 ```
 
-Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox.
+Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. To retire the legacy `worldwarpixel-web` Sandbox once, run `uv run --with modal==1.6.3 python deploy/modal_app.py retire`; it backs up the event log before stopping the Sandbox.
 
-**Custom domain.** `home` is deployed with `custom_domains=["worldwarpixel.com", "www.worldwarpixel.com"]`, so Modal terminates TLS for them (a plain CNAME to the `*.modal.direct` URL cannot work: Modal resets handshakes for foreign SNIs). In Cloudflare, replace the apex A record and the `www` CNAME with CNAMEs to `cname.modal.domains` (the apex CNAME is flattened by Cloudflare), then deploy once so Modal provisions the certificates. Visitors are redirected (307) to the current sandbox tunnel, which changes on each daily sandbox replacement.
-
-**Continuous deploy.** `.github/workflows/deploy.yml` runs `launch` and `modal deploy` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the sandbox, so a running simulation stops. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
+**Continuous deploy.** `.github/workflows/deploy.yml` runs the legacy-Sandbox `retire` step and then `modal deploy deploy/modal_app.py` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the container, so a running simulation stops.
 
 ## Development
 

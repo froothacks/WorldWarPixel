@@ -1,8 +1,8 @@
 name: Deploy
 
-# After CI passes for a push to main (or on demand), rebuild the image, replace the Modal sandbox
-# and redeploy the keeper job + stable URL. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo
-# secrets; app settings live in the `worldwarpixel` Modal secret, not here.
+# After CI passes for a push to main (or on demand), retire the legacy Modal sandbox and deploy the
+# always-on web container. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo secrets; app settings
+# live in the `worldwarpixel` Modal secret, not here.
 on:
   workflow_run:
     workflows: [CI]
@@ -45,6 +45,6 @@ jobs:
       - if: steps.gate.outputs.go == 'true'
         uses: astral-sh/setup-uv@v6
       - if: steps.gate.outputs.go == 'true'
-        run: uv run --with modal==1.6.3 python deploy/modal_app.py launch
+        run: uv run --with modal==1.6.3 python deploy/modal_app.py retire
       - if: steps.gate.outputs.go == 'true'
         run: uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
