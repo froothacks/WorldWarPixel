@@ -21,6 +21,7 @@ class Migration:
     name: str
     sqlite_statements: tuple[str, ...]
     postgres_statements: tuple[str, ...]
+    postgres_concurrent_statements: tuple[str, ...] = ()
 
 
 def postgres_run_rollup_sql(*, filter_run_ids: bool = False) -> str:
@@ -299,8 +300,9 @@ MIGRATIONS = (
             f"CREATE INDEX IF NOT EXISTS events_run_canvas ON events (run_id, id) "
             f"WHERE kind IN ({CANVAS_KINDS_SQL})",
         ),
-        postgres_statements=(
-            f"CREATE INDEX IF NOT EXISTS events_run_canvas ON events (run_id, id) "
+        postgres_statements=(),
+        postgres_concurrent_statements=(
+            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS events_run_canvas ON events (run_id, id) "
             f"WHERE kind IN ({CANVAS_KINDS_SQL})",
         ),
     ),
@@ -347,14 +349,20 @@ def migrate_sqlite(conn: sqlite3.Connection) -> list[int]:
 
 
 def migrate_postgres(conn: psycopg.Connection[tuple[Any, ...]]) -> list[int]:
-    """Apply pending Postgres migrations under an advisory transaction lock."""
+    """Apply pending Postgres migrations without blocking event writes.
+
+    Ordinary DDL stays in one advisory-locked transaction. Index builds that would take a
+    long lock on ``events`` run as ``CONCURRENTLY`` statements outside that transaction, so
+    live runs keep appending while the index is built.
+    """
     newly_applied: list[int] = []
+    applied: set[int] = set()
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
         conn.execute(POSTGRES_MIGRATIONS_TABLE)
         applied = {int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")}
         for migration in MIGRATIONS:
-            if migration.version in applied:
+            if migration.version in applied or not migration.postgres_statements:
                 continue
             for statement in migration.postgres_statements:
                 conn.execute(statement)
@@ -362,7 +370,24 @@ def migrate_postgres(conn: psycopg.Connection[tuple[Any, ...]]) -> list[int]:
                 "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
                 (migration.version, migration.name, time.time()),
             )
+            applied.add(migration.version)
             newly_applied.append(migration.version)
+    for migration in MIGRATIONS:
+        if migration.version in applied or not migration.postgres_concurrent_statements:
+            continue
+        conn.execute("SELECT pg_advisory_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
+        try:
+            for statement in migration.postgres_concurrent_statements:
+                conn.execute(statement)
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
+                    (migration.version, migration.name, time.time()),
+                )
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
+        applied.add(migration.version)
+        newly_applied.append(migration.version)
     return newly_applied
 
 

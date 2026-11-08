@@ -27,7 +27,14 @@ logger = logging.getLogger(__name__)
 class PostgresEventLog(EventStore):
     """Append-only Postgres log of everything that happens in a run, for replay and audit."""
 
-    def __init__(self, database_url: str, *, initialize_schema: bool = True) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        initialize_schema: bool = True,
+        lock_timeout_ms: int | None = None,
+        statement_timeout_ms: int | None = None,
+    ) -> None:
         self.database_url = database_url
         # Server-side prepared statements can switch to generic plans that scan events_pkey
         # for run-scoped reads.
@@ -36,6 +43,14 @@ class PostgresEventLog(EventStore):
             autocommit=True,
             prepare_threshold=None,
         )
+        if lock_timeout_ms is not None:
+            self._conn.execute(
+                "SELECT set_config('lock_timeout', %s, false)", (str(lock_timeout_ms),)
+            )
+        if statement_timeout_ms is not None:
+            self._conn.execute(
+                "SELECT set_config('statement_timeout', %s, false)", (str(statement_timeout_ms),)
+            )
         self._batch_depth = 0
         try:
             if initialize_schema:
@@ -366,7 +381,12 @@ class BufferedPostgresEventLog(EventStore):
         self._reader.close()
 
     def _writer(self) -> None:
-        log = PostgresEventLog(self.database_url, initialize_schema=False)
+        log = PostgresEventLog(
+            self.database_url,
+            initialize_schema=False,
+            lock_timeout_ms=30_000,
+            statement_timeout_ms=300_000,
+        )
         try:
             while True:
                 batch: list[_Row] = []
