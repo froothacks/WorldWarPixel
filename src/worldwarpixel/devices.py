@@ -396,6 +396,97 @@ async def device_socket(websocket: WebSocket) -> None:
             await websocket.send_bytes(pcm)
         await websocket.send_json({"type": "interview.audio_end", "agent": agent.id})
 
+    async def converse_live(run: Run, agent_id: Any, pcm: bytes) -> bool:
+        """Speech-to-speech answer. The screen expects heard -> reply -> audio -> audio_end, so
+        audio that arrives before the transcript is held back briefly; the reply text follows
+        as ``interview.text`` once the agent has finished speaking. False when the Realtime call
+        failed before the screen got anything, so the caller can answer the old way."""
+        agent = run.by_id.get(agent_id) if isinstance(agent_id, int) else None
+        if agent is None:
+            raise interview.InterviewError("pick someone to talk to first")
+        history = histories.setdefault((run.id, agent.id), [])
+        heard = replied = False
+        held = b""
+        held_since = 0.0
+
+        async def send_audio(pcm: bytes) -> None:
+            for i in range(0, len(pcm), AUDIO_CHUNK):
+                await websocket.send_bytes(pcm[i : i + AUDIO_CHUNK])
+
+        async def send_heard(text: str) -> None:
+            nonlocal heard
+            heard = True
+            await websocket.send_json(
+                {"type": "interview.heard", "agent": agent.id, "text": interview.ascii_text(text)}
+            )
+
+        async def send_reply(text: str, audio: bool) -> None:
+            nonlocal replied
+            replied = audio
+            await websocket.send_json(
+                {
+                    "type": "interview.reply",
+                    "agent": agent.id,
+                    "name": interview.ascii_text(agent.name),
+                    "text": interview.ascii_text(text),
+                    "audio": audio,
+                    "rate": interview.RATE,
+                    "bytes": 0,
+                }
+            )
+
+        stream = interview.live(
+            app.state.realtime, app.state.realtime_model, run, agent, history, pcm, rate
+        )
+        try:
+            async for kind, value in stream:
+                if kind == "heard":
+                    voice.update(transcript=value)
+                    if not heard:
+                        await send_heard(value or "...")
+                        if held:
+                            await send_reply("...", True)
+                            await send_audio(held)
+                            held = b""
+                elif kind == "audio":
+                    if not heard:
+                        held += value
+                        held_since = held_since or time.monotonic()
+                        if time.monotonic() - held_since < 1.5:
+                            continue
+                        await send_heard("...")
+                        value, held = held, b""
+                    if not replied:
+                        await send_reply("...", True)
+                    await send_audio(value)
+                elif kind == "text":
+                    if not heard:
+                        await send_heard("...")
+                    if replied:
+                        await websocket.send_json(
+                            {
+                                "type": "interview.text",
+                                "agent": agent.id,
+                                "text": interview.ascii_text(value),
+                            }
+                        )
+                    elif value or held:
+                        await send_reply(value, bool(held))
+                        await send_audio(held)
+                    else:
+                        raise interview.InterviewError(f"{agent.name} said nothing")
+        except interview.InterviewError as e:
+            if heard:
+                raise
+            log.warning("realtime interview failed, falling back: %s", e)
+            return False
+        finally:
+            await stream.aclose()
+            if replied:
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"type": "interview.audio_end", "agent": agent.id})
+        return True
+
     async def push() -> None:
         nonlocal seen, listed
         runs = run_choices(app.state.runs)
@@ -451,6 +542,15 @@ async def device_socket(websocket: WebSocket) -> None:
             if purpose in ("pick", "interview"):
                 if run is None:
                     raise ValueError("no running world")
+                if (
+                    purpose == "interview"
+                    and app.state.realtime is not None
+                    and await converse_live(run, agent_id, pcm)
+                ):
+                    voice.update(status="done")
+                    with contextlib.suppress(Exception):
+                        await push()
+                    return
                 transcript = " ".join((await transcribe(app, pcm, rate)).split())
                 voice.update(transcript=transcript)
                 if not transcript:

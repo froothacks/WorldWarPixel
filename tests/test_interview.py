@@ -1,5 +1,7 @@
 import asyncio
+import base64
 from collections.abc import AsyncIterator, Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -157,3 +159,96 @@ def test_interview_over_websocket(client: TestClient) -> None:
     assert [m["role"] for m in asked[1]] == ["system", "user", "assistant", "user"]
     memory = run.thoughts[mei][-2]["thought"]
     assert "What are you painting?" in memory and "blue waves" in memory
+
+
+class FakeRealtime:
+    """Stands in for ``AsyncOpenAI`` with just enough of ``client.realtime.connect``."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.sessions: list[dict[str, Any]] = []
+        self.realtime = self
+
+    def connect(self, model: str) -> "FakeRealtime":
+        return self
+
+    async def __aenter__(self) -> "FakeRealtime":
+        if self.fail:
+            raise ConnectionError("no realtime")
+        self.session = SimpleNamespace(update=self._update)
+        self.input_audio_buffer = SimpleNamespace(append=self._noop, commit=self._noop)
+        self.response = SimpleNamespace(create=self._noop)
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def _update(self, session: dict[str, Any]) -> None:
+        self.sessions.append(session)
+
+    async def _noop(self, **kw: Any) -> None:
+        return None
+
+    async def __aiter__(self) -> AsyncIterator[Any]:
+        audio = base64.b64encode(b"\1\0" * 2400).decode()  # 0.1 s at 24 kHz
+        yield SimpleNamespace(type="response.output_audio.delta", delta=audio)
+        yield SimpleNamespace(
+            type="conversation.item.input_audio_transcription.completed",
+            transcript="What are you painting?",
+        )
+        yield SimpleNamespace(type="response.output_audio.delta", delta=audio)
+        yield SimpleNamespace(
+            type="response.output_audio_transcript.done", transcript="Blue waves, mostly."
+        )
+        yield SimpleNamespace(type="response.done", response=SimpleNamespace(status="completed"))
+
+
+def test_realtime_interview_streams_in_screen_order(client: TestClient) -> None:
+    state: Any = client.app.state  # type: ignore[attr-defined]
+    rt = FakeRealtime()
+    state.realtime = rt
+    small = {"width": 32, "height": 16, "agents": 4, "cooldown": 60, "seed": 7}
+    client.post("/runs", json={**small, "policy": "random", "societies": 2})
+    run = _named(state.runs.active()[0])
+    agent = run.agents[2]
+    try:
+        with client.websocket_connect("/devices/ws?token=tok-a") as ws:
+            ws.send_json(
+                {"type": "voice.start", "rate": 16000, "purpose": "interview", "agent": agent.id}
+            )
+            ws.send_bytes(b"\0\0" * 160)
+            ws.send_json({"type": "voice.end"})
+            assert _until(ws, "interview.heard")["text"] == "What are you painting?"
+            reply = _until(ws, "interview.reply")
+            assert reply["audio"]
+            got = 0
+            text = None
+            while True:
+                msg = ws.receive()
+                if msg.get("bytes") is not None:
+                    assert text is None
+                    got += len(msg["bytes"])
+                elif '"interview.text"' in (msg.get("text") or ""):
+                    text = msg["text"]
+                elif '"interview.audio_end"' in (msg.get("text") or ""):
+                    break
+            assert got == 2 * 3200 and text is not None and "Blue waves" in text
+
+            state.realtime = FakeRealtime(fail=True)
+            heard = Transcripts()
+            state.transcriber = heard
+            heard.queue.append("And tomorrow?")
+
+            async def chat(run: Run, messages: list[dict[str, str]]) -> str:
+                return "More waves."
+
+            state.interview_chat = chat
+            ws.send_json(
+                {"type": "voice.start", "rate": 16000, "purpose": "interview", "agent": agent.id}
+            )
+            ws.send_json({"type": "voice.end"})
+            assert _until(ws, "interview.reply")["text"] == "More waves."
+    finally:
+        state.realtime = None
+    assert "visitor" in rt.sessions[0]["instructions"]
+    assert any("Blue waves" in t["thought"] for t in run.thoughts[agent.id])

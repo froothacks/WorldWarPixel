@@ -7,23 +7,31 @@ the exchange lands in the agent's memory like any other thought.
 """
 
 import array
+import asyncio
+import base64
 import difflib
 import math
 import re
 import unicodedata
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from worldwarpixel.sim.agents import AgentSpec
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.run import Run
 from worldwarpixel.sim.speech import voice_for
 
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
+
 RATE = 16_000
 """Screens play what they record: 16 kHz signed 16-bit little-endian mono."""
 MAX_TURNS = 6
 MAX_REPLY = 400
 MAX_AGENTS = 120
+REALTIME_RATE: Literal[24000] = 24_000
+REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin")
+REALTIME_TIMEOUT = 30.0
 
 Chat = Callable[[Run, list[dict[str, str]]], Awaitable[str]]
 """Ask the run's model for one completion (the app wires the real client; tests fake it)."""
@@ -204,3 +212,102 @@ async def voice(run: Run, agent: AgentSpec, text: str) -> AsyncGenerator[bytes, 
             pending = pending[cut:]
     if len(pending) >= 2:
         yield resample(pending, synth.sample_rate)
+
+
+def realtime_voice(agent: AgentSpec) -> str:
+    v = voice_for(agent)
+    return v if v in REALTIME_VOICES else REALTIME_VOICES[agent.id % len(REALTIME_VOICES)]
+
+
+def realtime_instructions(run: Run, agent: AgentSpec, history: list[tuple[str, str]]) -> str:
+    text = messages(run, agent, [], "")[0]["content"]
+    if history:
+        turns = "\n".join(f'Visitor: "{q}"\nYou: "{a}"' for q, a in history[-MAX_TURNS:])
+        text += f"\n\nEarlier in this conversation:\n{turns}"
+    return text
+
+
+async def live(
+    client: "AsyncOpenAI",
+    model: str,
+    run: Run,
+    agent: AgentSpec,
+    history: list[tuple[str, str]],
+    pcm: bytes,
+    rate: int,
+) -> AsyncGenerator[tuple[str, Any], None]:
+    """Answer the visitor's clip speech-to-speech with a Realtime model.
+
+    Yields ``("heard", question)`` once the clip is transcribed, ``("audio", pcm16k)`` as the
+    answer is spoken, and finally ``("text", reply)`` with the transcript of what the agent said.
+    The exchange then lands in history and the agent's memory like a typed interview.
+    """
+    question = reply = ""
+    try:
+        async with asyncio.timeout(REALTIME_TIMEOUT), client.realtime.connect(model=model) as conn:
+            await conn.session.update(
+                session={
+                    "type": "realtime",
+                    "instructions": realtime_instructions(run, agent, history),
+                    "output_modalities": ["audio"],
+                    "max_output_tokens": 600,
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcm", "rate": REALTIME_RATE},
+                            "transcription": {"model": "gpt-4o-mini-transcribe"},
+                            "turn_detection": None,
+                        },
+                        "output": {
+                            "format": {"type": "audio/pcm", "rate": REALTIME_RATE},
+                            "voice": realtime_voice(agent),
+                        },
+                    },
+                }
+            )
+            clip = resample(pcm, rate, REALTIME_RATE)
+            for i in range(0, len(clip), 480_000):
+                await conn.input_audio_buffer.append(
+                    audio=base64.b64encode(clip[i : i + 480_000]).decode()
+                )
+            await conn.input_audio_buffer.commit()
+            await conn.response.create()
+            heard = answered = False
+            pending = b""
+            async for event in conn:
+                if event.type == "conversation.item.input_audio_transcription.completed":
+                    question = " ".join(event.transcript.split())
+                    heard = True
+                    yield ("heard", question)
+                elif event.type == "conversation.item.input_audio_transcription.failed":
+                    heard = True
+                    yield ("heard", "")
+                elif event.type == "response.output_audio.delta":
+                    pending += base64.b64decode(event.delta)
+                    cut = len(pending) - len(pending) % 2400  # whole 3:2 sample blocks
+                    if cut:
+                        yield ("audio", resample(pending[:cut], REALTIME_RATE))
+                        pending = pending[cut:]
+                elif event.type == "response.output_audio_transcript.done":
+                    reply = event.transcript
+                elif event.type == "response.done":
+                    if event.response.status == "failed":
+                        raise InterviewError(f"{agent.name} could not answer")
+                    answered = True
+                elif event.type == "error":
+                    raise InterviewError(f"{agent.name} could not answer ({event.error.message})")
+                if answered and heard:
+                    break
+            if len(pending) >= 2:
+                yield ("audio", resample(pending, REALTIME_RATE))
+    except InterviewError:
+        raise
+    except Exception as e:
+        raise InterviewError(f"{agent.name} could not answer ({type(e).__name__})") from e
+    reply = clean_reply(reply)
+    yield ("text", reply)
+    if reply:
+        history.append((question or "(inaudible)", reply))
+        del history[:-MAX_TURNS]
+        run.note_thought(
+            agent.id, f'A visitor at a screen asked me: "{question}" I answered: "{reply}"'
+        )

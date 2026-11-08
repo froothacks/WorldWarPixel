@@ -203,6 +203,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return parse_names(raw, config.societies) or None
 
         app.state.interview_chat = interview_chat
+        app.state.realtime = (
+            tts
+            if tts is not None and not settings.tts_base_url and settings.interview_realtime_model
+            else None
+        )
+        app.state.realtime_model = settings.interview_realtime_model
         transcriber: Transcriber = NoTranscriber()
         if tts is not None and not settings.tts_base_url:
             transcriber = OpenAITranscriber(
