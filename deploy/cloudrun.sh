@@ -5,9 +5,14 @@
 #
 #   APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh
 #
-# APP_ENV_FILE holds the app settings (KEY=value lines, same as the Modal secret). Keep the file
-# outside the repo so `gcloud builds submit` never uploads it with the build context. GOD_TOKEN is
-# optional: without it god mode is open to anyone with the URL, same as the Modal deploy.
+# Only the app secrets allowlisted below are read from Secret Manager by name and exposed as env
+# vars at version latest. Adding one requires an APP_SECRETS entry here and a Secret Manager secret.
+# APP_ENV_FILE is optional and only for non-secret settings (KEY=value lines). Keep it outside the
+# repo so `gcloud builds submit` never uploads it with the build context.
+# One-time IAM prerequisites (granted by a project owner; this script does not grant them):
+#   runtime SA worldwarpixel-run@ needs roles/secretmanager.secretAccessor on the project
+#   deployer SA github-deployer@ needs roles/secretmanager.viewer on the project
+# GOD_TOKEN is optional: without it god mode is open to anyone with the URL, same as the Modal deploy.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,20 +28,64 @@ RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 # set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
 
-if [ -z "${APP_ENV_FILE:-}" ]; then
-  echo "APP_ENV_FILE must point to a KEY=value file with the app settings" >&2
-  exit 1
+# App secrets Cloud Run reads from Secret Manager (secret name = env var name). Anything else in
+# the project stays out. Model endpoint secrets must match models.py (tests/test_deploy_secrets.py).
+APP_SECRETS=(
+  OPENAI_API_KEY
+  MODAL_KEY MODAL_SECRET
+  CHRYZTOPH_MODAL_KEY CHRYZTOPH_MODAL_SECRET
+  MEGANWCHUN_MODAL_KEY MEGANWCHUN_MODAL_SECRET
+  GOD_TOKEN DATABASE_URL DEVICE_TOKENS
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+)
+
+if [ -n "${APP_ENV_FILE:-}" ]; then
+  case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
 fi
-case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
 
 gcloud config set project "$PROJECT" >/dev/null
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
+if ! secret_names="$(gcloud secrets list --project "$PROJECT" --format='value(name.basename())')"; then
+  echo "Unable to list Secret Manager secrets in $PROJECT; the deployer SA needs roles/secretmanager.viewer on the project." >&2
+  exit 1
+fi
+declare -A existing_secrets=()
+while IFS= read -r secret_name; do
+  if [[ -n "$secret_name" ]]; then
+    existing_secrets["$secret_name"]=1
+  fi
+done <<< "$secret_names"
+secret_args=""
+secret_display=""
+mounted_secret_names=""
+for secret_name in "${APP_SECRETS[@]}"; do
+  if [[ -z "${existing_secrets[$secret_name]+x}" ]]; then
+    echo "Secret Manager has no $secret_name; skipped"
+    continue
+  fi
+  if ! enabled_version="$(gcloud secrets versions list "$secret_name" \
+    --project "$PROJECT" --filter='state=ENABLED' --limit 1 --format='value(name)')"; then
+    echo "Unable to list Secret Manager secrets in $PROJECT; the deployer SA needs roles/secretmanager.viewer on the project." >&2
+    exit 1
+  fi
+  if [ -z "$enabled_version" ]; then
+    echo "::warning::$secret_name has no enabled version; skipped"
+    continue
+  fi
+  secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
+  secret_display+="${secret_display:+, }${secret_name}"
+  if [ -n "$mounted_secret_names" ]; then
+    mounted_secret_names+=$'\n'
+  fi
+  mounted_secret_names+="$secret_name"
+done
+
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
   || gcloud artifacts repositories create "$REPO" --location="$REGION" --repository-format=docker
 gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1 \
   || gcloud storage buckets create "gs://$BUCKET" --location="$REGION" --uniform-bucket-level-access
 
-# The app runs as its own service account with access to the data bucket only.
+# The app runs as its own service account; bucket access is granted below.
 gcloud iam service-accounts describe "$RUNTIME_SA" >/dev/null 2>&1 \
   || gcloud iam service-accounts create "${RUNTIME_SA%%@*}" --display-name "WorldWarPixel Cloud Run"
 # Cloud Storage FUSE reads as the Cloud Storage service agent; objectAdmin covers it anyway.
@@ -58,20 +107,49 @@ while :; do
   sleep 15
 done
 
+DATA_VOLUME="name=data,type=cloud-storage,bucket=$BUCKET"
+DATA_VOLUME_MOUNT="volume=data,mount-path=/data"
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
   --port 8080 --cpu 1 --memory 2Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
   --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
-  --add-volume "name=data,type=cloud-storage,bucket=$BUCKET"
-  --add-volume-mount volume=data,mount-path=/data --service-account "$RUNTIME_SA"
+  --add-volume "$DATA_VOLUME"
+  --add-volume-mount "$DATA_VOLUME_MOUNT" --service-account "$RUNTIME_SA"
 )
 if [ -n "$CLOUDSQL_INSTANCE" ]; then
   args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
 fi
-# KEY=value lines -> the YAML gcloud expects; keeps the values out of the command line.
+# KEY=value lines -> the YAML gcloud expects; Secret Manager wins for same-named keys.
 yaml="$(mktemp)"
 trap 'rm -f "$yaml"' EXIT
-grep -v '^\s*\(#\|$\)' "$APP_ENV_FILE" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' > "$yaml"
-args+=(--env-vars-file "$yaml")
+if [ -n "$secret_args" ]; then
+  args+=(--set-secrets "$secret_args")
+  echo "Secrets from Secret Manager: $secret_display"
+else
+  echo "Secrets from Secret Manager: (none)"
+fi
+if [ -n "${APP_ENV_FILE:-}" ]; then
+  awk -v secret_names="$mounted_secret_names" '
+    BEGIN {
+      count = split(secret_names, names, "\n")
+      for (i = 1; i <= count; i++) {
+        if (names[i] != "") secret_keys[names[i]] = 1
+      }
+    }
+    !/^[[:space:]]*(#|$)/ {
+      if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+        key = $0
+        sub(/=.*/, "", key)
+        if (key in secret_keys) next
+      }
+      print
+    }
+  ' "$APP_ENV_FILE" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' > "$yaml"
+fi
+if [ -s "$yaml" ]; then
+  args+=(--env-vars-file "$yaml")
+else
+  args+=(--clear-env-vars)
+fi
 gcloud run deploy "$SERVICE" "${args[@]}" --quiet
 gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)'
