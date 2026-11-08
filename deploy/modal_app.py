@@ -117,6 +117,9 @@ class Web:
                 if self._tunnel is not None and self._tunnel.poll() is not None:
                     print("cloudflared exited; restarting", flush=True)
                     self._tunnel = self._start_tunnel()
+                elif self._tunnel is None and serve.TUNNEL_TOKEN:
+                    # The initial launch failed (e.g. a transient error); keep retrying.
+                    self._tunnel = self._start_tunnel()
                 try:
                     serve.backup()
                 except Exception as exc:
