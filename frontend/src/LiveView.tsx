@@ -276,6 +276,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       .catch((e: Error) => notify(`Couldn't ${action} the run`, e.message));
   const [errDismissed, setErrDismissed] = useState<string | null>(null);
   const [errOpen, setErrOpen] = useState(false);
+  // A recovery ends the dismissed episode, so the next failure shows again even with the same text.
+  if (!run.llm?.last_error && errDismissed !== null) setErrDismissed(null);
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [videoBusy, setVideoBusy] = useState(false);
