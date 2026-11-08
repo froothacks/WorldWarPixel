@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build the image with Cloud Build and deploy one always-on Cloud Run instance, with the timelapse
-# bucket mounted at /data (SQLite backups + rendered videos land straight in GCS). Idempotent; run
-# locally with gcloud authenticated or from .github/workflows/deploy.yml.
+# bucket mounted at /data (rendered videos land straight in GCS; SQLite backups are used only when
+# DATABASE_URL is unset). Idempotent; run locally with gcloud authenticated or from
+# .github/workflows/deploy.yml.
 #
 #   APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh
 #
@@ -22,6 +23,7 @@ RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 # Cloud SQL instance the app connects to via DATABASE_URL (Unix socket at /cloudsql/...);
 # set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
+DATABASE_URL_SECRET="${DATABASE_URL_SECRET:-DATABASE_URL}"
 
 if [ -z "${APP_ENV_FILE:-}" ]; then
   echo "APP_ENV_FILE must point to a KEY=value file with the app settings" >&2
@@ -30,7 +32,7 @@ fi
 case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
 
 gcloud config set project "$PROJECT" >/dev/null
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
   || gcloud artifacts repositories create "$REPO" --location="$REGION" --repository-format=docker
 gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1 \
@@ -42,6 +44,10 @@ gcloud iam service-accounts describe "$RUNTIME_SA" >/dev/null 2>&1 \
 # Cloud Storage FUSE reads as the Cloud Storage service agent; objectAdmin covers it anyway.
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member "serviceAccount:$RUNTIME_SA" --role roles/storage.objectAdmin >/dev/null
+if [ -n "$CLOUDSQL_INSTANCE" ]; then
+  gcloud secrets add-iam-policy-binding "$DATABASE_URL_SECRET" \
+    --member "serviceAccount:$RUNTIME_SA" --role roles/secretmanager.secretAccessor >/dev/null
+fi
 
 # Submit async and poll: `gcloud builds submit`'s log streaming needs project Viewer, which the
 # deployer SA need not have; the build itself only needs Cloud Build Editor.
@@ -66,7 +72,10 @@ args=(
   --add-volume-mount volume=data,mount-path=/data --service-account "$RUNTIME_SA"
 )
 if [ -n "$CLOUDSQL_INSTANCE" ]; then
-  args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
+  args+=(
+    --add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE"
+    --update-secrets "DATABASE_URL=$DATABASE_URL_SECRET:latest"
+  )
 fi
 # KEY=value lines -> the YAML gcloud expects; keeps the values out of the command line.
 yaml="$(mktemp)"

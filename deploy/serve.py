@@ -1,6 +1,7 @@
-"""Restore and back up the event log for the Modal app and legacy Sandbox.
+"""Restore and back up the SQLite event log for the Modal app and legacy Sandbox.
 
-SQLite lives on the container's local disk (WAL needs real file locking, which a network Volume
+When DATABASE_URL selects Postgres, restore()/backup() are no-ops. SQLite lives on the
+container's local disk (WAL needs real file locking, which a network Volume
 does not promise). The Modal ASGI container calls ``restore()`` before app startup and backs up
 periodically and on exit. ``python serve.py`` remains the legacy server entrypoint, and
 ``python serve.py backup`` is used to retire its Sandbox. Backups are committed with ``sync``
@@ -23,6 +24,8 @@ BACKUP = Path(os.environ.get("EVENT_LOG_BACKUP", "/data/events.db"))
 INTERVAL = float(os.environ.get("BACKUP_INTERVAL", "300"))
 GRACE = float(os.environ.get("SHUTDOWN_GRACE", "10"))
 PORT = os.environ.get("PORT", "8000")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+SQLITE_EVENT_LOG = not DATABASE_URL
 
 
 def _is_local(path: Path) -> bool:
@@ -79,7 +82,7 @@ def copy_db(src: Path, dst: Path) -> None:
 
 
 def backup() -> None:
-    if not LIVE.exists():
+    if not SQLITE_EVENT_LOG or not LIVE.exists():
         return
     started = time.monotonic()
     copy_db(LIVE, BACKUP)
@@ -89,6 +92,8 @@ def backup() -> None:
 
 
 def restore() -> None:
+    if not SQLITE_EVENT_LOG:
+        return
     if BACKUP.exists() and not LIVE.exists():
         copy_db(BACKUP, LIVE)
         print(f"restored event log from {BACKUP}", flush=True)
