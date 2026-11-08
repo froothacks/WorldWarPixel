@@ -175,6 +175,12 @@ uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
 
 Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. To retire the legacy `worldwarpixel-web` Sandbox once, run `uv run --with modal==1.6.3 python deploy/modal_app.py retire`; it backs up the event log before stopping the Sandbox.
 
+**Custom domain (Cloudflare Tunnel).** Modal's custom domains are a paid feature and a plain CNAME to a `*.modal.direct` URL cannot work (Modal resets TLS for foreign SNIs), so the container runs `cloudflared` instead: it dials out to Cloudflare and Cloudflare terminates TLS for your domain. One-time setup:
+
+1. Cloudflare Zero Trust → *Networks → Tunnels → Create a tunnel* (cloudflared), and add a *Public Hostname* for `worldwarpixel.com` (and `www`) with service `http://localhost:8000`. This also creates the DNS record.
+2. Copy the tunnel token and add it to the `worldwarpixel` Modal secret as `CLOUDFLARED_TUNNEL_TOKEN` (dashboard → Secrets, or `modal secret create worldwarpixel ... CLOUDFLARED_TUNNEL_TOKEN=...`); the next deploy picks it up. Without it the app still works on the `*.modal.run` URL.
+3. Remove any old apex A / `www` CNAME records so they don't shadow the tunnel's DNS record.
+
 **Continuous deploy.** `.github/workflows/deploy.yml` runs the legacy-Sandbox `retire` step and then `modal deploy deploy/modal_app.py` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the container, so a running simulation stops.
 
 ### Cloud Run (GCP)
