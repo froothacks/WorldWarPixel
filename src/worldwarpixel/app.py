@@ -2,26 +2,35 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
+from openai import NOT_GIVEN, AsyncOpenAI, omit
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
 from worldwarpixel.api import RunManager, random_policy, rosters_router, videos_router
 from worldwarpixel.api import router as runs_router
-from worldwarpixel.config import get_settings
+from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.devices import router as devices_router
+from worldwarpixel.interview import InterviewError
 from worldwarpixel.llm import ChatService
-from worldwarpixel.models import ModelSpec, find_model, model_available, model_registry
+from worldwarpixel.models import (
+    ModelSpec,
+    available_endpoints,
+    find_model,
+    model_available,
+    model_registry,
+)
+from worldwarpixel.routing import EndpointPool, endpoint_client
 from worldwarpixel.sim.agents import Policy
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import open_event_log
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
-from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
 
@@ -53,38 +62,46 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
     return [m.model_dump() for m in messages]  # type: ignore[misc]
 
 
+def tts_client(settings: Settings) -> AsyncOpenAI | None:
+    """Speech panel voices use their own OpenAI-compatible endpoint."""
+    key = settings.tts_api_key.get_secret_value()
+    if not key and not settings.tts_base_url:
+        return None
+    return AsyncOpenAI(
+        api_key=key or "none",
+        base_url=settings.tts_base_url or "https://api.openai.com/v1",
+        timeout=settings.request_timeout,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    specs = model_registry(settings)
+    tts = tts_client(settings)
+    speech: SpeechSynth | None = (
+        OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
+    )
+    specs = model_registry()
     app.state.model_specs = specs
-    # One client per model preset, created lazily and shared by every run using it.
-    clients: dict[str, AsyncOpenAI] = {}
+    # One pool per model preset over the endpoints this server has secrets for, created
+    # lazily and shared by every run using it (so rate-limit cooldowns are shared too).
+    pools: dict[str, EndpointPool] = {}
+    app.state.model_pools = pools
+    clients: list[AsyncOpenAI] = []
 
-    def client_for(spec: ModelSpec) -> AsyncOpenAI:
-        client = clients.get(spec.id)
-        if client is None:
-            if spec.auth == "modal":
-                client = AsyncOpenAI(
-                    api_key="none",
-                    base_url=spec.base_url,
-                    timeout=settings.request_timeout,
-                    # Modal presets authenticate with their own headers, scoped to Modal
-                    # hosts so an overridden preset URL never receives the credentials.
-                    default_headers=settings.modal_headers_for(spec.base_url, spec.auth_workspace)
-                    or None,
-                )
-            else:
-                client = AsyncOpenAI(
-                    api_key=settings.openai_api_key.get_secret_value() or "none",
-                    base_url=spec.base_url,
-                    timeout=settings.request_timeout,
-                )
-            clients[spec.id] = client
-        return client
+    def pool_for(spec: ModelSpec) -> EndpointPool:
+        pool = pools.get(spec.id)
+        if pool is None:
+            members = []
+            for endpoint in available_endpoints(settings, spec):
+                client = endpoint_client(endpoint, settings.secret, settings.request_timeout)
+                clients.append(client)
+                members.append((endpoint, client))
+            pool = pools[spec.id] = EndpointPool(members)
+        return pool
 
     def resolve_model(config: RunConfig) -> ModelSpec:
-        spec = find_model(settings, config.model)
+        spec = find_model(config.model)
         if spec is None:
             known = ", ".join(s.id for s in specs)
             raise HTTPException(422, f"unknown model {config.model!r}; choose one of: {known}")
@@ -108,7 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             if config.policy in ("llm", "llm-guided"):
                 spec = resolve_model(config)
                 return LLMPolicy(
-                    client_for(spec),
+                    pool_for(spec),
                     spec.model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision and spec.vision,
@@ -124,6 +141,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             return random_policy(config)
 
+        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
+            if run.config.policy not in ("llm", "llm-guided"):
+                raise InterviewError("agents in this world have no language model to talk with")
+            spec = find_model(run.config.model)
+            if spec is None or not model_available(settings, spec):
+                raise InterviewError(f"model {run.config.model!r} is unavailable")
+            limit = spec.max_tokens if spec.max_tokens is not None else settings.agent_max_tokens
+            completion = spec.token_param == "max_completion_tokens"
+            reasoning: Any = (
+                spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
+            )
+            response = await pool_for(spec).create(
+                f"interview-{run.id}",
+                messages=cast(list[ChatCompletionMessageParam], messages),
+                temperature=0.9,
+                timeout=settings.request_timeout,
+                max_tokens=omit if completion else limit,
+                max_completion_tokens=limit if completion else omit,
+                reasoning_effort=reasoning,
+                extra_body=(
+                    {"chat_template_kwargs": {"enable_thinking": False}}
+                    if spec.chat_template_kwargs
+                    else None
+                ),
+            )
+            return response.choices[0].message.content or ""
+
+        app.state.interview_chat = interview_chat
         app.state.transcriber = WhisperTranscriber(settings.whisper_model)
         app.state.murmurer = Murmurer(
             client if settings.murmur_condense else None,
@@ -136,7 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 return None
             spec = resolve_model(config)
             return OpenAINarratorModel(
-                client_for(spec),
+                pool_for(spec),
                 spec.model,
                 settings.request_timeout,
                 max_tokens=(
@@ -151,10 +196,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         app.state.runs = RunManager(
-            EventLog(settings.event_log_path),
+            open_event_log(settings),
             settings.max_active_runs,
             make_policy,
             make_narrator=make_narrator,
+            speech=speech,
             videos=VideoStore(
                 settings.timelapse_dir,
                 s3_bucket=settings.timelapse_s3_bucket,
@@ -162,6 +208,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 s3_prefix=settings.timelapse_s3_prefix,
                 duration=settings.timelapse_duration,
                 ffmpeg=settings.ffmpeg_path,
+                autosave_interval=settings.timelapse_autosave_interval,
             ),
             auto_video=settings.timelapse_auto,
         )
@@ -169,8 +216,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             yield
         finally:
             await app.state.runs.shutdown()
-            for model_client in clients.values():
+            for model_client in clients:
                 await model_client.close()
+            if tts is not None:
+                await tts.close()
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
@@ -195,17 +244,35 @@ async def health() -> dict[str, str]:
 
 @app.get("/models")
 async def list_models() -> list[dict[str, Any]]:
-    """The model presets runs can pick, with whether this server has their credentials."""
+    """The model presets runs can pick, with whether this server has their credentials, and
+    per endpoint whether its secrets are present plus call/error/failover counts so far."""
     settings = get_settings()
-    return [
-        {
-            "id": spec.id,
-            "label": spec.label,
-            "model": spec.model,
-            "available": model_available(settings, spec),
-        }
-        for spec in app.state.model_specs
-    ]
+    out: list[dict[str, Any]] = []
+    for spec in app.state.model_specs:
+        pool: EndpointPool | None = app.state.model_pools.get(spec.id)
+        usage = pool.public_stats() if pool is not None else {}
+        ready = {e.name for e in available_endpoints(settings, spec)}
+        out.append(
+            {
+                "id": spec.id,
+                "label": spec.label,
+                "model": spec.model,
+                "available": bool(ready),
+                "endpoints": [
+                    {
+                        "name": e.name,
+                        "base_url": e.base_url,
+                        "secrets": list(e.secrets),
+                        "available": e.name in ready,
+                        **usage.get(
+                            e.name, {"calls": 0, "errors": 0, "failovers": 0, "cooling": False}
+                        ),
+                    }
+                    for e in spec.endpoints
+                ],
+            }
+        )
+    return out
 
 
 @app.get("/health/config")
@@ -220,6 +287,12 @@ async def health_config() -> dict[str, object]:
         "modal_key": bool(s.modal_key.get_secret_value()),
         "modal_secret": bool(s.modal_secret.get_secret_value()),
         "god_token": bool(s.god_token.get_secret_value()),
+        "model_secrets": {
+            name: bool(s.secret(name))
+            for spec in app.state.model_specs
+            for e in spec.endpoints
+            for name in e.secrets
+        },
         "env_keys": sorted(k for k in os.environ if k.startswith(("OPENAI_", "MODAL_", "GOD_"))),
     }
 

@@ -10,4 +10,4 @@ timelapses
 *.mp4
 *.env
 .env*
-data
+/data

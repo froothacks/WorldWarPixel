@@ -27,6 +27,7 @@ def _run(log: EventLog, run_id: str = "v", seconds: float = 0.3) -> Run:
         run = Run(run_id, CONFIG, log, RandomWalkPolicy(seed=5))
         await run.start()
         await asyncio.sleep(seconds)
+        run.pause()  # freeze agent activity so the headline below is the last event
         run.narrator.history.append({"kind": "update", "headline": "Early scramble"})
         run.record("narrator.update", None, {"kind": "update", "headline": "Early scramble"})
         run.record("narrator.update", None, {"kind": "answer", "headline": "ignored"})
@@ -166,6 +167,35 @@ def test_scheduled_render_after_stop_is_fresh_and_drained(tmp_path: Path) -> Non
         final = store.meta("v")
         assert final is not None and final["pixels"] == run.stats["pixels"] >= snapshot["pixels"]
         assert final["rendered_at"] > snapshot["rendered_at"]
+
+    asyncio.run(main())
+
+
+def test_autosave_rerenders_the_same_path_until_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    async def main() -> None:
+        log = EventLog()
+        run = Run("v", CONFIG, log, RandomWalkPolicy(seed=5))
+        await run.start()
+        await asyncio.sleep(0.1)
+        await run.stop()
+        store = VideoStore(tmp_path, duration=2, autosave_interval=0.05)
+
+        def fake_render(log_: EventLog, run_id: str) -> dict[str, Any]:
+            calls.append(run_id)
+            return {"run_id": run_id, "bytes": 1}
+
+        monkeypatch.setattr(store, "render_sync", fake_render)
+        store.start_autosave(log, "v")
+        await asyncio.sleep(0.2)
+        store.stop_autosave("v")
+        count = len(calls)
+        await asyncio.sleep(0.12)
+        assert count >= 2 and len(calls) == count  # cancelled: no more renders
+        assert set(calls) == {"v"}  # every autosave targets the same video path
 
     asyncio.run(main())
 

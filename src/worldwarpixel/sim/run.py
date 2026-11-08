@@ -14,10 +14,11 @@ from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
 
@@ -70,7 +71,7 @@ class RunConfig(BaseModel):
     )
     model: str = Field(
         default="gpt-6-luna",
-        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen-c, glm-5.3-flash)",
+        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen, glm)",
     )
 
     @field_validator("model", mode="before")
@@ -98,6 +99,9 @@ class RunConfig(BaseModel):
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
+    speak_narrator: bool = Field(
+        default=True, description="Read narrator updates aloud on the speech panel"
+    )
 
 
 GOD_ID = 65535
@@ -121,12 +125,13 @@ class Run:
         self,
         run_id: str,
         config: RunConfig,
-        log: EventLog,
+        log: EventStore,
         policy: Policy,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
         agents: list[AgentSpec] | None = None,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -188,6 +193,9 @@ class Run:
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
+        self.speech = Speech(
+            self, speech, self._running, narrate=config.speak_narrator, clock=clock
+        )
         self.narrator = Narrator(
             self,
             narrator_model if config.policy != "random" else None,
@@ -196,6 +204,7 @@ class Run:
             include_image=config.narrator_canvas_image,
             clock=clock,
             sleep=sleep,
+            on_update=self.speech.narrate,
         )
 
     @property
@@ -427,6 +436,7 @@ class Run:
         self._running.set()
         self.hub.start()
         self._tasks = [asyncio.create_task(self._agent_loop(a)) for a in self.agents]
+        self._tasks.append(asyncio.create_task(self.speech.run()))
         self.narrator.start()
 
     def pause(self) -> None:
@@ -549,10 +559,7 @@ class Run:
             board=self._feed(agent, self._clock(), society),
         )
         now = self._clock()
-        obs.memory = [
-            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
-            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
-        ]
+        obs.memory = self.recall(agent.id)
         if self.societies is not None and society is not None:
             obs.society = {
                 **self.societies.get(society).to_dict(),
@@ -575,11 +582,22 @@ class Run:
             self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
-        entry = {"ts": self._clock(), "thought": thought}
-        self.thoughts[agent.id].append(entry)
-        self._record("agent.thought", agent.id, entry)
-        self.hub.publish("agent.thought", agent_id=agent.id, **entry)
+        self.note_thought(agent.id, thought)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
+
+    def recall(self, agent_id: int, turns: int = MEMORY_TURNS) -> list[str]:
+        """An agent's own recent thoughts, as shown back to it."""
+        now = self._clock()
+        return [
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            for t in list(self.thoughts[agent_id])[-turns:]
+        ]
+
+    def note_thought(self, agent_id: int, thought: str) -> None:
+        entry = {"ts": self._clock(), "thought": thought}
+        self.thoughts[agent_id].append(entry)
+        self._record("agent.thought", agent_id, entry)
+        self.hub.publish("agent.thought", agent_id=agent_id, **entry)
 
     # -- societies -------------------------------------------------------------------------
 

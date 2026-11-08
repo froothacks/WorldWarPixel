@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore, open_event_log
 from worldwarpixel.sim.video import VideoError, render_video
 
 log = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class VideoStore:
         s3_prefix: str = "timelapses/",
         duration: float = 20.0,
         ffmpeg: str = "ffmpeg",
+        autosave_interval: float = 0.0,
     ) -> None:
         self.dir = Path(directory)
         self.s3_bucket = s3_bucket or None
@@ -35,8 +36,10 @@ class VideoStore:
         self.s3_prefix = s3_prefix
         self.duration = duration
         self.ffmpeg = ffmpeg
+        self.autosave_interval = autosave_interval
         self._rendering: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._pending: set[asyncio.Task[None]] = set()
+        self._autosave: dict[str, asyncio.Task[None]] = {}
         self._encoder = threading.Semaphore(1)  # one ffmpeg at a time, whoever asks
 
     # -- paths -----------------------------------------------------------------------------
@@ -66,7 +69,7 @@ class VideoStore:
 
     # -- rendering -------------------------------------------------------------------------
 
-    def render_sync(self, log_: EventLog, run_id: str) -> dict[str, Any]:
+    def render_sync(self, log_: EventStore, run_id: str) -> dict[str, Any]:
         """Render, write the sidecar and mirror to S3; blocking, run it in a thread."""
         reader = log_.reader()
         try:
@@ -103,7 +106,7 @@ class VideoStore:
             log.exception("S3 mirror failed for %s; the local copy is kept", run_id)
             return False
 
-    async def render(self, log_: EventLog, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
+    async def render(self, log_: EventStore, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
         """Render in a worker thread; concurrent calls for the same run share one render.
         ``fresh`` waits for an in-flight render to finish and then renders again, so the
         result includes everything logged up to now (used when the run has just stopped)."""
@@ -117,7 +120,7 @@ class VideoStore:
             self._rendering[run_id] = task
         return await task
 
-    def schedule(self, log_: EventLog, run_id: str) -> None:
+    def schedule(self, log_: EventStore, run_id: str) -> None:
         """Fire-and-forget render (used when a run stops); failures are logged, not raised."""
 
         async def go() -> None:
@@ -132,6 +135,40 @@ class VideoStore:
         task = asyncio.get_running_loop().create_task(go())
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
+
+    # -- autosave ----------------------------------------------------------------------------
+
+    def start_autosave(self, log_: EventStore, run_id: str) -> None:
+        """Re-render the run's video every ``autosave_interval`` seconds, overwriting the same
+        {run_id}.mp4/.json (and S3 keys), so a live run's archive entry is always current."""
+        if self.autosave_interval <= 0 or run_id in self._autosave:
+            return
+
+        async def loop() -> None:
+            while True:
+                await asyncio.sleep(self.autosave_interval)
+                try:
+                    # fresh=False: an in-flight render (e.g. an on-demand request) is awaited
+                    # instead of duplicated; the encoder semaphore serializes ffmpeg anyway.
+                    meta = await self.render(log_, run_id)
+                    log.info("autosaved timelapse for %s (%s bytes)", run_id, meta["bytes"])
+                except VideoError as e:
+                    log.info("no timelapse autosave for %s: %s", run_id, e)
+                except Exception:
+                    log.exception("timelapse autosave failed for %s", run_id)
+
+        task = asyncio.get_running_loop().create_task(loop())
+        self._autosave[run_id] = task
+        task.add_done_callback(lambda _: self._autosave.pop(run_id, None))
+
+    def stop_autosave(self, run_id: str) -> None:
+        task = self._autosave.pop(run_id, None)
+        if task is not None:
+            task.cancel()
+
+    def stop_all_autosaves(self) -> None:
+        for run_id in list(self._autosave):
+            self.stop_autosave(run_id)
 
     async def drain(self, timeout: float = 120.0) -> None:
         """Wait for scheduled renders (called at shutdown, before the event log is closed)."""
@@ -178,22 +215,25 @@ def main(argv: list[str] | None = None) -> int:
         duration=settings.timelapse_duration,
         ffmpeg=settings.ffmpeg_path,
     )
-    events = EventLog(settings.event_log_path)
-    wanted = argv if argv is not None else sys.argv[1:]
-    run_ids = wanted or [r for r in events.run_ids() if store.meta(r) is None]
-    failures = 0
-    if store.s3_bucket and not wanted:  # repair mirrors that failed earlier without re-rendering
-        for m in store.list():
-            if "s3" not in m and store.mirror_sync(m["run_id"], m):
-                print(f"{m['run_id']}: mirrored existing video")
-    for run_id in run_ids:
-        try:
-            meta = store.render_sync(events, run_id)
-            print(f"{run_id}: {meta['file']} ({meta['bytes'] / 1e6:.1f} MB)")
-        except VideoError as e:
-            failures += 1
-            print(f"{run_id}: skipped ({e})")
-    return 1 if failures and wanted else 0
+    events = open_event_log(settings)
+    try:
+        wanted = argv if argv is not None else sys.argv[1:]
+        run_ids = wanted or [r for r in events.run_ids() if store.meta(r) is None]
+        failures = 0
+        if store.s3_bucket and not wanted:  # repair failed S3 mirrors without re-rendering
+            for m in store.list():
+                if "s3" not in m and store.mirror_sync(m["run_id"], m):
+                    print(f"{m['run_id']}: mirrored existing video")
+        for run_id in run_ids:
+            try:
+                meta = store.render_sync(events, run_id)
+                print(f"{run_id}: {meta['file']} ({meta['bytes'] / 1e6:.1f} MB)")
+            except VideoError as e:
+                failures += 1
+                print(f"{run_id}: skipped ({e})")
+        return 1 if failures and wanted else 0
+    finally:
+        events.close()
 
 
 if __name__ == "__main__":

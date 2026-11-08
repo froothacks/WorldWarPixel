@@ -24,10 +24,11 @@ from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
+from worldwarpixel.sim.speech import SpeechSynth, wav
 from worldwarpixel.sim.timelapse import build_timelapse
 from worldwarpixel.sim.video import VideoError
 from worldwarpixel.videos import VideoStore
@@ -41,13 +42,14 @@ class RunManager:
 
     def __init__(
         self,
-        log: EventLog,
+        log: EventStore,
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
         videos: VideoStore | None = None,
         auto_video: bool = False,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.log = log
         self.videos = videos
@@ -56,6 +58,7 @@ class RunManager:
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
         self.make_narrator = make_narrator
+        self.speech = speech
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
@@ -71,9 +74,11 @@ class RunManager:
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )
-        run = Run(run_id, config, self.log, policy, narrator_model=narrator)
+        run = Run(run_id, config, self.log, policy, narrator_model=narrator, speech=self.speech)
         self.runs[run_id] = run
         await run.start()
+        if self.auto_video and self.videos is not None:
+            self.videos.start_autosave(self.log, run_id)
         return run
 
     def get(self, run_id: str) -> Run:
@@ -89,7 +94,9 @@ class RunManager:
             return run
         task = self._loading.get(run_id)
         if task is None:
-            task = asyncio.create_task(asyncio.to_thread(restore_run, self.log, run_id))
+            task = asyncio.create_task(
+                asyncio.to_thread(restore_run, self.log, run_id, self.speech)
+            )
             self._loading[run_id] = task
             task.add_done_callback(lambda _: self._loading.pop(run_id, None))
         restored = await task
@@ -102,6 +109,7 @@ class RunManager:
                 old = self.runs.pop(self._restored.pop(0), None)
                 if old is not None:
                     old.hub.close_all()
+                    old.speech.hub.close_all()
         return self.runs[run_id]
 
     async def summaries(self) -> list[dict[str, Any]]:
@@ -112,6 +120,8 @@ class RunManager:
 
     async def delete(self, run_id: str) -> None:
         run = await self.fetch(run_id)
+        if self.videos is not None:
+            self.videos.stop_autosave(run_id)
         self.runs.pop(run_id, None)
         if run_id in self._restored:
             self._restored.remove(run_id)
@@ -119,10 +129,15 @@ class RunManager:
             await run.stop()
         finally:
             run.hub.close_all()
+            run.speech.hub.close_all()
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
+        if self.videos is not None:
+            self.videos.stop_all_autosaves()
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        for run in self.runs.values():
+            run.speech.hub.close_all()
         if self.videos is not None:
             await self.videos.drain()
         self.log.close()
@@ -184,6 +199,8 @@ async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
     was_live = run.state != "stopped"
+    if was_live and manager.videos is not None:
+        manager.videos.stop_autosave(run_id)
     await run.stop()
     if was_live and manager.auto_video and manager.videos is not None:
         manager.videos.schedule(manager.log, run_id)
@@ -438,6 +455,11 @@ class NarratorQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=500)
 
 
+class SpeechRequest(BaseModel):
+    text: str
+    agent_id: int | None = None
+
+
 @router.get("/{run_id}/narrator")
 async def get_narrator(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     """The narrator's update history (newest last) plus its interval and stats."""
@@ -454,6 +476,88 @@ async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep)
         return await run.narrator.ask(body.question)
     except NarratorUnavailable as e:
         raise HTTPException(503, f"narrator unavailable: {e}") from e
+
+
+@router.post("/{run_id}/speak", status_code=202)
+async def speak(
+    run_id: str, body: SpeechRequest, manager: ManagerDep, _god: GodDep
+) -> dict[str, bool]:
+    run = await manager.fetch(run_id)
+    if run.state == "stopped":
+        raise HTTPException(409, "run is not running")
+    try:
+        run.speech.say(body.text, body.agent_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"queued": True}
+
+
+@router.get("/{run_id}/speech")
+async def get_speech(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    return (await manager.fetch(run_id)).speech.state()
+
+
+@router.get("/{run_id}/speech/lines/{line_id}/audio")
+async def speech_audio(
+    run_id: str,
+    line_id: int,
+    manager: ManagerDep,
+    format: Annotated[str, Query(pattern="^(wav|pcm)$")] = "wav",
+) -> Response:
+    speech = (await manager.fetch(run_id)).speech
+    pcm = speech.audio(line_id)
+    if pcm is None:
+        raise HTTPException(404, f"no audio for line {line_id}")
+    rate = speech.sample_rate
+    if format == "pcm":
+        return Response(
+            pcm, media_type="application/octet-stream", headers={"X-Sample-Rate": str(rate)}
+        )
+    return Response(wav(pcm, rate), media_type="audio/wav")
+
+
+@router.websocket("/{run_id}/speech/ws")
+async def speech_socket(websocket: WebSocket, run_id: str) -> None:
+    manager: RunManager = websocket.app.state.runs
+    try:
+        run = await manager.fetch(run_id)
+    except HTTPException:
+        await websocket.close(code=4004, reason="run not found")
+        return
+    await websocket.accept()
+    run.speech.device_connected()
+    queue = run.speech.hub.subscribe()
+
+    async def send_snapshot() -> None:
+        await websocket.send_json({"type": "speech.snapshot", **run.speech.state()})
+
+    async def sender() -> None:
+        await send_snapshot()
+        while True:
+            msg = await queue.get()
+            if msg == CLOSE:
+                await websocket.close(code=1001, reason="run deleted")
+                return
+            if msg == RESYNC:
+                await send_snapshot()
+            elif isinstance(msg, str):
+                await websocket.send_text(msg)
+
+    async def receiver() -> None:
+        while True:
+            await websocket.receive_text()
+
+    tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in done:
+            with contextlib.suppress(WebSocketDisconnect):
+                task.result()
+    finally:
+        run.speech.hub.unsubscribe(queue)
+        run.speech.device_disconnected()
 
 
 @router.websocket("/{run_id}/ws")

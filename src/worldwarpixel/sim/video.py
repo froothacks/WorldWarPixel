@@ -20,7 +20,7 @@ from typing import Any, cast
 from PIL import Image, ImageDraw, ImageFont
 
 from worldwarpixel.sim.canvas import PALETTE
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.timelapse import iter_events
 
 FPS = 30
@@ -64,7 +64,7 @@ class Timeline:
     pixels_by_country: dict[str, int] = field(default_factory=dict)
 
 
-def load_timeline(log: EventLog, run_id: str) -> Timeline | None:
+def load_timeline(log: EventStore, run_id: str) -> Timeline | None:
     events = iter_events(log, run_id)
     first = next(iter(events), None)
     if first is None or first.kind != "run.created":
@@ -219,7 +219,7 @@ def ffmpeg_available(ffmpeg: str = "ffmpeg") -> bool:
 
 
 def render_video(
-    log: EventLog,
+    log: EventStore,
     run_id: str,
     out: Path,
     *,
