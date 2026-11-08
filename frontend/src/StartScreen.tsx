@@ -183,12 +183,7 @@ export default function StartScreen({ onStarted }: Props) {
 
           {!roster && (
           <label className="field">
-            <span className="field-label agent-label">
-              Agents
-              <strong className="agent-n">
-                {cfg.agents.toLocaleString()} <span>agent{cfg.agents === 1 ? "" : "s"}</span>
-              </strong>
-            </span>
+            <span className="field-label">Agents</span>
             <div className="agent-count">
               <input
                 type="range"
