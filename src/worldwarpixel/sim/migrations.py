@@ -22,6 +22,7 @@ class Migration:
     sqlite_statements: tuple[str, ...]
     postgres_statements: tuple[str, ...]
     postgres_concurrent_statements: tuple[str, ...] = ()
+    postgres_concurrent_indexes: tuple[str, ...] = ()
 
 
 def postgres_run_rollup_sql(*, filter_run_ids: bool = False) -> str:
@@ -305,6 +306,7 @@ MIGRATIONS = (
             f"CREATE INDEX CONCURRENTLY IF NOT EXISTS events_run_canvas ON events (run_id, id) "
             f"WHERE kind IN ({CANVAS_KINDS_SQL})",
         ),
+        postgres_concurrent_indexes=("events_run_canvas",),
     ),
 )
 
@@ -377,11 +379,26 @@ def migrate_postgres(conn: psycopg.Connection[tuple[Any, ...]]) -> list[int]:
             continue
         conn.execute("SELECT pg_advisory_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
         try:
+            applied_now = {
+                int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")
+            }
+            if migration.version in applied_now:
+                applied.add(migration.version)
+                continue
+            for index_name in migration.postgres_concurrent_indexes:
+                valid = conn.execute(
+                    "SELECT i.indisvalid FROM pg_index AS i"
+                    " JOIN pg_class AS c ON c.oid = i.indexrelid WHERE c.relname = %s",
+                    (index_name,),
+                ).fetchone()
+                if valid is not None and not bool(valid[0]):
+                    conn.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {index_name}")
             for statement in migration.postgres_concurrent_statements:
                 conn.execute(statement)
             with conn.transaction():
                 conn.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
+                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)"
+                    " ON CONFLICT (version) DO NOTHING",
                     (migration.version, migration.name, time.time()),
                 )
         finally:
