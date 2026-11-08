@@ -139,6 +139,14 @@ def test_s3_failure_keeps_the_local_video_listed(
     store = VideoStore(tmp_path, s3_bucket="clips", duration=2)
     meta = store.render_sync(log, "v")
     assert "s3" not in meta and store.meta("v") is not None and len(store.list()) == 1
+    monkeypatch.setattr(VideoStore, "_client", lambda self: FakeS3Ok())
+    assert store.mirror_sync("v") is True
+    assert store.meta("v")["s3"]["key"] == "timelapses/v.mp4"  # type: ignore[index]
+
+
+class FakeS3Ok:
+    def upload_file(self, *a: Any, **kw: Any) -> None:
+        pass
 
 
 @needs_ffmpeg

@@ -81,16 +81,27 @@ class VideoStore:
         finally:
             if reader is not log_:
                 reader.close()
-        sidecar = self.meta_path(run_id)
-        sidecar.write_text(json.dumps(meta, indent=1))
+        self.meta_path(run_id).write_text(json.dumps(meta, indent=1))
         if self.s3_bucket:
-            try:
-                meta["s3"] = self._upload(run_id)
-                sidecar.write_text(json.dumps(meta, indent=1))
-                self._put(sidecar, f"{run_id}.json", "application/json")
-            except Exception:
-                log.exception("S3 mirror failed for %s; the local copy is kept", run_id)
+            self.mirror_sync(run_id, meta)
         return meta
+
+    def mirror_sync(self, run_id: str, meta: dict[str, Any] | None = None) -> bool:
+        """Upload an already rendered video + sidecar to the bucket, recording the key in the
+        sidecar; failures are logged so the local copy stays usable. Returns success."""
+        meta = meta if meta is not None else self.meta(run_id)
+        if meta is None:
+            return False
+        sidecar = self.meta_path(run_id)
+        try:
+            meta["s3"] = self._upload(run_id)
+            sidecar.write_text(json.dumps(meta, indent=1))
+            self._put(sidecar, f"{run_id}.json", "application/json")
+            return True
+        except Exception:
+            meta.pop("s3", None)
+            log.exception("S3 mirror failed for %s; the local copy is kept", run_id)
+            return False
 
     async def render(self, log_: EventLog, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
         """Render in a worker thread; concurrent calls for the same run share one render.
@@ -171,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
     wanted = argv if argv is not None else sys.argv[1:]
     run_ids = wanted or [r for r in events.run_ids() if store.meta(r) is None]
     failures = 0
+    if store.s3_bucket and not wanted:  # repair mirrors that failed earlier without re-rendering
+        for m in store.list():
+            if "s3" not in m and store.mirror_sync(m["run_id"], m):
+                print(f"{m['run_id']}: mirrored existing video")
     for run_id in run_ids:
         try:
             meta = store.render_sync(events, run_id)
