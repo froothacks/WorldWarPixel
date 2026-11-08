@@ -144,7 +144,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
             if run.config.policy not in ("llm", "llm-guided"):
                 raise InterviewError("agents in this world have no language model to talk with")
-            spec = find_model(settings, run.config.model)
+            spec = find_model(run.config.model)
             if spec is None or not model_available(settings, spec):
                 raise InterviewError(f"model {run.config.model!r} is unavailable")
             limit = spec.max_tokens if spec.max_tokens is not None else settings.agent_max_tokens
@@ -152,8 +152,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             reasoning: Any = (
                 spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
             )
-            response = await client_for(spec).chat.completions.create(
-                model=spec.model,
+            response = await pool_for(spec).create(
+                f"interview-{run.id}",
                 messages=cast(list[ChatCompletionMessageParam], messages),
                 temperature=0.9,
                 timeout=settings.request_timeout,
