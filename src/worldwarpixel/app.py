@@ -25,7 +25,7 @@ from worldwarpixel.models import (
 )
 from worldwarpixel.routing import EndpointPool, endpoint_client
 from worldwarpixel.sim.agents import Policy
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import open_event_log
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
@@ -167,7 +167,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         app.state.runs = RunManager(
-            EventLog(settings.event_log_path),
+            open_event_log(settings),
             settings.max_active_runs,
             make_policy,
             make_narrator=make_narrator,
