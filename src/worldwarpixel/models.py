@@ -13,7 +13,7 @@ The start screen picks one per run. The quirks are load-bearing:
 from dataclasses import dataclass
 from typing import Literal
 
-from worldwarpixel.config import Settings
+from worldwarpixel.config import Settings, is_modal_url
 
 TokenParam = Literal["max_tokens", "max_completion_tokens"]
 
@@ -85,5 +85,8 @@ def find_model(settings: Settings, model_id: str) -> ModelSpec | None:
 def model_available(settings: Settings, spec: ModelSpec) -> bool:
     """Whether this server holds the credentials the model's auth style needs."""
     if spec.auth == "modal":
+        if spec.base_url is not None and not is_modal_url(spec.base_url):
+            # Overridden to a non-Modal endpoint: no proxy auth is needed (or wanted).
+            return True
         return bool(settings.modal_headers_for(spec.base_url, spec.auth_workspace))
     return bool(settings.openai_api_key.get_secret_value())

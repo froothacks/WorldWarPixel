@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from urllib.parse import urlparse
 
+from dotenv import dotenv_values
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -58,8 +59,12 @@ class Settings(BaseSettings):
         if workspace is None:
             return self.modal_headers()
         prefix = workspace.upper().replace("-", "_")
-        key = os.environ.get(f"{prefix}_MODAL_KEY", "")
-        secret = os.environ.get(f"{prefix}_MODAL_SECRET", "")
+        # Workspace pairs are not Settings fields, so pydantic never maps them out of .env;
+        # read the file directly (os.environ wins, matching pydantic-settings precedence).
+        file_env = dotenv_values(".env")
+        key_name, secret_name = f"{prefix}_MODAL_KEY", f"{prefix}_MODAL_SECRET"
+        key = os.environ.get(key_name) or file_env.get(key_name) or ""
+        secret = os.environ.get(secret_name) or file_env.get(secret_name) or ""
         return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
 
     def default_headers(self) -> dict[str, str]:

@@ -56,5 +56,14 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
     assert [model_available(settings, m) for m in specs] == [False, True, True]
 
 
+def test_modal_preset_overridden_to_non_modal_url_needs_no_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(monkeypatch, QWEN_BASE_URL="http://localhost:8000/v1")
+    qwen = find_model(settings, "qwen")
+    assert qwen is not None
+    assert model_available(settings, qwen)
+
+
 def test_find_model_unknown_id() -> None:
     assert find_model(Settings(), "nope") is None
