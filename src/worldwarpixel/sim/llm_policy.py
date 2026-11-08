@@ -5,6 +5,7 @@ import logging
 import random
 import re
 import time
+import uuid
 from typing import Any, Literal, cast
 
 from openai import NOT_GIVEN, AsyncOpenAI, RateLimitError
@@ -16,6 +17,7 @@ from openai.types.chat import (
     ChatCompletionToolParam,
 )
 
+from worldwarpixel.routing import EndpointPool, as_pool
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.tools import ToolError, ToolSet
@@ -416,7 +418,7 @@ class LLMPolicy:
 
     def __init__(
         self,
-        client: AsyncOpenAI,
+        client: AsyncOpenAI | EndpointPool,
         model: str,
         timeout: float = 45.0,
         vision: bool = True,
@@ -428,9 +430,10 @@ class LLMPolicy:
         max_concurrency: int | None = None,
         semaphore: asyncio.Semaphore | None = None,
     ) -> None:
-        self._client = client
+        self._pool = as_pool(client, model)
+        # Sticky routing key prefix: each agent of this run keeps hitting one endpoint.
+        self._route_prefix = uuid.uuid4().hex
         self._guided = guided
-        self._model = model
         self._timeout = timeout
         self._vision = vision
         self._max_tokens = max_tokens
@@ -463,7 +466,7 @@ class LLMPolicy:
         }
 
     async def _complete(
-        self, messages: list[ChatCompletionMessageParam], obs: Observation
+        self, agent: AgentSpec, messages: list[ChatCompletionMessageParam], obs: Observation
     ) -> ChatCompletion:
         # Endpoint quirks live in models.py: OpenAI reasoning models want
         # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
@@ -474,9 +477,10 @@ class LLMPolicy:
             else None
         )
         reasoning: Any = self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
+        route_key = f"{self._route_prefix}:{agent.id}"
         if self._token_param == "max_completion_tokens":
-            return await self._client.chat.completions.create(
-                model=self._model,
+            return await self._pool.create(
+                route_key,
                 messages=messages,
                 tools=self._tools_for(obs),
                 tool_choice="auto",
@@ -486,8 +490,8 @@ class LLMPolicy:
                 reasoning_effort=reasoning,
                 extra_body=extra_body,
             )
-        return await self._client.chat.completions.create(
-            model=self._model,
+        return await self._pool.create(
+            route_key,
             messages=messages,
             tools=self._tools_for(obs),
             tool_choice="auto",
@@ -545,9 +549,9 @@ class LLMPolicy:
                 if self._sem is not None:
                     async with self._sem:
                         call_t0 = time.monotonic()  # latency measures the call, not the queue wait
-                        response = await self._complete(messages, obs)
+                        response = await self._complete(agent, messages, obs)
                 else:
-                    response = await self._complete(messages, obs)
+                    response = await self._complete(agent, messages, obs)
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1

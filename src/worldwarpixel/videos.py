@@ -28,6 +28,7 @@ class VideoStore:
         s3_prefix: str = "timelapses/",
         duration: float = 20.0,
         ffmpeg: str = "ffmpeg",
+        autosave_interval: float = 0.0,
     ) -> None:
         self.dir = Path(directory)
         self.s3_bucket = s3_bucket or None
@@ -35,8 +36,10 @@ class VideoStore:
         self.s3_prefix = s3_prefix
         self.duration = duration
         self.ffmpeg = ffmpeg
+        self.autosave_interval = autosave_interval
         self._rendering: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._pending: set[asyncio.Task[None]] = set()
+        self._autosave: dict[str, asyncio.Task[None]] = {}
         self._encoder = threading.Semaphore(1)  # one ffmpeg at a time, whoever asks
 
     # -- paths -----------------------------------------------------------------------------
@@ -132,6 +135,40 @@ class VideoStore:
         task = asyncio.get_running_loop().create_task(go())
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
+
+    # -- autosave ----------------------------------------------------------------------------
+
+    def start_autosave(self, log_: EventLog, run_id: str) -> None:
+        """Re-render the run's video every ``autosave_interval`` seconds, overwriting the same
+        {run_id}.mp4/.json (and S3 keys), so a live run's archive entry is always current."""
+        if self.autosave_interval <= 0 or run_id in self._autosave:
+            return
+
+        async def loop() -> None:
+            while True:
+                await asyncio.sleep(self.autosave_interval)
+                try:
+                    # fresh=False: an in-flight render (e.g. an on-demand request) is awaited
+                    # instead of duplicated; the encoder semaphore serializes ffmpeg anyway.
+                    meta = await self.render(log_, run_id)
+                    log.info("autosaved timelapse for %s (%s bytes)", run_id, meta["bytes"])
+                except VideoError as e:
+                    log.info("no timelapse autosave for %s: %s", run_id, e)
+                except Exception:
+                    log.exception("timelapse autosave failed for %s", run_id)
+
+        task = asyncio.get_running_loop().create_task(loop())
+        self._autosave[run_id] = task
+        task.add_done_callback(lambda _: self._autosave.pop(run_id, None))
+
+    def stop_autosave(self, run_id: str) -> None:
+        task = self._autosave.pop(run_id, None)
+        if task is not None:
+            task.cancel()
+
+    def stop_all_autosaves(self) -> None:
+        for run_id in list(self._autosave):
+            self.stop_autosave(run_id)
 
     async def drain(self, timeout: float = 120.0) -> None:
         """Wait for scheduled renders (called at shutdown, before the event log is closed)."""
