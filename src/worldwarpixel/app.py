@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,6 +32,7 @@ from worldwarpixel.sim.events import open_event_log
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.societies import naming_messages, parse_names
 from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
@@ -141,21 +144,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             return random_policy(config)
 
-        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
-            if run.config.policy not in ("llm", "llm-guided"):
-                raise InterviewError("agents in this world have no language model to talk with")
-            spec = find_model(run.config.model)
-            if spec is None or not model_available(settings, spec):
-                raise InterviewError(f"model {run.config.model!r} is unavailable")
+        async def complete(
+            spec: ModelSpec, key: str, messages: list[dict[str, str]], temperature: float
+        ) -> str:
             limit = spec.max_tokens if spec.max_tokens is not None else settings.agent_max_tokens
             completion = spec.token_param == "max_completion_tokens"
             reasoning: Any = (
                 spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
             )
             response = await pool_for(spec).create(
-                f"interview-{run.id}",
+                key,
                 messages=cast(list[ChatCompletionMessageParam], messages),
-                temperature=0.9,
+                temperature=temperature,
                 timeout=settings.request_timeout,
                 max_tokens=omit if completion else limit,
                 max_completion_tokens=limit if completion else omit,
@@ -167,6 +167,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ),
             )
             return response.choices[0].message.content or ""
+
+        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
+            if run.config.policy not in ("llm", "llm-guided"):
+                raise InterviewError("agents in this world have no language model to talk with")
+            spec = find_model(run.config.model)
+            if spec is None or not model_available(settings, spec):
+                raise InterviewError(f"model {run.config.model!r} is unavailable")
+            return await complete(spec, f"interview-{run.id}", messages, 0.9)
+
+        async def name_societies(config: RunConfig) -> list[str] | None:
+            """Starting society names from the run's model; None falls back to random names."""
+            spec = find_model(config.model)
+            if config.policy == "random" or spec is None or not model_available(settings, spec):
+                return None
+            messages = naming_messages(config.societies, config.society_theme)
+            try:
+                raw = await asyncio.wait_for(complete(spec, "societies", messages, 1.0), 30)
+            except Exception as e:
+                logging.getLogger(__name__).warning("society naming failed: %r", e)
+                return None
+            return parse_names(raw, config.societies) or None
 
         app.state.interview_chat = interview_chat
         app.state.transcriber = WhisperTranscriber(settings.whisper_model)
@@ -201,6 +222,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             make_policy,
             make_narrator=make_narrator,
             speech=speech,
+            name_societies=name_societies,
             videos=VideoStore(
                 settings.timelapse_dir,
                 s3_bucket=settings.timelapse_s3_bucket,

@@ -117,7 +117,7 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
             "started_at": r.started_at,
             "agents": len(r.agents),
             "model": r.config.model,
-            "societies": [s["name"] for s in r.society_summary()],
+            "societies": [screen_name(s) for s in r.society_summary()],
         }
         for r in live
     ]
@@ -132,14 +132,30 @@ def _run_for(request: Request, device: Device) -> Run:
     return run
 
 
+def screen_name(society: dict[str, Any]) -> str:
+    """The society's name in the screens' ASCII font (a placeholder if nothing survives)."""
+    return " ".join(interview.ascii_text(society["name"]).split()) or f"Society {society['id'] + 1}"
+
+
 def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, Any]:
     societies = run.society_summary()
     mine = societies[device.society]
     return {
         "type": "state",
         "run": run.id,
-        "society": {k: mine[k] for k in ("id", "name", "color", "members", "joined", "left")},
-        "societies": [{k: s[k] for k in ("id", "name", "color", "members")} for s in societies],
+        "society": {
+            **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
+            "name": screen_name(mine),
+        },
+        "societies": [
+            {
+                "id": s["id"],
+                "name": screen_name(s),
+                "color": s["color"],
+                "members": s["members"],
+            }
+            for s in societies
+        ],
         "threads": [
             {"title": d["title"], "author": d["author"], "replies": d["replies"]}
             for d in run.society_threads(device.society, limit=3)

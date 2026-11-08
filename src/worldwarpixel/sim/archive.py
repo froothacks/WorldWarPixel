@@ -9,7 +9,7 @@ from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PixelWrite
 from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.run import Run, RunConfig
-from worldwarpixel.sim.societies import Migration
+from worldwarpixel.sim.societies import SOCIETY_NAMES, Migration
 from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
 
@@ -22,6 +22,8 @@ def restore_run(log: EventStore, run_id: str, speech: SpeechSynth | None = None)
         return None
     created = cast(dict[str, Any], first.payload)
     config = RunConfig.model_validate(created["config"])
+    if config.societies and config.society_names is None:  # logged before names were generated
+        config.society_names = list(SOCIETY_NAMES[: config.societies])
     # Runs logged before the roster was recorded fall back to re-seeding (exact only with a seed).
     roster = [AgentSpec(**a) for a in created.get("agents", [])]
     run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None, speech=speech)
