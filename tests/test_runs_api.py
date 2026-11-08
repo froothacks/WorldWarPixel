@@ -76,7 +76,12 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
     }
     assert all(set(m) == {"id", "label", "model", "available", "endpoints"} for m in models)
     glm = next(m for m in models if m["id"] == "glm")
-    assert [e["name"] for e in glm["endpoints"]] == ["advait-m", "chryztoph", "meganwchun"]
+    assert [e["name"] for e in glm["endpoints"]] == [
+        "advait-m",
+        "chryztoph",
+        "meganwchun",
+        "leonfattakhov",
+    ]
     assert glm["endpoints"][1]["secrets"] == ["CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"]
     assert glm["endpoints"][0]["calls"] == 0 and glm["endpoints"][0]["cooling"] is False
 
