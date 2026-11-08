@@ -24,7 +24,7 @@ from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
@@ -42,7 +42,7 @@ class RunManager:
 
     def __init__(
         self,
-        log: EventLog,
+        log: EventStore,
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,

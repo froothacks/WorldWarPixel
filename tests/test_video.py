@@ -27,6 +27,7 @@ def _run(log: EventLog, run_id: str = "v", seconds: float = 0.3) -> Run:
         run = Run(run_id, CONFIG, log, RandomWalkPolicy(seed=5))
         await run.start()
         await asyncio.sleep(seconds)
+        run.pause()  # freeze agent activity so the headline below is the last event
         run.narrator.history.append({"kind": "update", "headline": "Early scramble"})
         run.record("narrator.update", None, {"kind": "update", "headline": "Early scramble"})
         run.record("narrator.update", None, {"kind": "answer", "headline": "ignored"})

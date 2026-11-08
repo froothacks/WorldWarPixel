@@ -12,13 +12,13 @@ import struct
 from collections.abc import Iterable
 from itertools import takewhile
 
-from worldwarpixel.sim.events import Event, EventLog
+from worldwarpixel.sim.events import Event, EventStore
 
 MAX_FRAMES = 600
 PAGE = 10_000
 
 
-def iter_events(log: EventLog, run_id: str) -> Iterable[Event]:
+def iter_events(log: EventStore, run_id: str) -> Iterable[Event]:
     after = 0
     while True:
         page = log.read(run_id, after_id=after, limit=PAGE)
@@ -31,7 +31,7 @@ def iter_events(log: EventLog, run_id: str) -> Iterable[Event]:
 KINDS = ("pixel", "god.clear_canvas")
 
 
-def _time_span(log: EventLog, run_id: str) -> tuple[float, float, int] | None:
+def _time_span(log: EventStore, run_id: str) -> tuple[float, float, int] | None:
     """(first ts, last ts, last event id) of the relevant events, or None if there are none."""
     t0 = t1 = None
     last_id = 0
@@ -42,7 +42,7 @@ def _time_span(log: EventLog, run_id: str) -> tuple[float, float, int] | None:
     return None if t0 is None or t1 is None else (t0, t1, last_id)
 
 
-def build_timelapse(log: EventLog, run_id: str, width: int, height: int, frames: int) -> bytes:
+def build_timelapse(log: EventStore, run_id: str, width: int, height: int, frames: int) -> bytes:
     """Two passes over the log (span, then deltas) so memory stays O(canvas), not O(events)."""
     frames = max(1, min(frames, MAX_FRAMES))
     out = bytearray(struct.pack("<HHH", 0, width, height))

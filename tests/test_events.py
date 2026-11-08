@@ -1,4 +1,9 @@
-from worldwarpixel.sim.events import EventLog
+from pathlib import Path
+
+import pytest
+
+from worldwarpixel.config import Settings
+from worldwarpixel.sim.events import EventLog, open_event_log
 
 
 def test_append_and_read_in_order() -> None:
@@ -24,3 +29,23 @@ def test_batch_defers_the_commit_until_the_block_ends() -> None:
     assert log.count("b") == 5
     log.append("b", 9.0, "post", 1, {})
     assert log.count("b") == 6
+
+
+def test_open_event_log_uses_sqlite_by_default(tmp_path: Path) -> None:
+    log = open_event_log(Settings(event_log_path=str(tmp_path / "events.db"), database_url=None))
+    assert isinstance(log, EventLog)
+    log.close()
+
+
+def test_open_event_log_uses_postgres_when_database_url_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from worldwarpixel.sim import events_pg
+
+    class FakePostgres:
+        def __init__(self, database_url: str) -> None:
+            self.database_url = database_url
+
+    monkeypatch.setattr(events_pg, "PostgresEventLog", FakePostgres)
+    log = open_event_log(Settings(database_url="postgresql://example"))
+    assert getattr(log, "database_url", None) == "postgresql://example"

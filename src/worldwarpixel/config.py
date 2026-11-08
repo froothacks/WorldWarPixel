@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"
+    database_url: str | None = None
+    """Postgres DSN for the event log; when set it replaces the SQLite event_log_path."""
     max_active_runs: int = 4
 
     @property
