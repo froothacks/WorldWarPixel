@@ -8,9 +8,10 @@ the exchange lands in the agent's memory like any other thought.
 
 import array
 import difflib
+import math
 import re
 import unicodedata
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 from worldwarpixel.sim.agents import AgentSpec
@@ -177,14 +178,28 @@ async def answer(
     return reply
 
 
-async def voice(run: Run, agent: AgentSpec, text: str) -> bytes | None:
-    """The reply as 16 kHz PCM in the agent's speech-panel voice, or None without a synthesizer."""
+async def voice(run: Run, agent: AgentSpec, text: str) -> AsyncGenerator[bytes, None]:
+    """The reply as 16 kHz PCM in the agent's speech-panel voice, streamed as it is synthesized
+    when the synthesizer can stream; yields nothing without a synthesizer."""
     synth = run.speech.synth
     if synth is None:
-        return None
-    pcm = await synth.synth(
-        text,
-        voice_for(agent),
-        f"You are {agent.name} from {agent.country}, talking to a visitor. Speak naturally.",
+        return
+    voice = voice_for(agent)
+    instructions = (
+        f"You are {agent.name} from {agent.country}, talking to a visitor. Speak naturally."
     )
-    return resample(pcm, synth.sample_rate)
+    stream = getattr(synth, "stream", None)
+    if stream is None:
+        yield resample(await synth.synth(text, voice, instructions), synth.sample_rate)
+        return
+    # Resample whole src:dst sample blocks so chunk edges land on output samples.
+    block = 2 * (synth.sample_rate // math.gcd(synth.sample_rate, RATE))
+    pending = b""
+    async for chunk in stream(text, voice, instructions):
+        pending += chunk
+        cut = len(pending) - len(pending) % block
+        if cut:
+            yield resample(pending[:cut], synth.sample_rate)
+            pending = pending[cut:]
+    if len(pending) >= 2:
+        yield resample(pending, synth.sample_rate)

@@ -138,6 +138,8 @@ static void parse_runs(const cJSON *arr)
             jstrncpy(ri->id, sizeof(ri->id), r, "id");
             ri->agents = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(r, "agents"));
             jstrncpy(ri->model, sizeof(ri->model), r, "model");
+            const cJSON *mins = cJSON_GetObjectItem(r, "minutes");
+            ri->minutes = cJSON_IsNumber(mins) ? (int)cJSON_GetNumberValue(mins) : -1;
             /* join society names */
             ri->soc_names[0] = 0;
             const cJSON *sn = cJSON_GetObjectItem(r, "societies");

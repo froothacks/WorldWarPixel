@@ -118,6 +118,7 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
             "started_at": r.started_at,
             "agents": len(r.agents),
             "model": r.config.model,
+            "minutes": int(max(0.0, time.time() - r.started_at) // 60) if r.started_at else None,
             "societies": [screen_name(s) for s in r.society_summary()],
         }
         for r in live
@@ -358,26 +359,42 @@ async def device_socket(websocket: WebSocket) -> None:
         )
         history = histories.setdefault((run.id, agent.id), [])
         reply = await interview.answer(app.state.interview_chat, run, agent, history, question)
+        audio = interview.voice(run, agent, reply)
         try:
-            pcm = await interview.voice(run, agent, reply)
+            first = await anext(audio, b"")
         except Exception as e:
             log.warning("interview voice failed: %s", e)
-            pcm = None
+            first = b""
         await websocket.send_json(
             {
                 "type": "interview.reply",
                 "agent": agent.id,
                 "name": interview.ascii_text(agent.name),
                 "text": interview.ascii_text(reply),
-                "audio": pcm is not None,
+                "audio": bool(first),
                 "rate": interview.RATE,
-                "bytes": len(pcm) if pcm else 0,
+                "bytes": 0,  # streamed; the clip's length isn't known up front
             }
         )
+        if not first:
+            return
+        pcm = first
+        try:
+            while True:
+                while len(pcm) >= AUDIO_CHUNK:
+                    await websocket.send_bytes(pcm[:AUDIO_CHUNK])
+                    pcm = pcm[AUDIO_CHUNK:]
+                more = await anext(audio, None)
+                if more is None:
+                    break
+                pcm += more
+        except Exception as e:
+            log.warning("interview voice failed mid-reply: %s", e)
+        finally:
+            await audio.aclose()
         if pcm:
-            for i in range(0, len(pcm), AUDIO_CHUNK):
-                await websocket.send_bytes(pcm[i : i + AUDIO_CHUNK])
-            await websocket.send_json({"type": "interview.audio_end", "agent": agent.id})
+            await websocket.send_bytes(pcm)
+        await websocket.send_json({"type": "interview.audio_end", "agent": agent.id})
 
     async def push() -> None:
         nonlocal seen, listed
