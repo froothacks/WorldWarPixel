@@ -49,8 +49,8 @@ cp main/secrets.h.example main/secrets.h
 `secrets.h` is gitignored. `SERVER_URL` has no trailing slash
 (`http://192.168.1.50:8000` or `https://host` -> wss is derived automatically),
 e.g. the Modal deployment `https://leonfattakhov--worldwarpixel-home.us-east.modal.run`.
-The WebSocket sends the token both as `?token=` and as an `Authorization: Bearer`
-header; HTTP requests use the header. Custom headers passed to
+The WebSocket and HTTP requests send the token as an `Authorization: Bearer`
+header (never in the URL, which ends up in access logs). Custom headers passed to
 `esp_websocket_client` are inserted raw, so each line must end in `\r\n` or the
 upgrade request never terminates ("Error read response for Upgrade header").
 

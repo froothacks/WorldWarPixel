@@ -512,7 +512,7 @@ static void ws_task(void *arg)
     const char *p = SERVER_URL;
     if (!strncmp(p, "https://", 8)) { scheme = "wss"; p += 8; }
     else if (!strncmp(p, "http://", 7)) { p += 7; }
-    snprintf(uri, sizeof(uri), "%s://%s/devices/ws?token=%s", scheme, p, DEVICE_TOKEN);
+    snprintf(uri, sizeof(uri), "%s://%s/devices/ws", scheme, p);   /* token goes in the header, not the logged URL */
     char ws_auth[160];
     snprintf(ws_auth, sizeof(ws_auth), "Authorization: Bearer %s\r\n", DEVICE_TOKEN);  /* raw header lines need CRLF */
 
