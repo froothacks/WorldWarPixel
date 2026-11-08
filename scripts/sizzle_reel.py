@@ -662,7 +662,9 @@ def analyze_windows(run: RunPick, workdir: Path, *, count: int, win: int) -> Non
     windows: list[tuple[float, float, float]] = []
     best_score, best_start = -1.0, 0
     for score, start in chosen:
-        windows.append((float(start), min(duration, float(start + win)), float(score)))
+        win_start = max(0.0, float(start) - 1.0)
+        win_end = min(duration, win_start + win)
+        windows.append((win_start, win_end, float(score)))
         if score > best_score:
             best_score, best_start = score, start
     run.windows = windows
