@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import struct
 import time
@@ -211,3 +212,59 @@ def test_dispatch_posts_restore_with_the_world_news_author() -> None:
 def test_runs_archived_without_a_model_still_load() -> None:
     config = RunConfig.model_validate({**RunConfig().model_dump(), "model": None})
     assert config.model == RunConfig().model
+
+
+def test_runs_interrupted_by_a_restart_resume(
+    server: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RESUME_RUNS", "true")
+    get_settings.cache_clear()
+    with TestClient(app) as client:
+        live = client.post("/runs", json=SMALL).json()["id"]
+        paused = client.post("/runs", json=SMALL).json()["id"]
+        stopped = client.post("/runs", json=SMALL).json()["id"]
+        time.sleep(0.2)
+        client.post(f"/runs/{paused}/pause")
+        client.post(f"/runs/{stopped}/stop")
+        before = client.get(f"/runs/{live}").json()["stats"]["pixels"]
+
+    with TestClient(app) as client:
+        deadline = time.time() + 5
+        while client.get(f"/runs/{live}").json()["state"] != "running" and time.time() < deadline:
+            time.sleep(0.05)
+        assert client.get(f"/runs/{live}").json()["state"] == "running"
+        assert client.get(f"/runs/{paused}").json()["state"] == "paused"
+        assert client.get(f"/runs/{stopped}").json()["state"] == "stopped"
+        deadline = time.time() + 3
+        while client.get(f"/runs/{live}").json()["stats"]["pixels"] <= before:
+            assert time.time() < deadline
+            time.sleep(0.05)
+        kinds = [e["kind"] for e in client.get(f"/runs/{live}/events").json()]
+        assert kinds.count("run.created") == 1
+        client.delete(f"/runs/{paused}")
+
+    with TestClient(app) as client:  # resumed again after the second restart, deleted one not
+        deadline = time.time() + 5
+        while client.get(f"/runs/{live}").json()["state"] != "running" and time.time() < deadline:
+            time.sleep(0.05)
+        assert client.get(f"/runs/{live}").json()["state"] == "running"
+        assert client.get(f"/runs/{paused}").status_code == 404
+        client.post(f"/runs/{live}/stop")
+
+
+def test_restored_interrupted_runs_keep_model_and_narrator_ids() -> None:
+    log = EventLog()
+    config = RunConfig(width=32, height=16, agents=2, seed=3, policy="random")
+    log.append("m", 1.0, "run.created", None, {"config": config.model_dump()})
+    log.append("m", 2.0, "god.model_changed", 65535, {"model": "other"})
+    log.append("m", 3.0, "narrator.update", None, {"id": 4, "kind": "update", "headline": "h"})
+    log.append("m", 4.0, "run.state", None, {"state": "interrupted", "was": "running"})
+    run = restore_run(log, "m")
+    assert run is not None
+    assert run.config.model == "other"
+    assert run.narrator._next_id == 5
+    assert run.interrupted and not run.resume_paused
+    assert log.interrupted_runs() == ["m"]
+    asyncio.run(run.stop())  # stopped while waiting to resume: it must not come back
+    assert not run.interrupted
+    assert log.interrupted_runs() == []

@@ -13,12 +13,13 @@ from worldwarpixel.sim.run import RunConfig
 def test_sqlite_migrations_are_recorded_once(tmp_path: Path) -> None:
     path = tmp_path / "events.db"
     conn = sqlite3.connect(path)
-    assert migrate_sqlite(conn) == [1, 2]
+    assert migrate_sqlite(conn) == [1, 2, 3]
     assert conn.execute(
         "SELECT version, name FROM schema_migrations ORDER BY version"
     ).fetchall() == [
         (1, "events"),
         (2, "runs"),
+        (3, "run_state"),
     ]
     conn.close()
 
@@ -88,4 +89,4 @@ def test_migration_cli_accepts_a_sqlite_path(tmp_path: Path) -> None:
         text=True,
         check=True,
     )
-    assert result.stdout.strip() == "Applied migrations: 1, 2"
+    assert result.stdout.strip() == "Applied migrations: 1, 2, 3"

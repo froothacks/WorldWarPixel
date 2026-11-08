@@ -142,6 +142,12 @@ MIGRATIONS = (
             """,
         ),
     ),
+    Migration(
+        version=3,
+        name="run_state",
+        sqlite_statements=("ALTER TABLE runs ADD COLUMN state TEXT",),
+        postgres_statements=("ALTER TABLE runs ADD COLUMN IF NOT EXISTS state TEXT",),
+    ),
 )
 
 SQLITE_MIGRATIONS_TABLE = """
