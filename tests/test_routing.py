@@ -5,9 +5,15 @@ from typing import Any, cast
 
 import httpx2 as httpx
 import pytest
-from openai import APITimeoutError, RateLimitError
+from openai import APITimeoutError, AuthenticationError, RateLimitError
 
-from worldwarpixel.routing import Endpoint, EndpointPool, endpoint_headers, modal_endpoint
+from worldwarpixel.routing import (
+    Endpoint,
+    EndpointPool,
+    describe_endpoint,
+    endpoint_headers,
+    modal_endpoint,
+)
 
 
 class FakeClient:
@@ -29,6 +35,11 @@ class FakeClient:
 def _rate_limited() -> RateLimitError:
     request = httpx.Request("POST", "https://x/v1/chat/completions")
     return RateLimitError("429", response=httpx.Response(429, request=request), body=None)
+
+
+def _unauthorized() -> AuthenticationError:
+    request = httpx.Request("POST", "https://x/v1/chat/completions")
+    return AuthenticationError("401", response=httpx.Response(401, request=request), body=None)
 
 
 def _pool(n: int, clock: list[float] | None = None) -> tuple[EndpointPool, list[FakeClient]]:
@@ -86,9 +97,34 @@ def test_all_endpoints_failing_raises_the_last_error() -> None:
     pool, clients = _pool(2)
     for c in clients:
         c.fail = _rate_limited()
-    with pytest.raises(RateLimitError):
+    last_endpoint = pool.order("a")[-1][0]
+    with pytest.raises(RateLimitError) as exc:
         asyncio.run(pool.create("a"))
     assert all(len(c.calls) == 1 for c in clients)
+    assert cast(Any, exc.value).endpoint == last_endpoint
+
+
+def test_authentication_error_is_attributed_without_failing_over() -> None:
+    pool, _ = _pool(2)
+    first_endpoint, first_client = pool.order("a")[0]
+    first_client.fail = _unauthorized()
+    other_endpoint, other_client = next(
+        (endpoint, client) for endpoint, client in pool.order("a") if endpoint != first_endpoint
+    )
+
+    with pytest.raises(AuthenticationError) as exc:
+        asyncio.run(pool.create("a"))
+
+    assert cast(Any, exc.value).endpoint == first_endpoint
+    assert pool.stats[first_endpoint.name] == {"calls": 1, "errors": 1, "failovers": 0}
+    assert pool.stats[other_endpoint.name] == {"calls": 0, "errors": 0, "failovers": 0}
+    assert not pool.public_stats()[other_endpoint.name]["cooling"]
+    assert not other_client.calls
+    assert describe_endpoint(exc.value) == f"{first_endpoint.name} ({first_endpoint.base_url})"
+
+
+def test_describe_endpoint_returns_unknown_for_unattributed_error() -> None:
+    assert describe_endpoint(ValueError()) == "unknown endpoint"
 
 
 def test_timeouts_do_not_fail_over() -> None:
