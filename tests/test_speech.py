@@ -204,9 +204,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     get_settings.cache_clear()
 
 
-def test_speech_api_websocket_audio_and_god_auth(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_speech_api_websocket_audio(client: TestClient) -> None:
     run_id = client.post(
         "/runs",
         json={"width": 32, "height": 16, "agents": 3, "cooldown": 600, "policy": "random"},
@@ -243,10 +241,6 @@ def test_speech_api_websocket_audio_and_god_auth(
     stopped = client.post(f"/runs/{run_id}/speak", json={"text": "Dropped"})
     assert stopped.status_code == 409
     assert stopped.json()["detail"] == "run is not running"
-
-    monkeypatch.setenv("GOD_TOKEN", "panel-secret")
-    get_settings.cache_clear()
-    assert client.post(f"/runs/{run_id}/speak", json={"text": "Protected"}).status_code == 403
 
 
 def test_restored_run_uses_manager_speech_synth(client: TestClient) -> None:

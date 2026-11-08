@@ -10,7 +10,6 @@ from typing import Annotated, Any
 from fastapi import (
     APIRouter,
     Depends,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -21,7 +20,6 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from worldwarpixel.config import get_settings
 from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
@@ -247,11 +245,8 @@ async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     return run.summary()
 
 
-def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
-    """God endpoints are open unless GOD_TOKEN is configured; then the header must match."""
-    expected = get_settings().god_token.get_secret_value()
-    if expected and not secrets.compare_digest(x_god_token or "", expected):
-        raise HTTPException(403, "god mode requires a valid X-God-Token")
+def require_god() -> None:
+    """God endpoints are open to everyone."""
 
 
 GodDep = Annotated[None, Depends(require_god)]
