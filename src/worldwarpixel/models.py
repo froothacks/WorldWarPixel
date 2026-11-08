@@ -40,6 +40,8 @@ class ModelSpec:
     """Default agent output budget; None falls back to Settings.agent_max_tokens."""
     narrator_max_tokens: int | None = None
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
+    concurrency: int | None = None
+    """Cap on simultaneous model calls per run; None means no preset cap."""
 
 
 def model_registry(settings: Settings) -> list[ModelSpec]:
@@ -72,6 +74,8 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             auth="modal",
             max_tokens=3000,
             narrator_max_tokens=3000,
+            # The shared endpoint 429s above ~16 concurrent calls.
+            concurrency=16,
         ),
     ]
 

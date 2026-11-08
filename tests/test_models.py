@@ -34,6 +34,10 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     deepseek = specs["deepseek"]
     assert deepseek.auth == "modal"
     assert deepseek.max_tokens == 3000
+    # The shared DeepSeek endpoint 429s above ~16 concurrent calls; the preset caps it.
+    assert deepseek.concurrency == 16
+    assert specs["gpt-6-luna"].concurrency is None
+    assert specs["qwen"].concurrency is None
 
 
 def test_modal_base_urls_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:

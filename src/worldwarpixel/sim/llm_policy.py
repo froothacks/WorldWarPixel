@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -8,6 +9,7 @@ from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from openai.types.chat import (
+    ChatCompletion,
     ChatCompletionContentPartParam,
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
@@ -296,6 +298,7 @@ class LLMPolicy:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
+        max_concurrency: int | None = None,
     ) -> None:
         self._client = client
         self._model = model
@@ -305,6 +308,9 @@ class LLMPolicy:
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
+        # Some shared endpoints 429 above a concurrency ceiling (e.g. DeepSeek ~16);
+        # the preset carries it so a run never exceeds what the endpoint tolerates.
+        self._sem = asyncio.Semaphore(max_concurrency) if max_concurrency else None
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -324,6 +330,42 @@ class LLMPolicy:
             **self.stats,
             "latency": {k: latency_summary(v) for k, v in self._latency.items()},
         }
+
+    async def _complete(
+        self, messages: list[ChatCompletionMessageParam], obs: Observation
+    ) -> ChatCompletion:
+        # Endpoint quirks live in models.py: OpenAI reasoning models want
+        # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
+        # whenever tools are attached; the Modal vLLM endpoints want the reverse.
+        extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._chat_template_kwargs
+            else None
+        )
+        reasoning = cast(Any, self._reasoning_effort)
+        if self._token_param == "max_completion_tokens":
+            return await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                tools=self._tools_for(obs),
+                tool_choice="auto",
+                max_completion_tokens=self._max_tokens,
+                temperature=1.0,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
+        return await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            tools=self._tools_for(obs),
+            tool_choice="auto",
+            max_tokens=self._max_tokens,
+            temperature=1.0,
+            timeout=self._timeout,
+            reasoning_effort=reasoning,
+            extra_body=extra_body,
+        )
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         turn_t0 = time.monotonic()
@@ -364,39 +406,11 @@ class LLMPolicy:
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                # Endpoint quirks live in models.py: OpenAI reasoning models want
-                # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
-                # whenever tools are attached; the Modal vLLM endpoints want the reverse.
-                extra_body = (
-                    {"chat_template_kwargs": {"enable_thinking": False}}
-                    if self._chat_template_kwargs
-                    else None
-                )
-                reasoning = cast(Any, self._reasoning_effort)
-                if self._token_param == "max_completion_tokens":
-                    response = await self._client.chat.completions.create(
-                        model=self._model,
-                        messages=messages,
-                        tools=self._tools_for(obs),
-                        tool_choice="auto",
-                        max_completion_tokens=self._max_tokens,
-                        temperature=1.0,
-                        timeout=self._timeout,
-                        reasoning_effort=reasoning,
-                        extra_body=extra_body,
-                    )
+                if self._sem is None:
+                    response = await self._complete(messages, obs)
                 else:
-                    response = await self._client.chat.completions.create(
-                        model=self._model,
-                        messages=messages,
-                        tools=self._tools_for(obs),
-                        tool_choice="auto",
-                        max_tokens=self._max_tokens,
-                        temperature=1.0,
-                        timeout=self._timeout,
-                        reasoning_effort=reasoning,
-                        extra_body=extra_body,
-                    )
+                    async with self._sem:
+                        response = await self._complete(messages, obs)
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1

@@ -116,6 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     token_param=spec.token_param,
                     chat_template_kwargs=spec.chat_template_kwargs,
                     reasoning_effort=spec.reasoning_effort,
+                    max_concurrency=spec.concurrency,
                 )
             return random_policy(config)
 
