@@ -21,9 +21,15 @@ def _stored_config(raw: dict[str, Any]) -> RunConfig:
     return RunConfig.model_validate(data)
 
 
-def restore_run(log: EventStore, run_id: str, speech: SpeechSynth | None = None) -> Run | None:
-    """Replay a run's events into a stopped ``Run``; None if it is unknown or was deleted."""
-    events = iter_events(log, run_id)
+def restore_run(
+    log: EventStore,
+    run_id: str,
+    speech: SpeechSynth | None = None,
+    *,
+    source: EventStore | None = None,
+) -> Run | None:
+    """Replay a run's events into a stopped ``Run``; read from source if supplied."""
+    events = iter_events(source or log, run_id)
     first = next(iter(events), None)
     if first is None or first.kind != "run.created":
         return None

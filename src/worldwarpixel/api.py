@@ -2,7 +2,8 @@ import asyncio
 import contextlib
 import secrets
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any
 
 from fastapi import (
@@ -35,6 +36,17 @@ from worldwarpixel.videos import VideoStore
 
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
+
+
+@contextmanager
+def reading(log: EventStore) -> Iterator[EventStore]:
+    """A separate connection for long reads, so they don't hold up the shared one."""
+    reader = log.reader()
+    try:
+        yield reader
+    finally:
+        if reader is not log:
+            reader.close()
 
 
 class RunManager:
@@ -104,9 +116,12 @@ class RunManager:
             return run
         task = self._loading.get(run_id)
         if task is None:
-            task = asyncio.create_task(
-                asyncio.to_thread(restore_run, self.log, run_id, self.speech)
-            )
+
+            def restore() -> Run | None:
+                with reading(self.log) as reader:
+                    return restore_run(self.log, run_id, self.speech, source=reader)
+
+            task = asyncio.create_task(asyncio.to_thread(restore))
             self._loading[run_id] = task
             task.add_done_callback(lambda _: self._loading.pop(run_id, None))
         restored = await task
@@ -395,11 +410,22 @@ async def get_events(
     limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
 ) -> list[dict[str, Any]]:
     await manager.fetch(run_id)
-    events = manager.log.read(run_id, after_id=after, limit=limit)
-    return [
-        {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
-        for e in events
-    ]
+
+    def read_events() -> list[dict[str, Any]]:
+        with reading(manager.log) as reader:
+            events = reader.read(run_id, after_id=after, limit=limit)
+            return [
+                {
+                    "id": e.id,
+                    "ts": e.ts,
+                    "kind": e.kind,
+                    "agent_id": e.agent_id,
+                    "payload": e.payload,
+                }
+                for e in events
+            ]
+
+    return await asyncio.to_thread(read_events)
 
 
 @router.get("/{run_id}/timelapse")
@@ -410,9 +436,12 @@ async def get_timelapse(
 ) -> Response:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
     run = await manager.fetch(run_id)
-    data = await asyncio.to_thread(
-        build_timelapse, manager.log, run_id, run.canvas.width, run.canvas.height, frames
-    )
+
+    def render() -> bytes:
+        with reading(manager.log) as reader:
+            return build_timelapse(reader, run_id, run.canvas.width, run.canvas.height, frames)
+
+    data = await asyncio.to_thread(render)
     return Response(content=data, media_type="application/octet-stream")
 
 

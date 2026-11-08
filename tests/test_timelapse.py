@@ -1,10 +1,11 @@
 import struct
 
+import pytest
 from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.sim.events import Event, EventLog
-from worldwarpixel.sim.timelapse import build_timelapse
+from worldwarpixel.sim.timelapse import build_timelapse, iter_events
 
 
 def _frames(data: bytes) -> list[tuple[float, dict[int, int]]]:
@@ -70,3 +71,29 @@ def test_events_appended_after_the_span_was_measured_are_ignored() -> None:
     log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 0, "color": 6})
     frames = _frames(build_timelapse(log, "r", 4, 1, 2))
     assert all(3 not in deltas for _ts, deltas in frames)
+
+
+@pytest.mark.parametrize(("event_count", "expected_reads"), [(2, 1), (4, 2)])
+def test_iter_events_stops_after_a_short_page(
+    monkeypatch: pytest.MonkeyPatch, event_count: int, expected_reads: int
+) -> None:
+    monkeypatch.setattr("worldwarpixel.sim.timelapse.PAGE", 3)
+
+    class CountingLog(EventLog):
+        def __init__(self) -> None:
+            super().__init__()
+            self.read_calls = 0
+
+        def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+            self.read_calls += 1
+            return super().read(run_id, after_id=after_id, limit=limit)
+
+    log = CountingLog()
+    for index in range(event_count):
+        log.append("r", float(index), "agent.status", None, {"index": index})
+
+    events = list(iter_events(log, "r"))
+
+    assert [event.id for event in events] == list(range(1, event_count + 1))
+    assert log.read_calls == expected_reads
+    log.close()
