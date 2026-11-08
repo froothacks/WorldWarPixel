@@ -42,11 +42,13 @@ class RunManager:
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
+        make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
     ) -> None:
         self.log = log
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
+        self.make_narrator = make_narrator
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
@@ -59,7 +61,10 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
-        run = Run(run_id, config, self.log, policy, narrator_model=self.narrator_model)
+        narrator = (
+            self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
+        )
+        run = Run(run_id, config, self.log, policy, narrator_model=narrator)
         self.runs[run_id] = run
         await run.start()
         return run

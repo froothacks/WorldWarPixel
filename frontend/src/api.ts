@@ -10,6 +10,7 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "random";
+  model: string;
   /** "world" seats `agents` people by population; a roster id plays one agent per real attendee. */
   roster: "world" | "hackathon";
   narrator_interval: number;
@@ -28,10 +29,18 @@ export const DEFAULT_CONFIG: RunConfig = {
   max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  model: "gpt-6-luna",
   roster: "world",
   narrator_interval: 60,
   narrator_canvas_image: true,
 };
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  model: string;
+  available: boolean;
+}
 
 export type RunState = "created" | "running" | "paused" | "stopped";
 
@@ -231,6 +240,7 @@ export interface RosterSummary {
 export const api = {
   rosters: () => request<RosterSummary[]>("/rosters"),
   listRuns: () => request<RunSummary[]>("/runs"),
+  listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {
       method: "POST",

@@ -10,6 +10,7 @@ export default defineConfig({
       "/runs": { target: backend, ws: true },
       "/rosters": backend,
       "/health": backend,
+      "/models": backend,
     },
   },
 });
