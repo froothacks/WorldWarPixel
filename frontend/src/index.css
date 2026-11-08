@@ -220,18 +220,17 @@ button.text:hover { background: none; color: var(--text); }
 .thread-row { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; height: auto; text-align: left; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 9px 14px 9px 20px; }
 .thread-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .thread-item .thread-row { flex: 1; min-width: 0; border-bottom: 0; }
-.voter { flex: none; align-self: center; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 30px; margin: 6px 0 6px 8px; padding: 2px 0; border-radius: 7px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--border); font-variant-numeric: tabular-nums; transition: box-shadow 0.15s; }
-.voter.up { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
-.voter.down { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 40%, transparent); }
-.voter .vote { display: grid; place-items: center; width: 24px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--faint); transition: color 0.12s, background 0.12s, transform 0.08s; }
+.voter { flex: none; align-self: center; display: flex; flex-direction: column; align-items: center; width: 20px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.voter .vote { display: grid; place-items: center; width: 18px; height: 14px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--faint); transition: color 0.12s, background 0.12s, transform 0.08s; }
+.voter .vote svg { width: 10px; height: 10px; }
 .voter .vote svg.flip { transform: rotate(180deg); }
 .voter .vote-up:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .voter .vote-down:hover { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
 .voter .vote:active { transform: scale(0.85); }
 .voter .vote:focus-visible { outline: 1px solid var(--muted); outline-offset: -1px; }
-.voter.up .vote-up { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.voter.down .vote-down { color: var(--blue); background: color-mix(in srgb, var(--blue) 18%, transparent); }
-.vote-count { font-family: var(--mono); font-size: 11px; font-weight: 600; line-height: 14px; color: var(--muted); }
+.voter.up .vote-up { color: var(--accent); }
+.voter.down .vote-down { color: var(--blue); }
+.vote-count { font-family: var(--mono); font-size: 10px; font-weight: 600; line-height: 12px; color: var(--muted); }
 .voter.up .vote-count { color: var(--accent); }
 .voter.down .vote-count { color: var(--blue); }
 @media (prefers-reduced-motion: reduce) { .voter, .voter .vote { transition: none; } }
