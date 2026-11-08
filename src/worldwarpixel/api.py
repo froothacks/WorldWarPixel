@@ -123,6 +123,8 @@ class RunManager:
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        if self.videos is not None:
+            await self.videos.drain()
         self.log.close()
 
 

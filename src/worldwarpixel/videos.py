@@ -5,8 +5,10 @@ outside the app. Each ``{run_id}.mp4`` has a ``{run_id}.json`` sidecar with the 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,8 @@ class VideoStore:
         self.duration = duration
         self.ffmpeg = ffmpeg
         self._rendering: dict[str, asyncio.Task[dict[str, Any]]] = {}
+        self._pending: set[asyncio.Task[None]] = set()
+        self._encoder = threading.Semaphore(1)  # one ffmpeg at a time, whoever asks
 
     # -- paths -----------------------------------------------------------------------------
 
@@ -64,19 +68,39 @@ class VideoStore:
 
     def render_sync(self, log_: EventLog, run_id: str) -> dict[str, Any]:
         """Render, write the sidecar and mirror to S3; blocking, run it in a thread."""
-        meta = render_video(
-            log_, run_id, self.video_path(run_id), duration=self.duration, ffmpeg=self.ffmpeg
-        )
+        reader = log_.reader()
+        try:
+            with self._encoder:
+                meta = render_video(
+                    reader,
+                    run_id,
+                    self.video_path(run_id),
+                    duration=self.duration,
+                    ffmpeg=self.ffmpeg,
+                )
+        finally:
+            if reader is not log_:
+                reader.close()
+        sidecar = self.meta_path(run_id)
+        sidecar.write_text(json.dumps(meta, indent=1))
         if self.s3_bucket:
-            meta["s3"] = self._upload(run_id)
-        self.meta_path(run_id).write_text(json.dumps(meta, indent=1))
-        if self.s3_bucket:
-            self._put(self.meta_path(run_id), f"{run_id}.json", "application/json")
+            try:
+                meta["s3"] = self._upload(run_id)
+                sidecar.write_text(json.dumps(meta, indent=1))
+                self._put(sidecar, f"{run_id}.json", "application/json")
+            except Exception:
+                log.exception("S3 mirror failed for %s; the local copy is kept", run_id)
         return meta
 
-    async def render(self, log_: EventLog, run_id: str) -> dict[str, Any]:
-        """Render in a worker thread; concurrent calls for the same run share one render."""
+    async def render(self, log_: EventLog, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
+        """Render in a worker thread; concurrent calls for the same run share one render.
+        ``fresh`` waits for an in-flight render to finish and then renders again, so the
+        result includes everything logged up to now (used when the run has just stopped)."""
         task = self._rendering.get(run_id)
+        if task is not None and not task.done() and fresh:
+            with contextlib.suppress(Exception):
+                await task
+            task = None
         if task is None or task.done():
             task = asyncio.create_task(asyncio.to_thread(self.render_sync, log_, run_id))
             self._rendering[run_id] = task
@@ -87,14 +111,21 @@ class VideoStore:
 
         async def go() -> None:
             try:
-                meta = await self.render(log_, run_id)
+                meta = await self.render(log_, run_id, fresh=True)
                 log.info("rendered timelapse for %s (%s bytes)", run_id, meta["bytes"])
             except VideoError as e:
                 log.info("no timelapse for %s: %s", run_id, e)
             except Exception:
                 log.exception("timelapse render failed for %s", run_id)
 
-        asyncio.get_running_loop().create_task(go())
+        task = asyncio.get_running_loop().create_task(go())
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def drain(self, timeout: float = 120.0) -> None:
+        """Wait for scheduled renders (called at shutdown, before the event log is closed)."""
+        if self._pending:
+            await asyncio.wait(set(self._pending), timeout=timeout)
 
     # -- S3 mirror -------------------------------------------------------------------------
 
