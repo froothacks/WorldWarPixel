@@ -163,6 +163,7 @@ class Run:
         self.created_at = clock()
         self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
+        self.last_event_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
         self._announcements: list[dict[str, Any]] = []
@@ -751,7 +752,9 @@ class Run:
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
-        self.log.append(self.id, self._clock(), kind, agent_id, payload)
+        ts = self._clock()
+        self.log.append(self.id, ts, kind, agent_id, payload)
+        self.last_event_at = ts
 
     def record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
         """Append an event on behalf of a collaborator (the narrator)."""
@@ -767,6 +770,7 @@ class Run:
             "config": self.config.model_dump(),
             "created_at": self.created_at,
             "started_at": self.started_at,
+            "last_event_at": self.last_event_at,
             "stats": dict(self.stats),
             "agents": len(self.agents),
             "threads": len(self.board.threads()),

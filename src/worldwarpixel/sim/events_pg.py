@@ -75,15 +75,16 @@ class PostgresEventLog(EventStore):
     def _initialize_schema(self) -> None:
         migrate_postgres(self._conn)
 
-    def _upsert_run(self, run_id: str, ts: float, delta: RunDelta) -> None:
+    def _upsert_run(self, run_id: str, created_at: float, last_ts: float, delta: RunDelta) -> None:
         self._conn.execute(
             """
             INSERT INTO runs (
                 id, created_at, config, pixels, posts, turns, errors, updates, answers,
-                deleted, state
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                deleted, state, last_ts
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 created_at = LEAST(runs.created_at, EXCLUDED.created_at),
+                last_ts = GREATEST(runs.last_ts, EXCLUDED.last_ts),
                 config = COALESCE(runs.config, EXCLUDED.config),
                 pixels = runs.pixels + EXCLUDED.pixels,
                 posts = runs.posts + EXCLUDED.posts,
@@ -96,7 +97,7 @@ class PostgresEventLog(EventStore):
             """,
             (
                 run_id,
-                ts,
+                created_at,
                 delta.config,
                 delta.pixels,
                 delta.posts,
@@ -106,6 +107,7 @@ class PostgresEventLog(EventStore):
                 delta.answers,
                 delta.deleted,
                 delta.state,
+                last_ts,
             ),
         )
 
@@ -151,7 +153,7 @@ class PostgresEventLog(EventStore):
 
         def write() -> int:
             if run_id not in self._known_runs or delta.has_changes:
-                self._upsert_run(run_id, ts, delta)
+                self._upsert_run(run_id, ts, ts, delta)
             row = self._conn.execute(
                 "INSERT INTO events (run_id, ts, kind, agent_id, payload)"
                 " VALUES (%s, %s, %s, %s, %s) RETURNING id",
@@ -181,6 +183,7 @@ class PostgresEventLog(EventStore):
 
         deltas: dict[str, RunDelta] = {}
         created_at: dict[str, float] = {}
+        last_ts: dict[str, float] = {}
         for run_id, ts, kind, _, payload in rows:
             delta = run_deltas(kind, payload)
             previous = deltas.get(run_id, RunDelta())
@@ -197,8 +200,10 @@ class PostgresEventLog(EventStore):
             )
             if run_id in created_at:
                 created_at[run_id] = min(created_at[run_id], ts)
+                last_ts[run_id] = max(last_ts[run_id], ts)
             else:
                 created_at[run_id] = ts
+                last_ts[run_id] = ts
 
         event_rows = [
             (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":")))
@@ -208,7 +213,7 @@ class PostgresEventLog(EventStore):
         with self._conn.transaction(), self._conn.pipeline():
             for run_id, delta in deltas.items():
                 if run_id not in self._known_runs or delta.has_changes:
-                    self._upsert_run(run_id, created_at[run_id], delta)
+                    self._upsert_run(run_id, created_at[run_id], last_ts[run_id], delta)
 
             with self._conn.cursor() as cursor:
                 cursor.executemany(
@@ -323,10 +328,13 @@ class PostgresEventLog(EventStore):
         rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
         return [str(r[0]) for r in rows]
 
-    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+    def run_totals(
+        self,
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None, float | None]]:
         """Return maintained per-run counters, ordered by run id."""
         rows = self._conn.execute(
-            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted, config"
+            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted,"
+            " config, last_ts"
             " FROM runs ORDER BY id"
         ).fetchall()
         return [
@@ -341,6 +349,7 @@ class PostgresEventLog(EventStore):
                 int(r[7]),
                 bool(r[8]),
                 None if r[9] is None else str(r[9]),
+                None if r[10] is None else float(r[10]),
             )
             for r in rows
         ]
@@ -423,7 +432,9 @@ class BufferedPostgresEventLog(EventStore):
     def run_ids(self) -> list[str]:
         return self._read(lambda r: r.run_ids())
 
-    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+    def run_totals(
+        self,
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None, float | None]]:
         return self._read(lambda r: r.run_totals())
 
     def interrupted_runs(self) -> list[str]:

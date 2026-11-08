@@ -18,7 +18,7 @@ from worldwarpixel.sim.run import RunConfig
 def test_sqlite_migrations_are_recorded_once(tmp_path: Path) -> None:
     path = tmp_path / "events.db"
     conn = sqlite3.connect(path)
-    assert migrate_sqlite(conn) == [1, 2, 3, 4, 5]
+    assert migrate_sqlite(conn) == [1, 2, 3, 4, 5, 6]
     assert conn.execute(
         "SELECT version, name FROM schema_migrations ORDER BY version"
     ).fetchall() == [
@@ -27,6 +27,7 @@ def test_sqlite_migrations_are_recorded_once(tmp_path: Path) -> None:
         (3, "run_state"),
         (4, "posts"),
         (5, "events_run_canvas"),
+        (6, "run_last_ts"),
     ]
     conn.close()
 
@@ -170,13 +171,46 @@ def test_posts_and_votes_backfill_from_migration_two_database(tmp_path: Path) ->
     conn.close()
 
     conn = sqlite3.connect(path)
-    assert migrate_sqlite(conn) == [3, 4, 5]
+    assert migrate_sqlite(conn) == [3, 4, 5, 6]
     conn.close()
 
     log = EventLog(path)
     assert log.posts("r") == [(Post(2, 2, 2, None, "after", "kept", 6.0), 1)]
     assert log.thread_votes("r") == {2: -1, 3: 3}
     log.close()
+
+
+def test_run_last_ts_is_backfilled_from_pre_v6_database(tmp_path: Path) -> None:
+    path = tmp_path / "version-5.db"
+    conn = sqlite3.connect(path)
+    conn.execute(SQLITE_MIGRATIONS_TABLE)
+    for migration in MIGRATIONS[:1]:
+        for statement in migration.sqlite_statements:
+            conn.execute(statement)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+            (migration.version, migration.name, 0.0),
+        )
+    conn.executemany(
+        "INSERT INTO events (run_id, ts, kind, agent_id, payload) VALUES (?, ?, ?, ?, ?)",
+        [
+            ("r", 1.0, "run.created", None, json.dumps({"config": {"width": 16}})),
+            ("r", 10.0, "pixel", 1, json.dumps({})),
+            ("r", 3.0, "agent.status", 1, json.dumps({"status": "idle"})),
+        ],
+    )
+    for migration in MIGRATIONS[1:5]:
+        for statement in migration.sqlite_statements:
+            conn.execute(statement)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+            (migration.version, migration.name, 0.0),
+        )
+    conn.commit()
+
+    assert migrate_sqlite(conn) == [6]
+    assert conn.execute("SELECT last_ts FROM runs WHERE id = 'r'").fetchone() == (3.0,)
+    conn.close()
 
 
 def test_migration_cli_accepts_a_sqlite_path(tmp_path: Path) -> None:
@@ -187,4 +221,4 @@ def test_migration_cli_accepts_a_sqlite_path(tmp_path: Path) -> None:
         text=True,
         check=True,
     )
-    assert result.stdout.strip() == "Applied migrations: 1, 2, 3, 4, 5"
+    assert result.stdout.strip() == "Applied migrations: 1, 2, 3, 4, 5, 6"

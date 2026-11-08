@@ -308,6 +308,26 @@ MIGRATIONS = (
         ),
         postgres_concurrent_indexes=("events_run_canvas",),
     ),
+    Migration(
+        version=6,
+        name="run_last_ts",
+        sqlite_statements=(
+            "ALTER TABLE runs ADD COLUMN last_ts REAL",
+            """
+            UPDATE runs SET last_ts = (
+                SELECT ts FROM events WHERE events.run_id = runs.id ORDER BY id DESC LIMIT 1
+            )
+            """,
+        ),
+        postgres_statements=(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS last_ts DOUBLE PRECISION",
+            """
+            UPDATE runs SET last_ts = (
+                SELECT ts FROM events WHERE events.run_id = runs.id ORDER BY id DESC LIMIT 1
+            )
+            """,
+        ),
+    ),
 )
 
 SQLITE_MIGRATIONS_TABLE = """

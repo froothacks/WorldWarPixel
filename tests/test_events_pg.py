@@ -176,6 +176,7 @@ def test_run_totals_match_the_sqlite_shape(pg_log: PostgresEventLog) -> None:
     assert row[2:8] == (1, 1, 2, 1, 1, 1)
     assert row[8] is False
     assert row[9] is not None and json.loads(row[9]) == config
+    assert row[10] == 7.0
 
 
 def test_append_many_matches_sequential_appends(pg_log: PostgresEventLog) -> None:
@@ -251,10 +252,12 @@ def test_append_many_matches_sequential_appends(pg_log: PostgresEventLog) -> Non
     assert batch_meta.config is not None and json.loads(batch_meta.config) == config
 
     totals = {row[0]: row[1:] for row in pg_log.run_totals()}
-    assert totals["batch"] == totals["sequential"]
+    assert totals["batch"][:9] == totals["sequential"][:9]
     assert totals["batch"][:7] == (1.0, 2, 2, 2, 1, 1, 1)
     assert totals["batch"][7] is True
     assert totals["batch"][8] is not None and json.loads(totals["batch"][8]) == config
+    assert totals["batch"][9] == 14.0
+    assert totals["sequential"][9] == 13.0
 
     states = {}
     for run_id in ("batch", "sequential"):
@@ -335,6 +338,7 @@ def test_migrate_sqlite_to_pg_is_idempotent(pg_url: str, tmp_path: Path) -> None
         [row] = target.run_totals()
         assert row[:9] == ("m", 1.0, 1, 2, 0, 0, 0, 0, False)
         assert row[9] is not None and json.loads(row[9]) == {"width": 16}
+        assert row[10] == 8.0
         assert [post.id for post, _ in target.posts("m")] == [2]
         assert target.thread_votes("m") == {2: 3}
         assert target.append("m", 9.0, "pixel", 1, {}) == 9
@@ -410,6 +414,7 @@ def test_legacy_postgres_events_are_backfilled_and_constrained(pg_url: str) -> N
         [row] = log.run_totals()
         assert row[:9] == ("legacy", 1.0, 1, 0, 1, 1, 0, 1, False)
         assert row[9] is not None and json.loads(row[9]) == config
+        assert row[10] == 4.0
     finally:
         log.close()
 
@@ -439,7 +444,7 @@ def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
     with psycopg.connect(pg_url) as conn:
         assert conn.execute(
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
-        ).fetchall() == [(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)]
+        ).fetchall() == [(1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)]
 
 
 def test_buffered_writes_flush_in_order(pg_url: str) -> None:
