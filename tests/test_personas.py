@@ -337,3 +337,15 @@ def test_roster_includes_confirmed_hackathon_organizer_context(name: str) -> Non
     assert highlight in person.highlights
     assert highlight in persona_text_roster(person, roster.event)
     assert highlight in roster_card(person, roster.event)["highlights"]
+
+
+def test_roster_includes_ali_partovis_hackathon_support() -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == "Ali Partovi")
+    highlight = (
+        "Neo Hackathon 2026 supporter: As Neo's founder, made the event possible "
+        "and encouraged and supported hackers throughout."
+    )
+    assert highlight in person.highlights
+    assert highlight in persona_text_roster(person, roster.event)
+    assert highlight in roster_card(person, roster.event)["highlights"]
