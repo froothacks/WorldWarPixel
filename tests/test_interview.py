@@ -14,6 +14,7 @@ from worldwarpixel.interview import ascii_text, clean_reply, pick_agent, resampl
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.societies import Invite
 
 NAMES = ["Imran Qureshi", "José Álvarez", "Mei Lin", "Ngozi Okafor"]
 
@@ -281,3 +282,31 @@ def test_realtime_releases_held_audio_when_answer_ends_before_transcript(
             assert got == 2 * 3200 and '"interview.text"' in msg["text"]
     finally:
         state.realtime = None
+
+
+def test_interview_context_has_threads_people_invites_and_long_memory() -> None:
+    from worldwarpixel.interview import context
+
+    cfg = RunConfig(width=16, height=16, agents=4, cooldown=1, seed=1, societies=2)
+    run = _named(Run("c", cfg, EventLog(), RandomWalkPolicy(0)))
+    assert run.societies is not None
+    me, a, b, c = run.agents
+    root = run.board.post_thread(a.id, "Who smeared my wave?", "Somebody painted over it", 1.0)
+    run.board.reply(me.id, root.id, "Not me, ask the green crowd", 2.0)
+    run.board.reply(b.id, root.id, "It was definitely you", 3.0)
+    other = run.board.post_thread(c.id, "Quiet thread", "nothing to do with you", 4.0)
+    ping = run.board.post_thread(b.id, "Hey", f"@{me.name.split()[0]} come look", 5.0)
+    run.meet(me.id, a.id)
+    run.societies.invites.setdefault(me.id, {})[c.id] = Invite(6.0, c.id, run.societies.of(c.id))
+    for i in range(12):
+        run.note_thought(me.id, f"turn number {i}")
+
+    text = context(run, me)
+    assert text.startswith(f"You are {me.persona}")
+    assert "Who smeared my wave?" in text and "Hey" in text and "Quiet thread" not in text
+    assert f"{b.name}: It was definitely you" in text and "You: Not me" in text
+    assert f"started by {a.name}" in text
+    assert f"{c.name} invited you" in text and a.name in text.split("People you have")[1]
+    assert "turn number 0" in text and "turn number 11" in text
+    assert "not an assistant" in text
+    assert other.id and ping.id
