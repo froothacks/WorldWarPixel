@@ -166,12 +166,6 @@ def persona_lines(agent: AgentSpec) -> list[str]:
     return lines
 
 
-def _society_label(run: Run, society: int | None) -> str:
-    if society is None or run.societies is None:
-        return ""
-    return f' in society "{run.societies.get(society).name}"'
-
-
 def _mentions(run: Run, agent: AgentSpec, body: str) -> bool:
     return any(run.find_agent(w) == agent.id for w in MENTION.findall(body))
 
@@ -200,8 +194,7 @@ def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> lis
             if p.author_id == agent.id:
                 keep |= {j - 1, j} if j else {j}
         root = posts[0]
-        where = _society_label(run, run.board.society_of(root.id))
-        block = [f'Thread "{root.title}"{where}, started by {who(root)}:']
+        block = [f'Thread "{root.title}", started by {who(root)}:']
         last = -1
         for j in sorted(keep):
             if j > last + 1:
@@ -218,53 +211,11 @@ def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> lis
 
 
 def people_lines(run: Run, agent: AgentSpec) -> list[str]:
-    """Who the agent has been dealing with, and the private invitations between them."""
-    out: list[str] = []
-    socs = run.societies
     seen = run.contacts.get(agent.id, {})
-    if seen:
-        names = [
-            run.agent_name(c) + (_society_label(run, socs.of(c)) if socs else "")
-            for c in sorted(seen, key=seen.__getitem__, reverse=True)
-        ]
-        out.append("People you have talked with lately, most recent first: " + "; ".join(names))
-    if socs is not None:
-        got = [
-            f'{run.agent_name(src)} invited you to "{socs.get(inv.society).name}"'
-            for src, inv in sorted(socs.invites.get(agent.id, {}).items(), key=lambda x: x[1].ts)
-        ]
-        sent = [
-            f'you invited {run.agent_name(target)} to "{socs.get(inv.society).name}"'
-            for target, invs in socs.invites.items()
-            for src, inv in invs.items()
-            if src == agent.id
-        ]
-        if got or sent:
-            out.append("Private invitations: " + "; ".join(got + sent) + ".")
-    return out
-
-
-def society_lines(run: Run, agent: AgentSpec) -> list[str]:
-    socs = run.societies
-    if socs is None:
+    if not seen:
         return []
-    here = socs.of(agent.id)
-    society = socs.get(here)
-    members = [run.agent_name(a) for a, s in socs.members.items() if s == here and a != agent.id]
-    out = [
-        f"You currently belong to the society called {society.name} "
-        f"({len(members) + 1} people: you, {', '.join(members[:20])}"
-        + (", ..." if len(members) > 20 else "")
-        + ")."
-        if members
-        else f"You currently belong to the society called {society.name}, on your own."
-    ]
-    others = [s.name for s in socs.societies if s.id != here]
-    if others:
-        out.append("Other societies: " + ", ".join(others) + ".")
-    if society.murmur:
-        out.append(f"People in your society have been saying: {society.murmur}")
-    return out
+    names = [run.agent_name(c) for c in sorted(seen, key=seen.__getitem__, reverse=True)]
+    return ["People you have talked with lately, most recent first: " + ", ".join(names) + "."]
 
 
 def context(run: Run, agent: AgentSpec) -> str:
@@ -276,8 +227,7 @@ def context(run: Run, agent: AgentSpec) -> str:
         f"{cfg.height} pixel canvas everyone paints on, and a message board where they talk in "
         "threads.",
     ]
-    if social := society_lines(run, agent) + people_lines(run, agent):
-        parts.append("\n".join(social))
+    parts += people_lines(run, agent)
     recent = run.recall(agent.id, MEMORY_KEPT, THOUGHT_CHARS)
     if recent:
         parts.append(
