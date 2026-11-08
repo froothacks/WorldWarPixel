@@ -427,8 +427,6 @@ class LLMPolicy:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
-        max_concurrency: int | None = None,
-        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._pool = as_pool(client, model)
         # Sticky routing key prefix: each agent of this run keeps hitting one endpoint.
@@ -440,10 +438,6 @@ class LLMPolicy:
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
-        # Some shared endpoints 429 above a concurrency ceiling (e.g. DeepSeek ~16);
-        # the preset carries it so a run never exceeds what the endpoint tolerates.
-        # A shared semaphore (one per preset across all runs) wins over a per-run cap.
-        self._sem = semaphore or (asyncio.Semaphore(max_concurrency) if max_concurrency else None)
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -549,12 +543,7 @@ class LLMPolicy:
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                if self._sem is not None:
-                    async with self._sem:
-                        call_t0 = time.monotonic()  # latency measures the call, not the queue wait
-                        response = await self._complete(agent, messages, obs)
-                else:
-                    response = await self._complete(agent, messages, obs)
+                response = await self._complete(agent, messages, obs)
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1

@@ -402,7 +402,7 @@ def test_pixel_shorthand_and_missing_colour() -> None:
     assert policy.stats["tool_errors"] == 0
 
 
-def test_max_concurrency_limits_in_flight_model_calls() -> None:
+def test_shared_endpoint_pool_limits_multiple_policies() -> None:
     active = 0
     peak = 0
 
@@ -418,44 +418,25 @@ def test_max_concurrency_limits_in_flight_model_calls() -> None:
     class Client:
         chat = _Obj(completions=Completions())
 
+    endpoint = Endpoint(
+        "only",
+        "https://only/v1",
+        "m",
+        "bearer",
+        (),
+        max_in_flight=1,
+        initial_in_flight=1,
+    )
+    pool = EndpointPool([(endpoint, Client())])
     agent, tools, obs, _events = _setup()
-    policy = LLMPolicy(Client(), "m", vision=False, max_concurrency=1)  # type: ignore[arg-type]
-
-    async def main() -> None:
-        await asyncio.gather(*(policy.act(agent, tools, obs) for _ in range(4)))
-
-    asyncio.run(main())
-    assert peak == 1
-
-
-def test_shared_semaphore_caps_multiple_policies_on_one_endpoint() -> None:
-    active = 0
-    peak = 0
-
-    class Completions:
-        async def create(self, **kw: Any) -> Any:
-            nonlocal active, peak
-            active += 1
-            peak = max(peak, active)
-            await asyncio.sleep(0.01)
-            active -= 1
-            return _response(None, [])
-
-    class Client:
-        chat = _Obj(completions=Completions())
-
-    agent, tools, obs, _events = _setup()
-    shared = asyncio.Semaphore(1)
-    policies = [
-        LLMPolicy(Client(), "m", vision=False, semaphore=shared)  # type: ignore[arg-type]
-        for _ in range(3)
-    ]
+    policies = [LLMPolicy(pool, "m", vision=False) for _ in range(3)]
 
     async def main() -> None:
         await asyncio.gather(*(p.act(agent, tools, obs) for p in policies for _ in range(2)))
 
     asyncio.run(main())
     assert peak == 1
+    assert pool.public_stats()["only"]["in_flight"] == 0
 
 
 def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
