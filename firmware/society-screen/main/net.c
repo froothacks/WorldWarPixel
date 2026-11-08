@@ -575,7 +575,10 @@ static void ws_task(void *arg)
             g_state.conn = CONN_WIFI;
         STATE_UNLOCK();
         s_ws_phase = ok ? 0 : 3;
-        ESP_LOGW(TAG, ok ? "ws closed - tap CONNECT" : "ws connect failed - tap CONNECT");
+        if (ok)
+            ESP_LOGW(TAG, "ws closed - tap CONNECT");
+        else
+            ESP_LOGW(TAG, "ws connect failed - tap CONNECT");
 
         /* one token check per failed attempt, to tell "not paired" from "server down" */
         if (!ok && (xEventGroupGetBits(s_eg) & EG_WIFI_UP) && net_check_token() == 401) {
