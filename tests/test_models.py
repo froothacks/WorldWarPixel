@@ -24,7 +24,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry()}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm", "qwen-c"}
+    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm"}
 
     luna = specs["gpt-6-luna"]
     (openai,) = luna.endpoints
@@ -64,6 +64,14 @@ def test_modal_endpoints_pair_secrets_with_their_workspace() -> None:
     assert glm is not None
     assert {e.name for e in glm.endpoints} == {"advait-m", "chryztoph", "meganwchun"}
     assert {e.model for e in glm.endpoints} == {glm.model}
+    qwen = find_model("qwen")
+    assert qwen is not None
+    assert [e.name for e in qwen.endpoints] == ["advait-m", "chryztoph"]
+    assert [e.secrets for e in qwen.endpoints] == [
+        ("MODAL_KEY", "MODAL_SECRET"),
+        ("CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"),
+    ]
+    assert [e.model for e in qwen.endpoints] == ["world-war-pixel", "qwen"]
 
 
 def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,6 +103,7 @@ def test_pool_uses_only_endpoints_with_complete_secrets(monkeypatch: pytest.Monk
 
 def test_find_model_resolves_legacy_ids() -> None:
     assert find_model("nope") is None
+    assert find_model("qwen-c") is None
     for legacy in ("glm-5.3-flash", "glm-megan"):
         spec = find_model(legacy)
         assert spec is not None and spec.id == "glm"

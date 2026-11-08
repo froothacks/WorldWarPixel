@@ -91,6 +91,7 @@ def model_registry() -> list[ModelSpec]:
                 modal_endpoint(
                     "advait-m", "ep-world-war-pixel-server", "world-war-pixel", secret_prefix=ADVAIT
                 ),
+                modal_endpoint("chryztoph", "ep-qwen-server", "qwen", secret_prefix=CHRYZTOPH),
             ),
         ),
         ModelSpec(
@@ -124,13 +125,6 @@ def model_registry() -> list[ModelSpec]:
             vision=False,
             max_tokens=8000,
             narrator_max_tokens=8000,
-        ),
-        ModelSpec(
-            id="qwen-c",
-            label="Qwen (chryztoph)",
-            endpoints=(
-                modal_endpoint("chryztoph", "ep-qwen-server", "qwen", secret_prefix=CHRYZTOPH),
-            ),
         ),
     ]
 

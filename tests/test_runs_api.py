@@ -73,7 +73,6 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
         "qwen",
         "deepseek",
         "glm",
-        "qwen-c",
     }
     assert all(set(m) == {"id", "label", "model", "available", "endpoints"} for m in models)
     glm = next(m for m in models if m["id"] == "glm")
