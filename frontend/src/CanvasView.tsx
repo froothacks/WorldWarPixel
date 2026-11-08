@@ -14,7 +14,7 @@ interface Props {
   version: number;
   agents: Map<number, Agent>;
   highlightAgent: number | null;
-  /** Indexed by owner id; non-zero entries are lit up like highlightAgent (e.g. one country). */
+  /** Indexed by owner id; non-zero entries stay in colour like highlightAgent (e.g. one country). */
   highlightMask?: Uint8Array | null;
   onPickAgent: (agentId: number) => void;
   focus: Region | null;
@@ -199,6 +199,7 @@ export default function CanvasView({
 
     let highlightCanvas: HTMLCanvasElement | null = null;
     if (highlightAgent !== null || highlightMask) {
+      // Spotlight: the highlighted pixels keep their colour, everything else is greyed and darkened.
       let cached = highlightRef.current;
       if (
         !cached ||
@@ -207,22 +208,28 @@ export default function CanvasView({
         cached.agent !== highlightAgent ||
         cached.mask !== highlightMask
       ) {
-        const overlay = document.createElement("canvas");
-        overlay.width = store.width;
-        overlay.height = store.height;
-        const overlayCtx = overlay.getContext("2d")!;
-        const image = overlayCtx.createImageData(store.width, store.height);
-        for (let i = 0; i < store.owners.length; i++) {
-          const owner = store.owners[i];
-          if (owner !== highlightAgent && !(highlightMask && highlightMask[owner])) continue;
-          const offset = i * 4;
-          image.data[offset] = 255;
-          image.data[offset + 1] = 255;
-          image.data[offset + 2] = 255;
-          image.data[offset + 3] = 217;
+        const spot = cached?.canvas ?? document.createElement("canvas");
+        spot.width = store.width;
+        spot.height = store.height;
+        const spotCtx = spot.getContext("2d")!;
+        const out = spotCtx.createImageData(store.width, store.height);
+        const src = store.image.data;
+        const dst = out.data;
+        const { owners } = store;
+        for (let i = 0, p = 0; i < owners.length; i++, p += 4) {
+          const o = owners[i];
+          if (o !== 0 && (o === highlightAgent || (highlightMask !== null && highlightMask[o]))) {
+            dst[p] = src[p];
+            dst[p + 1] = src[p + 1];
+            dst[p + 2] = src[p + 2];
+          } else {
+            const grey = 16 + (src[p] * 0.299 + src[p + 1] * 0.587 + src[p + 2] * 0.114) * 0.2;
+            dst[p] = dst[p + 1] = dst[p + 2] = grey;
+          }
+          dst[p + 3] = 255;
         }
-        overlayCtx.putImageData(image, 0, 0);
-        cached = { store, version, agent: highlightAgent, mask: highlightMask, canvas: overlay };
+        spotCtx.putImageData(out, 0, 0);
+        cached = { store, version, agent: highlightAgent, mask: highlightMask, canvas: spot };
         highlightRef.current = cached;
       }
       highlightCanvas = cached.canvas;
@@ -235,15 +242,13 @@ export default function CanvasView({
     ctx.fillStyle = "#0b0b0c";
     ctx.fillRect(0, 0, el.clientWidth, el.clientHeight);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, vp.panX, vp.panY, store.width * vp.zoom, store.height * vp.zoom);
-    if (highlightCanvas)
-      ctx.drawImage(
-        highlightCanvas,
-        vp.panX,
-        vp.panY,
-        store.width * vp.zoom,
-        store.height * vp.zoom,
-      );
+    ctx.drawImage(
+      highlightCanvas ?? off,
+      vp.panX,
+      vp.panY,
+      store.width * vp.zoom,
+      store.height * vp.zoom,
+    );
     if (tool && hover) {
       const half = Math.floor(tool.size / 2);
       ctx.strokeStyle = tool.mode === "erase" ? "#ff5f5f" : "#ffffff";
