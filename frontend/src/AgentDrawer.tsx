@@ -46,6 +46,24 @@ const CONFIDENCE: Record<string, string> = {
   low: "Profile match: uncertain (little public info)",
 };
 
+interface Personality {
+  summary?: string;
+  leadership?: string;
+  social_approach?: string;
+  conflict_style?: string;
+  decision_style?: string;
+  canvas_approach?: string;
+  traits?: string[];
+  personality_confidence?: string;
+}
+
+const STYLES: [keyof Personality, string][] = [
+  ["leadership", "Leadership"],
+  ["social_approach", "With others"],
+  ["conflict_style", "In conflicts"],
+  ["decision_style", "Decisions"],
+];
+
 function asList(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : [];
 }
@@ -83,6 +101,9 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
   const pos = fresh ?? agent;
   const card = fresh?.persona_card ?? {};
   const person = card.source === "roster";
+  const rawPersonality: unknown = person ? card.personality : null;
+  const personality = (rawPersonality && typeof rawPersonality === "object" ? rawPersonality : {}) as Personality;
+  const styles = STYLES.filter(([k]) => personality[k] && personality[k] !== "unknown");
   const links = [...(typeof card.linkedin === "string" ? [card.linkedin] : []), ...asList(card.links)];
   const thoughts = [...liveThoughts, ...history]
     .filter((t) => (seen.has(t.ts) ? false : (seen.add(t.ts), true)))
@@ -133,7 +154,28 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
                 ))}
               </div>
             )}
-            <p className="faint small">{CONFIDENCE[String(card.confidence)] ?? ""}</p>
+            {personality.summary && <p className="small">{personality.summary}</p>}
+            {styles.length > 0 && (
+              <dl className="facts small profile-styles">
+                {styles.map(([k, label]) => (
+                  <Fragment key={k}>
+                    <dt>{label}</dt>
+                    <dd>{String(personality[k]).replace(/_/g, " ")}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            )}
+            {asList(personality.traits).length > 0 && (
+              <div className="profile-traits">
+                {asList(personality.traits).map((t) => (
+                  <span key={t}>{t}</span>
+                ))}
+              </div>
+            )}
+            <p className="faint small">
+              {CONFIDENCE[String(card.confidence)] ?? ""}
+              {personality.personality_confidence && ` · personality read: ${personality.personality_confidence} signal`}
+            </p>
           </section>
         )}
         <p className="small persona">{fresh?.persona ?? (failed ? "Couldn't load this agent's persona." : "Loading persona…")}</p>

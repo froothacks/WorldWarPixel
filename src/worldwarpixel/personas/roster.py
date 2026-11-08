@@ -2,14 +2,16 @@
 
 A roster file (``data/<file>.json``) lists people with an affiliation (school or company; profile
 info only, nobody is put on a team), a one-line headline, LinkedIn and other public links,
-highlights, how confident the profile match is, and a short playstyle. ``persona_text`` turns
-that into the "You are ..." line the LLM policy uses; ``persona_card`` is what the drawer shows.
+highlights, how confident the profile match is, a short playstyle and a ``personality`` read
+(work style, leadership, conflict and canvas approach) inferred from public signals.
+``persona_text`` turns that into the "You are ..." line the LLM policy uses; ``persona_card`` is
+what the drawer shows.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -29,6 +31,7 @@ class Person:
     highlights: tuple[str, ...] = ()
     confidence: str = "low"
     playstyle: str = ""
+    personality: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +60,7 @@ def load_roster(roster: str) -> Roster:
             highlights=tuple(p.get("highlights", ())),
             confidence=p.get("confidence", "low"),
             playstyle=p.get("playstyle", ""),
+            personality=dict(p.get("personality") or {}),
         )
         for p in raw["people"]
     )
@@ -71,6 +75,14 @@ def roster_summaries() -> list[dict[str, Any]]:
     ]
 
 
+STYLE_LABELS = (
+    ("leadership", "leadership:"),
+    ("social_approach", "with others:"),
+    ("conflict_style", "in conflicts:"),
+    ("decision_style", "decisions:"),
+)
+
+
 def persona_text(person: Person, event: str) -> str:
     """Second-person persona: the policy prefixes it with "You are "."""
     text = f"{person.name}, {person.headline}."
@@ -79,6 +91,18 @@ def persona_text(person: Person, event: str) -> str:
     text += f" You are at {event}, playing as yourself."
     if person.playstyle:
         text += f" {person.playstyle}"
+    traits = person.personality
+    if traits.get("summary"):
+        text += f" How you work: {traits['summary']}"
+    styles = [
+        f"{label} {traits[key].replace('_', ' ')}"
+        for key, label in STYLE_LABELS
+        if traits.get(key) and traits[key] != "unknown"
+    ]
+    if styles:
+        text += " Style: " + "; ".join(styles) + "."
+    if traits.get("canvas_approach"):
+        text += f" On a shared canvas you would likely: {traits['canvas_approach']}"
     return text
 
 
@@ -93,5 +117,6 @@ def persona_card(person: Person, event: str) -> dict[str, Any]:
         "highlights": list(person.highlights) or None,
         "confidence": person.confidence,
         "playstyle": person.playstyle or None,
+        "personality": person.personality or None,
     }
     return {k: v for k, v in card.items() if v is not None}

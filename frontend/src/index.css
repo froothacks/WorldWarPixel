@@ -372,3 +372,6 @@ button.text:hover { background: none; color: var(--text); }
 .profile-links { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
 .profile-links a { color: var(--accent); text-decoration: none; }
 .profile-links a:hover { text-decoration: underline; }
+.profile-styles { padding: 0; }
+.profile-traits { display: flex; flex-wrap: wrap; gap: 4px; }
+.profile-traits span { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); }

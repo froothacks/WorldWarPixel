@@ -17,6 +17,7 @@ from worldwarpixel.personas.proxy import (
 from worldwarpixel.personas.render import persona_card, persona_text
 from worldwarpixel.personas.roster import load_roster
 from worldwarpixel.personas.roster import persona_card as roster_card
+from worldwarpixel.personas.roster import persona_text as persona_text_roster
 from worldwarpixel.personas.schema import Respondent, read_respondents, write_respondents
 from worldwarpixel.personas.wpp import load_countries
 from worldwarpixel.sim.agents import seed_agents, seed_roster
@@ -288,3 +289,10 @@ def test_roster_card_omits_missing_fields() -> None:
     person = load_roster("hackathon").people[0]
     card = roster_card(person, "an event")
     assert None not in card.values() and card["event"] == "an event"
+
+
+def test_roster_persona_uses_the_personality_read() -> None:
+    person = load_roster("hackathon").people[0]
+    text = persona_text_roster(person, "an event")
+    assert person.personality["summary"] in text and person.personality["canvas_approach"] in text
+    assert "_" not in text.split("Style:")[1].split(".")[0]
