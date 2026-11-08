@@ -370,8 +370,8 @@ def render_shot(
     title, caption = shot_overlays(run)
     if caption_override:
         caption = _ellipsis(caption_override, 110)
-    title_txt.write_text(title)
-    caption_txt.write_text(caption)
+    title_txt.write_text(title.replace("%", "%%"))
+    caption_txt.write_text(caption.replace("%", "%%"))
     font = _font_arg()
     if kind == "zoom":
         visual = (
