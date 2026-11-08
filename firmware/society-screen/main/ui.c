@@ -162,9 +162,16 @@ static void draw_society_strip(const app_state_t *st)
     gfx_draw_line(0, 122, LCD_W, 122, C_LINE);
 }
 
+#define SESS_BTN_W 84
+
 static void draw_session(const app_state_t *st, int y)
 {
     char buf[96];
+    if (st->conn == CONN_WS) {   /* leave this session and pick another */
+        gfx_fill_rect(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_PANEL);
+        gfx_draw_rect_outline(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_YELLOW);
+        gfx_draw_text_centered(LCD_W - 4 - SESS_BTN_W / 2, y, "< SESSIONS", 1, C_YELLOW);
+    }
     if (st->run_active && st->run_id[0]) {
         if (st->run_pinned) {
             const run_info_t *ri = NULL;
@@ -178,10 +185,10 @@ static void draw_session(const app_state_t *st, int y)
         } else {
             snprintf(buf, sizeof(buf), "SESSION latest (%s)", st->run_id);
         }
-        ellipsize(buf, LCD_W - 16, 1);
+        ellipsize(buf, LCD_W - 24 - SESS_BTN_W, 1);
         gfx_draw_text(8, y, buf, 1, C_TEXT);
     } else if (st->run_pinned) {
-        gfx_draw_text(8, y, "SESSION ENDED - tap row to pick", 1, C_RED);
+        gfx_draw_text(8, y, "SESSION ENDED", 1, C_RED);
     } else if (st->conn == CONN_WS) {
         gfx_draw_text(8, y, "no live session", 1, C_DIM);
     }
@@ -634,7 +641,7 @@ void ui_task(void *arg)
 
         /* session row: open the session list */
         int session_y = interview ? IV_SESSION_Y : 124;
-        if (live && tap && ty >= session_y && ty <= session_y + 14)
+        if (live && tap && ty >= session_y - 2 && ty <= session_y + 16)
             picking = true;
         else if (picking && st.conn == CONN_WS && tap && tx >= IV_REFRESH_X &&
                  ty >= IV_REFRESH_Y && ty < IV_REFRESH_Y + IV_REFRESH_H) {
