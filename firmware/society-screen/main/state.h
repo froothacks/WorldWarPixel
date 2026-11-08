@@ -70,6 +70,7 @@ typedef struct {
     char id[12];
     int  agents;
     char model[16];
+    int  minutes;         /* age when listed; -1 unknown */
     char soc_names[64];   /* comma-joined society names */
 } run_info_t;
 

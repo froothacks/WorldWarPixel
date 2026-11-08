@@ -17,14 +17,16 @@
 static const char *TAG = "ui";
 
 /* palette */
-#define C_BG      RGB565(16, 18, 24)
-#define C_PANEL   RGB565(30, 33, 42)
-#define C_TEXT    RGB565(235, 235, 240)
-#define C_DIM     RGB565(130, 135, 145)
-#define C_LINE    RGB565(55, 60, 72)
-#define C_RED     RGB565(220, 60, 60)
-#define C_GREEN   RGB565(60, 180, 90)
-#define C_YELLOW  RGB565(220, 180, 40)
+/* retro phosphor terminal: green on black, amber accents */
+#define C_BG      RGB565(4, 8, 6)
+#define C_SCAN    RGB565(9, 18, 12)
+#define C_PANEL   RGB565(12, 30, 18)
+#define C_TEXT    RGB565(150, 255, 180)
+#define C_DIM     RGB565(60, 145, 92)
+#define C_LINE    RGB565(26, 72, 44)
+#define C_RED     RGB565(255, 90, 70)
+#define C_GREEN   RGB565(90, 255, 130)
+#define C_YELLOW  RGB565(255, 180, 40)
 
 #define BTN_X 16
 #define BTN_Y 392
@@ -59,6 +61,71 @@ static uint16_t hex_to_565(const char *s)
 static uint16_t rgb_to_565(uint32_t v)
 {
     return RGB565((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+}
+
+static bool blink(void)
+{
+    return (esp_timer_get_time() / 500000) & 1;
+}
+
+static void upcase(char *s)
+{
+    for (; *s; s++)
+        if (*s >= 'a' && *s <= 'z')
+            *s -= 32;
+}
+
+/* black screen with faint CRT scanlines, drawn once into the background */
+static void draw_backdrop(void)
+{
+    gfx_bg_target();
+    gfx_fill_rect(0, 0, LCD_W, LCD_H, C_BG);
+    for (int y = 0; y < LCD_H; y += 3)
+        gfx_fill_rect(0, y, LCD_W, 1, C_SCAN);
+    gfx_fb_target();
+}
+
+/* thin outline with heavier corner brackets */
+static void frame(int x, int y, int w, int h, uint16_t c)
+{
+    gfx_draw_rect_outline(x, y, w, h, c == C_LINE ? C_LINE : C_PANEL);
+    int k = w < 24 || h < 24 ? 4 : 8;
+    gfx_fill_rect(x, y, k, 2, c);
+    gfx_fill_rect(x, y, 2, k, c);
+    gfx_fill_rect(x + w - k, y, k, 2, c);
+    gfx_fill_rect(x + w - 2, y, 2, k, c);
+    gfx_fill_rect(x, y + h - 2, k, 2, c);
+    gfx_fill_rect(x, y + h - k, 2, k, c);
+    gfx_fill_rect(x + w - k, y + h - 2, k, 2, c);
+    gfx_fill_rect(x + w - 2, y + h - k, 2, k, c);
+}
+
+/* amber section label: "// BOARD" */
+static void section(int x, int y, const char *label)
+{
+    gfx_draw_text(x, y, "//", 1, C_LINE);
+    gfx_draw_text(x + 16, y, label, 1, C_YELLOW);
+}
+
+/* "glm - 100 agents - 20m ago", upper-cased */
+static void run_meta(char *buf, size_t n, const run_info_t *ri)
+{
+    if (ri->minutes >= 60)
+        snprintf(buf, n, "%s - %d agents - %dh%02dm", ri->model, ri->agents,
+                 ri->minutes / 60, ri->minutes % 60);
+    else if (ri->minutes >= 0)
+        snprintf(buf, n, "%s - %d agents - %dm", ri->model, ri->agents, ri->minutes);
+    else
+        snprintf(buf, n, "%s - %d agents", ri->model, ri->agents);
+    upcase(buf);
+}
+
+static const run_info_t *find_run(const app_state_t *st, const char *id)
+{
+    for (int i = 0; i < st->n_runs; i++)
+        if (!strcmp(st->runs[i].id, id))
+            return &st->runs[i];
+    return NULL;
 }
 
 /* ellipsise into a fixed pixel width at given scale */
@@ -102,12 +169,17 @@ static void draw_status(const app_state_t *st)
     const char *txt = "?";
     uint16_t col = C_DIM;
     switch (st->conn) {
-    case CONN_OFFLINE:    txt = "offline - retrying";        col = C_RED; break;
-    case CONN_WIFI:       txt = "not connected";             col = C_YELLOW; break;
-    case CONN_WS:         txt = "connected";                 col = C_GREEN; break;
-    case CONN_NOT_PAIRED: txt = "NOT PAIRED";                col = C_RED; break;
+    case CONN_OFFLINE:    txt = "NO CARRIER"; col = C_RED; break;
+    case CONN_WIFI:       txt = "STANDBY";    col = C_YELLOW; break;
+    case CONN_WS:         txt = "ONLINE";     col = C_GREEN; break;
+    case CONN_NOT_PAIRED: txt = "LOCKED";     col = C_RED; break;
     }
-    gfx_draw_text(8, 5, txt, 1, col);
+    gfx_draw_text(8, 8, "WWP", 1, C_YELLOW);
+    gfx_draw_text(30, 8, ">", 1, C_LINE);
+    if (st->conn != CONN_WS || blink())
+        gfx_fill_rect(40, 8, 5, 7, col);
+    gfx_draw_text(50, 8, txt, 1, col);
+    gfx_draw_line(0, TAB_Y + TAB_H + 2, LCD_W, TAB_Y + TAB_H + 2, C_LINE);
 }
 
 /* the session on screen has no societies: interview only */
@@ -125,7 +197,7 @@ static void draw_tabs(const app_state_t *st)
         bool on = (int)st->mode == i;
         bool off = no_soc && i == MODE_SOCIETY;
         gfx_fill_rect(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : off ? C_BG : C_PANEL);
-        gfx_draw_rect_outline(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : C_LINE);
+        frame(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : C_LINE);
         gfx_draw_text_centered(xs[i] + TAB_W / 2, TAB_Y + 7, lbl[i], 1,
                                on ? C_BG : off ? C_LINE : C_DIM);
     }
@@ -135,7 +207,7 @@ static void draw_header(const app_state_t *st)
 {
     uint16_t chip = rgb_to_565(st->society_color);
     gfx_fill_rect(8, 28, 56, 56, chip);
-    gfx_draw_rect_outline(8, 28, 56, 56, C_LINE);
+    frame(8, 28, 56, 56, C_LINE);
 
     char name[32];
     strncpy(name, st->society_name[0] ? st->society_name : "Society", sizeof(name) - 1);
@@ -177,37 +249,30 @@ static void draw_session(const app_state_t *st, int y)
 {
     char buf[96];
     if (st->conn == CONN_WS) {   /* leave this session and pick another */
-        gfx_fill_rect(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_PANEL);
-        gfx_draw_rect_outline(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_YELLOW);
-        gfx_draw_text_centered(LCD_W - 4 - SESS_BTN_W / 2, y, "< SESSIONS", 1, C_YELLOW);
+        gfx_fill_rect(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_BG);
+        frame(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_YELLOW);
+        gfx_draw_text_centered(LCD_W - 4 - SESS_BTN_W / 2, y, "[SESSIONS]", 1, C_YELLOW);
     }
     if (st->run_active && st->run_id[0]) {
-        if (st->run_pinned) {
-            const run_info_t *ri = NULL;
-            for (int i = 0; i < st->n_runs; i++)
-                if (!strcmp(st->runs[i].id, st->run_id)) ri = &st->runs[i];
-            if (ri)
-                snprintf(buf, sizeof(buf), "SESSION %s  %d agents  %s",
-                         st->run_id, ri->agents, ri->model);
-            else
-                snprintf(buf, sizeof(buf), "SESSION %s", st->run_id);
-        } else {
-            snprintf(buf, sizeof(buf), "SESSION latest (%s)", st->run_id);
-        }
+        const run_info_t *ri = find_run(st, st->run_id);
+        char meta[64] = "LIVE";
+        if (ri)
+            run_meta(meta, sizeof(meta), ri);
+        snprintf(buf, sizeof(buf), "%s %s", st->run_pinned ? ">" : "> NEWEST -", meta);
         ellipsize(buf, LCD_W - 24 - SESS_BTN_W, 1);
-        gfx_draw_text(8, y, buf, 1, C_TEXT);
+        gfx_draw_text(8, y, buf, 1, C_DIM);
     } else if (st->run_pinned) {
-        gfx_draw_text(8, y, "SESSION ENDED", 1, C_RED);
+        gfx_draw_text(8, y, "> SESSION ENDED", 1, C_RED);
     } else if (st->conn == CONN_WS) {
-        gfx_draw_text(8, y, "no live session", 1, C_DIM);
+        gfx_draw_text(8, y, "> NO LIVE SESSION", 1, C_DIM);
     }
 }
 
 static void draw_threads(const app_state_t *st)
 {
-    gfx_draw_text(8, 142, "MESSAGE BOARD", 1, C_DIM);
+    section(8, 142, "BOARD");
     if (st->n_threads == 0) {
-        gfx_draw_text(8, 160, "no threads yet", 1, C_DIM);
+        gfx_draw_text(8, 160, "NO THREADS YET", 1, C_DIM);
         return;
     }
     int y = 160;
@@ -219,7 +284,7 @@ static void draw_threads(const app_state_t *st)
         ellipsize(title, 304, 2);
         gfx_draw_text(8, y, title, 2, C_TEXT);
         char meta[64];
-        snprintf(meta, sizeof(meta), "%s - %d replies",
+        snprintf(meta, sizeof(meta), "%s - %d REPLIES",
                  t->author[0] ? t->author : "?", t->replies);
         ellipsize(meta, 304, 1);
         gfx_draw_text(8, y + 20, meta, 1, C_DIM);
@@ -232,9 +297,10 @@ static void draw_threads(const app_state_t *st)
 static void draw_canvas(const app_state_t *st)
 {
     /* thumbnail at (8, 286), max 160x100 shown as 2x2 decimation of 240x160 src */
-    gfx_draw_text(8, 274, "CANVAS - tap to refresh", 1, C_DIM);
+    section(8, 274, "CANVAS");
+    gfx_draw_text(80, 274, "TAP", 1, C_LINE);
     if (!st->canvas_idx || st->canvas_w <= 0 || st->n_palette == 0) {
-        gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
+        frame(7, 285, 162, 102, C_LINE);
         gfx_draw_text_centered(88, 330, "TAP TO LOAD", 1, C_YELLOW);
         return;
     }
@@ -252,19 +318,19 @@ static void draw_canvas(const app_state_t *st)
             gfx_fill_rect(8 + x, 286 + y, 1, 1, hex_to_565(st->palette[idx]));
         }
     }
-    gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
+    frame(7, 285, 162, 102, C_LINE);
 }
 
 static void draw_murmur(const app_state_t *st)
 {
     int x = 176, w = LCD_W - 176 - 8;
-    gfx_draw_text(x, 274, "MURMUR", 1, C_DIM);
+    section(x, 274, "MURMUR");
     if (st->has_murmur) {
         char buf[192];
         snprintf(buf, sizeof(buf), "\"%.188s\"", st->murmur);
         draw_wrapped(x, 288, w, buf, 1, C_YELLOW, 7);
     } else {
-        gfx_draw_text(x, 288, "quiet...", 1, C_DIM);
+        gfx_draw_text(x, 288, blink() ? "..._" : "...", 1, C_DIM);
     }
 }
 
@@ -272,15 +338,15 @@ static void draw_button(const app_state_t *st, bool held, int64_t held_us)
 {
     uint16_t fill = held ? C_RED : C_PANEL;
     gfx_fill_rect(BTN_X, BTN_Y, BTN_W, BTN_H, fill);
-    gfx_draw_rect_outline(BTN_X, BTN_Y, BTN_W, BTN_H, held ? C_RED : C_LINE);
+    frame(BTN_X, BTN_Y, BTN_W, BTN_H, held ? C_TEXT : C_YELLOW);
 
     const char *label;
-    uint16_t lc = held ? C_TEXT : C_DIM;
+    uint16_t lc = held ? C_BG : C_YELLOW;
     switch (st->voice) {
     case VOICE_TRANSCRIBING: label = "TRANSCRIBING..."; break;
     case VOICE_DONE:         label = "HEARD"; break;
     case VOICE_ERROR:        label = "VOICE ERROR"; break;
-    default:                 label = held ? "LISTENING" : "HOLD TO TALK"; break;
+    default:                 label = held ? "LISTENING" : "[ HOLD TO TALK ]"; break;
     }
     gfx_draw_text_centered(LCD_W / 2, BTN_Y + 14, label, 2, lc);
 
@@ -289,13 +355,13 @@ static void draw_button(const app_state_t *st, bool held, int64_t held_us)
         int lvl = st->mic_level;
         if (lvl > 100) lvl = 100;
         gfx_fill_rect(BTN_X + 12, BTN_Y + 44, (BTN_W - 24) * lvl / 100, 10, C_GREEN);
-        gfx_draw_rect_outline(BTN_X + 12, BTN_Y + 44, BTN_W - 24, 10, C_LINE);
+        frame(BTN_X + 12, BTN_Y + 44, BTN_W - 24, 10, C_LINE);
         char secs[16];
         snprintf(secs, sizeof(secs), "%0.1fs", held_us / 1000000.0);
         gfx_draw_text_centered(LCD_W / 2, BTN_Y + 60, secs, 1, C_TEXT);
     } else if (st->voice == VOICE_DONE && st->transcript[0]) {
         char buf[200];
-        snprintf(buf, sizeof(buf), "Heard: %s", st->transcript);
+        snprintf(buf, sizeof(buf), "HEARD: %s", st->transcript);
         draw_wrapped(BTN_X + 8, BTN_Y + 40, BTN_W - 16, buf, 1, C_TEXT, 3);
     }
 }
@@ -311,7 +377,7 @@ static void draw_toast(const app_state_t *st, int64_t now)
     int w = gfx_text_width(msg, 1) + 16;
     int x = (LCD_W - w) / 2;
     gfx_fill_rect(x, 372, w, 16, C_PANEL);
-    gfx_draw_rect_outline(x, 372, w, 16, C_LINE);
+    frame(x, 372, w, 16, C_LINE);
     gfx_draw_text(x + 8, 376, msg, 1, C_TEXT);
 }
 
@@ -324,7 +390,7 @@ static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until
 {
     if (st->conn == CONN_OFFLINE) {
         gfx_draw_text_centered(LCD_W / 2, 220, "NO WIFI", 3, C_RED);
-        gfx_draw_text_centered(LCD_W / 2, 256, "joining the network...", 1, C_DIM);
+        gfx_draw_text_centered(LCD_W / 2, 256, blink() ? "JOINING WIFI_" : "JOINING WIFI", 1, C_DIM);
         return;
     }
     int phase, attempt;
@@ -332,16 +398,19 @@ static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until
     bool lit = now < flash_until || phase == 2;
     int x = (LCD_W - CONN_BOX_W) / 2;
     gfx_fill_rect(x, CONN_BOX_Y, CONN_BOX_W, CONN_BOX_H, lit ? C_YELLOW : C_PANEL);
-    gfx_draw_rect_outline(x, CONN_BOX_Y, CONN_BOX_W, CONN_BOX_H, C_YELLOW);
-    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 30, phase == 2 ? "CONNECTING..." : "CONNECT",
+    frame(x, CONN_BOX_Y, CONN_BOX_W, CONN_BOX_H, C_YELLOW);
+    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 30, phase == 2 ? "DIALING..." : "CONNECT",
                            3, lit ? C_BG : C_YELLOW);
     const char *host = SERVER_URL;
     if (!strncmp(host, "https://", 8)) host += 8;
     else if (!strncmp(host, "http://", 7)) host += 7;
-    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 70, host, 1, lit ? C_BG : C_DIM);
+    char hostu[64];
+    snprintf(hostu, sizeof(hostu), "%s", host);
+    upcase(hostu);
+    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 70, hostu, 1, lit ? C_BG : C_DIM);
     if (phase == 3)
         gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + CONN_BOX_H + 14,
-                               "could not reach the server - tap to retry", 1, C_RED);
+                               "NO ANSWER - TAP TO RETRY", 1, C_RED);
 }
 
 #define SP_Y    60
@@ -350,43 +419,43 @@ static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until
 
 static void draw_session_picker(const app_state_t *st, bool flash)
 {
-    gfx_draw_text(8, 30, "PICK A SESSION", 2, C_TEXT);
+    gfx_draw_text(8, 34, blink() ? "SESSIONS_" : "SESSIONS", 2, C_TEXT);
     int w = LCD_W - 4 - IV_REFRESH_X;
     gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
-    gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+    frame(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
     gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
                            flash ? C_BG : C_YELLOW);
     if (st->n_runs == 0) {
         gfx_draw_text_centered(LCD_W / 2, 170, "NO LIVE SESSIONS", 2, C_YELLOW);
         draw_wrapped(24, 200, LCD_W - 48,
-                     "Start a run on the website; it shows up here.", 1, C_DIM, 3);
+                     "START A RUN ON THE WEBSITE, THEN TAP REFRESH.", 1, C_DIM, 3);
     }
     if (st->n_runs > 0) {
         bool cur = !st->run_pinned;
         gfx_fill_rect(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
-        gfx_draw_rect_outline(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
+        frame(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
         gfx_draw_text(16, SP_Y + 4, "FOLLOW NEWEST", 2, C_TEXT);
-        gfx_draw_text(16, SP_Y + 22, "switches to new sessions as they start", 1, C_DIM);
+        gfx_draw_text(16, SP_Y + 22, "JUMPS TO EACH NEW SESSION", 1, C_DIM);
     }
     for (int r = 0; r < st->n_runs && r + 1 < SP_ROWS; r++) {
         const run_info_t *ri = &st->runs[r];
         int y = SP_Y + (r + 1) * SP_ROW;
         bool cur = st->run_pinned && !strcmp(ri->id, st->run_id);
         gfx_fill_rect(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
-        gfx_draw_rect_outline(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
-        char l1[48];
-        snprintf(l1, sizeof(l1), "%s  %d agents", ri->id, ri->agents);
+        frame(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
+        char l1[72];
+        snprintf(l1, sizeof(l1), "%s", ri->soc_names[0] ? ri->soc_names : "OPEN WORLD");
         ellipsize(l1, LCD_W - 32, 2);
         gfx_draw_text(16, y + 4, l1, 2, C_TEXT);
-        char l2[96];
-        snprintf(l2, sizeof(l2), "%s - %s", ri->model,
-                 ri->soc_names[0] ? ri->soc_names : "no societies, interview only");
+        char l2[96], meta[64];
+        run_meta(meta, sizeof(meta), ri);
+        snprintf(l2, sizeof(l2), "%s%s", meta, ri->soc_names[0] ? "" : " - INTERVIEW ONLY");
         ellipsize(l2, LCD_W - 32, 1);
         gfx_draw_text(16, y + 22, l2, 1, C_DIM);
     }
     gfx_fill_rect(BTN_X, BTN_Y, BTN_W, BTN_H, C_PANEL);
-    gfx_draw_rect_outline(BTN_X, BTN_Y, BTN_W, BTN_H, C_LINE);
-    gfx_draw_text_centered(LCD_W / 2, BTN_Y + 30, "BACK", 2, C_DIM);
+    frame(BTN_X, BTN_Y, BTN_W, BTN_H, C_LINE);
+    gfx_draw_text_centered(LCD_W / 2, BTN_Y + 30, "< BACK", 2, C_DIM);
 }
 
 /* ---------------- interview mode ---------------- */
@@ -401,15 +470,15 @@ static void draw_iv_header(const app_state_t *st, bool flash)
     if (st->iv_agent.id < 0) {
         int w = LCD_W - 4 - IV_REFRESH_X;
         gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
-        gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+        frame(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
         gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
                                flash ? C_BG : C_YELLOW);
-        gfx_draw_text(8, 34, "PICK SOMEONE", 3, C_TEXT);
-        gfx_draw_text(8, 64, "tap a name, or hold the button and say it", 1, C_DIM);
+        gfx_draw_text(8, 34, blink() ? "WHO?_" : "WHO?", 3, C_TEXT);
+        gfx_draw_text(8, 64, "TAP A NAME, OR HOLD AND SAY IT", 1, C_DIM);
         return;
     }
     gfx_fill_rect(8, 28, 56, 56, rgb_to_565(st->iv_agent.color));
-    gfx_draw_rect_outline(8, 28, 56, 56, C_LINE);
+    frame(8, 28, 56, 56, C_LINE);
     char name[28];
     snprintf(name, sizeof(name), "%s", st->iv_agent.name);
     ellipsize(name, 236, 2);
@@ -424,15 +493,15 @@ static void draw_iv_header(const app_state_t *st, bool flash)
         snprintf(sub, sizeof(sub), "%s", st->iv_agent.country);
     ellipsize(sub, 236, 1);
     gfx_draw_text(76, 54, sub, 1, C_DIM);
-    gfx_draw_text(76, 70, "tap here to talk to someone else", 1, C_DIM);
+    gfx_draw_text(76, 70, "[TAP] SOMEONE ELSE", 1, C_LINE);
 }
 
 static void draw_picker(const app_state_t *st, int page)
 {
     if (st->n_agents == 0) {
-        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "no people loaded" : "no live session", 2,
+        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "NOBODY LOADED" : "NO LIVE SESSION", 2,
                       C_DIM);
-        gfx_draw_text(8, LIST_Y + 34, "tap REFRESH to load the list", 1, C_DIM);
+        gfx_draw_text(8, LIST_Y + 34, "TAP REFRESH TO LOAD THE LIST", 1, C_DIM);
         return;
     }
     for (int r = 0; r < LIST_ROWS; r++) {
@@ -473,7 +542,7 @@ static int est_lines(const char *s, int scale)
 static void draw_convo(const app_state_t *st)
 {
     if (st->n_convo == 0) {
-        draw_wrapped(8, CONVO_Y + 8, LCD_W - 16, "Hold the button and ask a question.", 2, C_DIM, 3);
+        draw_wrapped(8, CONVO_Y + 8, LCD_W - 16, "HOLD THE BUTTON AND ASK ANYTHING.", 2, C_DIM, 3);
         return;
     }
     const int avail = CONVO_BOTTOM - CONVO_Y;
@@ -493,8 +562,10 @@ static void draw_convo(const app_state_t *st)
     for (int i = start; i < st->n_convo; i++) {
         const convo_line_t *l = &st->convo[i];
         int sc = i == st->n_convo - 1 ? scale_last : 1;
-        gfx_draw_text(8, y, l->me ? "YOU" : st->iv_agent.name, 1,
-                      l->me ? C_DIM : rgb_to_565(st->iv_agent.color));
+        char who[32];
+        snprintf(who, sizeof(who), "> %s", l->me ? "YOU" : st->iv_agent.name);
+        upcase(who);
+        gfx_draw_text(8, y, who, 1, l->me ? C_DIM : C_YELLOW);
         y += 12;
         int max_lines = (CONVO_BOTTOM - y) / ((FONT_H + 3) * sc);
         if (max_lines < 1)
@@ -507,7 +578,7 @@ static void draw_convo(const app_state_t *st)
 static void draw_iv_button(const app_state_t *st, bool held, int64_t held_us)
 {
     gfx_fill_rect(BTN_X, BTN_Y, BTN_W, BTN_H, held ? C_RED : C_PANEL);
-    gfx_draw_rect_outline(BTN_X, BTN_Y, BTN_W, BTN_H, held ? C_RED : C_LINE);
+    frame(BTN_X, BTN_Y, BTN_W, BTN_H, held ? C_TEXT : C_YELLOW);
     char label[48];
     if (held)
         snprintf(label, sizeof(label), "LISTENING");
@@ -524,26 +595,27 @@ static void draw_iv_button(const app_state_t *st, bool held, int64_t held_us)
         if (sp) *sp = 0;
         snprintf(label, sizeof(label), "HOLD TO ASK %s", first);
     }
+    upcase(label);
     ellipsize(label, BTN_W - 16, 2);
-    gfx_draw_text_centered(LCD_W / 2, BTN_Y + 14, label, 2, held ? C_TEXT : C_DIM);
+    gfx_draw_text_centered(LCD_W / 2, BTN_Y + 14, label, 2, held ? C_BG : C_YELLOW);
     if (held) {
         int lvl = st->mic_level > 100 ? 100 : st->mic_level;
         gfx_fill_rect(BTN_X + 12, BTN_Y + 44, (BTN_W - 24) * lvl / 100, 10, C_GREEN);
-        gfx_draw_rect_outline(BTN_X + 12, BTN_Y + 44, BTN_W - 24, 10, C_LINE);
+        frame(BTN_X + 12, BTN_Y + 44, BTN_W - 24, 10, C_LINE);
         char secs[16];
         snprintf(secs, sizeof(secs), "%0.1fs", held_us / 1000000.0);
         gfx_draw_text_centered(LCD_W / 2, BTN_Y + 60, secs, 1, C_TEXT);
     } else if (st->iv_status == IV_SPEAKING) {
-        gfx_draw_text_centered(LCD_W / 2, BTN_Y + 48, "hold to interrupt", 1, C_DIM);
+        gfx_draw_text_centered(LCD_W / 2, BTN_Y + 48, "HOLD TO INTERRUPT", 1, C_DIM);
     }
 }
 
 static void draw_not_paired(const app_state_t *st)
 {
     gfx_draw_text_centered(LCD_W / 2, 160, "NOT PAIRED", 3, C_RED);
-    gfx_draw_text_centered(LCD_W / 2, 200, "give the operator this MAC:", 1, C_DIM);
+    gfx_draw_text_centered(LCD_W / 2, 200, "GIVE THE OPERATOR THIS ID:", 1, C_DIM);
     gfx_draw_text_centered(LCD_W / 2, 218, st->mac, 2, C_TEXT);
-    gfx_draw_text_centered(LCD_W / 2, 260, "tap to try again", 1, C_DIM);
+    gfx_draw_text_centered(LCD_W / 2, 260, "TAP TO TRY AGAIN", 1, C_DIM);
 }
 
 void ui_task(void *arg)
@@ -557,6 +629,7 @@ void ui_task(void *arg)
     conn_state_t prev_conn = CONN_OFFLINE;
     int page = 0;
     int64_t thinking_since = 0, refresh_flash = 0;
+    draw_backdrop();
 
     while (1) {
         STATE_LOCK();

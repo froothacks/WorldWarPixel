@@ -3,7 +3,7 @@ import logging
 import struct
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
 from openai import AsyncOpenAI
@@ -60,6 +60,22 @@ class OpenAISpeech:
             **extra,
         )
         return response.content
+
+    async def stream(self, text: str, voice: str, instructions: str) -> AsyncIterator[bytes]:
+        """Like ``synth`` but yields PCM as the endpoint produces it."""
+        extra: dict[str, Any] = {}
+        if self.model.startswith("gpt-4o"):
+            extra["instructions"] = instructions
+        async with self._client.audio.speech.with_streaming_response.create(
+            model=self.model,
+            voice=voice,
+            input=text,
+            response_format="pcm",
+            timeout=self._timeout,
+            **extra,
+        ) as response:
+            async for chunk in response.iter_bytes(4800):
+                yield chunk
 
 
 def wav(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> bytes:

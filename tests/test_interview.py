@@ -1,9 +1,11 @@
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from worldwarpixel import interview
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
 from worldwarpixel.interview import ascii_text, clean_reply, pick_agent, resample
@@ -51,6 +53,31 @@ class FakeSynth:
 
     async def synth(self, text: str, voice: str, instructions: str) -> bytes:
         return b"\x10\x00" * 24_000  # one second
+
+
+class StreamingSynth(FakeSynth):
+    async def stream(self, text: str, voice: str, instructions: str) -> AsyncIterator[bytes]:
+        sent = 0
+        for size in (1, 4095, 7, 12_000, 30_000):
+            yield (b"\x10\x00" * 24_000)[sent : sent + size]
+            sent += size
+        yield (b"\x10\x00" * 24_000)[sent:]
+
+
+def test_streamed_voice_resamples_uneven_chunks() -> None:
+    class Speech:
+        synth = StreamingSynth()
+
+    class FakeRun:
+        speech = Speech()
+
+    agent = type("A", (), {"id": 1, "name": "Mei", "country": "X", "persona_card": {}})()
+
+    async def collect() -> bytes:
+        return b"".join([c async for c in interview.voice(FakeRun(), agent, "hi")])  # type: ignore[arg-type]
+
+    pcm = asyncio.run(collect())
+    assert len(pcm) == 32_000 and set(pcm[::2]) == {0x10}
 
 
 @pytest.fixture
@@ -110,7 +137,7 @@ def test_interview_over_websocket(client: TestClient) -> None:
         assert _until(ws, "interview.heard")["text"] == "What are you painting?"
         reply = _until(ws, "interview.reply")
         assert reply["text"] == "smiles Hello, I paint blue waves."
-        assert reply["audio"] and reply["rate"] == 16000 and reply["bytes"] == 32000
+        assert reply["audio"] and reply["rate"] == 16000
         got = 0
         while True:
             msg = ws.receive()
