@@ -197,18 +197,21 @@ def test_archived_board_and_event_reads_do_not_replay(
         run.vote_thread(society_thread.id, "viewer", -1)
         run.state = "stopped"
         vote_events = [event for event in manager.log.read(run_id) if event.kind == "board.vote"]
+        viewer_ballot = str(vote_events[0].payload["voter"])
+        assert viewer_ballot != "viewer" and len(viewer_ballot) == 16
         assert [
             (
                 event.agent_id,
                 event.payload["thread_id"],
+                event.payload["voter"],
                 event.payload["value"],
                 event.payload["votes"],
             )
             for event in vote_events
         ] == [
-            (None, root.id, 1, 1),
-            (2, root.id, 1, 2),
-            (None, society_thread.id, -1, -1),
+            (None, root.id, viewer_ballot, 1, 1),
+            (2, root.id, "agent:2", 1, 2),
+            (None, society_thread.id, viewer_ballot, -1, -1),
         ]
         manager.runs[run_id] = run
 
@@ -300,7 +303,74 @@ def test_restored_runs_keep_god_pace_changes() -> None:
     assert {a.cooldown for a in run.agents} == {2.5}
 
 
-def test_restore_run_restores_board_vote_scores() -> None:
+def _run_with_vote_thread(run_id: str = "ballot-run") -> tuple[EventLog, Run, int]:
+    log = EventLog()
+    config = RunConfig(width=16, height=16, agents=1, seed=3, policy="random")
+    log.append(run_id, 1.0, "run.created", None, {"config": config.model_dump()})
+    run = Run(run_id, config, log, RandomWalkPolicy(seed=3))
+    post = run.board.post_thread(1, "thread", "body", 2.0)
+    log.append(run_id, 2.0, "post", 1, post.to_dict())
+    return log, run, post.id
+
+
+def test_viewer_ballot_id_is_hashed_in_events() -> None:
+    log, run, thread_id = _run_with_vote_thread()
+    run.vote_thread(thread_id, "viewer", 1)
+
+    vote_event = next(event for event in log.read(run.id) if event.kind == "board.vote")
+    ballot = str(vote_event.payload["voter"])
+
+    assert ballot != "viewer"
+    assert len(ballot) == 16
+    log.close()
+
+
+def test_restored_viewer_ballot_can_be_withdrawn() -> None:
+    log, run, thread_id = _run_with_vote_thread()
+    assert run.vote_thread(thread_id, "viewer", 1) == 1
+
+    restored = restore_run(log, run.id)
+
+    assert restored is not None and restored.board.votes(thread_id) == 1
+    assert restored.vote_thread(thread_id, "viewer", 0) == 0
+    log.close()
+
+
+def test_viewer_ballot_ids_are_scoped_to_runs() -> None:
+    first_log, first_run, first_thread_id = _run_with_vote_thread("first-run")
+    second_log, second_run, second_thread_id = _run_with_vote_thread("second-run")
+    first_run.vote_thread(first_thread_id, "viewer", 1)
+    second_run.vote_thread(second_thread_id, "viewer", 1)
+
+    first_ballot = str(
+        next(event for event in first_log.read(first_run.id) if event.kind == "board.vote").payload[
+            "voter"
+        ]
+    )
+    second_ballot = str(
+        next(
+            event for event in second_log.read(second_run.id) if event.kind == "board.vote"
+        ).payload["voter"]
+    )
+
+    assert first_ballot != second_ballot
+    first_log.close()
+    second_log.close()
+
+
+def test_restored_repeated_viewer_ballots_can_be_withdrawn() -> None:
+    log, run, thread_id = _run_with_vote_thread()
+    assert run.vote_thread(thread_id, "viewer", 1) == 1
+    assert run.vote_thread(thread_id, "viewer", 1) == 2
+
+    restored = restore_run(log, run.id)
+
+    assert restored is not None and restored.board.votes(thread_id) == 2
+    assert restored.vote_thread(thread_id, "viewer", 0) == 0
+    log.close()
+
+
+def test_restore_run_restores_legacy_board_vote_scores() -> None:
     log = EventLog()
     config = RunConfig(width=16, height=16, agents=1, seed=3, policy="random")
     log.append("votes", 1.0, "run.created", None, {"config": config.model_dump()})
