@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     timelapse_s3_bucket: str | None = None
     """Optional S3-compatible bucket to mirror videos into (AWS creds from the environment)."""
     timelapse_s3_endpoint: str | None = None
-    """Custom S3 endpoint (e.g. Cloudflare R2); None for AWS."""
+    """Custom S3 endpoint (https://storage.googleapis.com for GCS, or R2); None for AWS."""
     timelapse_s3_prefix: str = "timelapses/"
     ffmpeg_path: str = "ffmpeg"
     god_token: SecretStr = SecretStr("")

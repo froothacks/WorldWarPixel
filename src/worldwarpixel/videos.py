@@ -100,8 +100,14 @@ class VideoStore:
 
     def _client(self) -> Any:
         import boto3  # type: ignore[import-untyped]
+        from botocore.config import Config  # type: ignore[import-untyped]
 
-        return boto3.client("s3", endpoint_url=self.s3_endpoint)
+        # GCS and R2 reject the default CRC checksums / aws-chunked uploads newer boto3 sends.
+        config = Config(
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        )
+        return boto3.client("s3", endpoint_url=self.s3_endpoint, config=config)
 
     def _put(self, path: Path, name: str, content_type: str) -> str:
         key = f"{self.s3_prefix}{name}"
