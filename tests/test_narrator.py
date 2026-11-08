@@ -41,6 +41,25 @@ def test_narrator_max_tokens_is_passed_to_the_model() -> None:
     assert completions.requests[0]["max_tokens"] == 3000
 
 
+def test_narrator_openai_reasoning_model_params() -> None:
+    completions = _FakeCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    model = OpenAINarratorModel(
+        client,  # type: ignore[arg-type]
+        "gpt-6-luna",
+        max_tokens=2000,
+        token_param="max_completion_tokens",
+        chat_template_kwargs=False,
+        reasoning_effort="none",
+    )
+    asyncio.run(model.complete([{"role": "user", "content": "hi"}]))
+    request = completions.requests[0]
+    assert request["max_completion_tokens"] == 2000
+    assert "max_tokens" not in request
+    assert request["reasoning_effort"] == "none"
+    assert not request.get("extra_body")
+
+
 CONFIG = RunConfig(
     width=64, height=32, agents=5, cooldown=0.01, jitter=0, pixels_per_turn=4, seed=1
 )
@@ -246,6 +265,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 def test_narrator_endpoints(client: TestClient) -> None:
     manager = client.app.state.runs  # type: ignore[attr-defined]
     manager.narrator_model = FakeNarratorModel()
+    manager.make_narrator = lambda _cfg: FakeNarratorModel()
     manager.make_policy = lambda _cfg: RandomWalkPolicy(seed=1)
     run_id = client.post("/runs", json={**SMALL, "policy": "llm"}).json()["id"]
 
@@ -274,6 +294,7 @@ def test_narrator_endpoints(client: TestClient) -> None:
     assert any(e["kind"] == "narrator.update" for e in events)
 
     manager.narrator_model = FakeNarratorModel(fail=True)
+    manager.make_narrator = lambda _cfg: FakeNarratorModel(fail=True)
     failing = client.post("/runs", json=SMALL).json()["id"]
     res = client.post(f"/runs/{failing}/narrator/ask", json={"question": "hello?"})
     assert res.status_code == 503 and "narrator unavailable" in res.json()["detail"]
