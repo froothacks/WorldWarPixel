@@ -717,12 +717,17 @@ static void canvas_task(void *arg)
     if (!buf)
         buf = heap_caps_malloc(240 * 160, MALLOC_CAP_8BIT);
     int waited = 0, seen_attempt = -1;
+    char seen_run[12] = "";
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         if (!s_ws_connected || !buf || g_state.mode != MODE_SOCIETY)
             continue;
-        /* right after connecting, then every 30 s: each poll is a fresh TLS request */
-        if (s_ws_attempt == seen_attempt && ++waited < 30)
+        /* on connect or session change, then every 30 s: each poll is a fresh TLS request */
+        STATE_LOCK();
+        bool same_run = !strcmp(seen_run, g_state.run_id);
+        snprintf(seen_run, sizeof(seen_run), "%s", g_state.run_id);
+        STATE_UNLOCK();
+        if (s_ws_attempt == seen_attempt && same_run && ++waited < 30)
             continue;
         seen_attempt = s_ws_attempt;
         waited = 0;
