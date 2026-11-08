@@ -19,6 +19,9 @@ REPO="${ARTIFACT_REPO:-worldwarpixel}"
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$(git rev-parse --short HEAD)"
 CACHE_REPO="$REGION-docker.pkg.dev/$PROJECT/$REPO/cache"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
+# Cloud SQL instance the app connects to via DATABASE_URL (Unix socket at /cloudsql/...);
+# set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
 
 if [ -z "${APP_ENV_FILE:-}" ]; then
   echo "APP_ENV_FILE must point to a KEY=value file with the app settings" >&2
@@ -62,6 +65,9 @@ args=(
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET"
   --add-volume-mount volume=data,mount-path=/data --service-account "$RUNTIME_SA"
 )
+if [ -n "$CLOUDSQL_INSTANCE" ]; then
+  args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
+fi
 # KEY=value lines -> the YAML gcloud expects; keeps the values out of the command line.
 yaml="$(mktemp)"
 trap 'rm -f "$yaml"' EXIT
