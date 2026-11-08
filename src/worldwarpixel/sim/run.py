@@ -150,8 +150,9 @@ class Run:
         self._clock = clock
         self._sleep = sleep
         self.state: RunState = "created"
+        self.interrupted = False
+        """Rebuilt from the log of a run a server shutdown interrupted; it is due to resume."""
         self.resume_paused = False
-        """Set on runs rebuilt from the log that a shutdown interrupted while paused."""
         self.created_at = clock()
         self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
@@ -473,6 +474,9 @@ class Run:
 
     async def stop(self) -> None:
         if self.state == "stopped":
+            if self.interrupted:  # stopping it while it waits to resume keeps it stopped
+                self.interrupted = False
+                self._record("run.state", None, {"state": "stopped"})
             return
         await self._halt()
         self._set_state("stopped")

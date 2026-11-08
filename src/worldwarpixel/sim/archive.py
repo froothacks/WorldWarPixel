@@ -71,6 +71,7 @@ def restore_run(
             socs.set_murmur(int(p["society"]), str(p["murmur"]), str(p["transcript"]), e.ts)
         elif e.kind == "narrator.update":
             narrator.history.append(p)
+            narrator._next_id = max(narrator._next_id, int(p.get("id", 0)) + 1)
             narrator.stats["answers" if p.get("kind") == "answer" else "updates"] += 1
         elif e.kind == "god.pace":
             if p.get("cooldown") is not None:
@@ -81,8 +82,11 @@ def restore_run(
                 config.pixels_per_turn = int(p["pixels_per_turn"])
             if p.get("pixel_interval") is not None:
                 config.pixel_interval = float(p["pixel_interval"])
+        elif e.kind == "god.model_changed":
+            config.model = str(p["model"])
         elif e.kind == "run.state":
-            run.resume_paused = p.get("state") == "interrupted" and p.get("was") == "paused"
+            run.interrupted = p.get("state") == "interrupted"
+            run.resume_paused = run.interrupted and p.get("was") == "paused"
         elif e.kind == "run.deleted":
             return None
     return run

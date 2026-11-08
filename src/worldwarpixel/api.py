@@ -209,6 +209,9 @@ class RunManager:
             logger.warning("not resuming run %s: %r", run_id, e)
             self.log.append(run_id, time.time(), "run.state", None, {"state": "stopped"})
             return None
+        old = self.runs.get(run_id)
+        if old is not None and not old.interrupted:  # stopped as an archive while we rebuilt it
+            return None
         old = self.runs.pop(run_id, None)
         if old is not None:  # opened as a stopped archive meanwhile; viewers reconnect to this one
             self._restored.remove(run_id)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import struct
 import time
@@ -249,3 +250,21 @@ def test_runs_interrupted_by_a_restart_resume(
         assert client.get(f"/runs/{live}").json()["state"] == "running"
         assert client.get(f"/runs/{paused}").status_code == 404
         client.post(f"/runs/{live}/stop")
+
+
+def test_restored_interrupted_runs_keep_model_and_narrator_ids() -> None:
+    log = EventLog()
+    config = RunConfig(width=32, height=16, agents=2, seed=3, policy="random")
+    log.append("m", 1.0, "run.created", None, {"config": config.model_dump()})
+    log.append("m", 2.0, "god.model_changed", 65535, {"model": "other"})
+    log.append("m", 3.0, "narrator.update", None, {"id": 4, "kind": "update", "headline": "h"})
+    log.append("m", 4.0, "run.state", None, {"state": "interrupted", "was": "running"})
+    run = restore_run(log, "m")
+    assert run is not None
+    assert run.config.model == "other"
+    assert run.narrator._next_id == 5
+    assert run.interrupted and not run.resume_paused
+    assert log.interrupted_runs() == ["m"]
+    asyncio.run(run.stop())  # stopped while waiting to resume: it must not come back
+    assert not run.interrupted
+    assert log.interrupted_runs() == []
