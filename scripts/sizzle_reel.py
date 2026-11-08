@@ -891,6 +891,17 @@ async def _amain(args: argparse.Namespace) -> int:
                 else:
                     print(f"  vertex {r.run_id}: no result", file=sys.stderr)
 
+        usable = [
+            r
+            for r in pool
+            if not (
+                r.vertex
+                and (r.vertex.get("random_pixels") is True or r.vertex.get("useful") is False)
+            )
+        ]
+        if usable:
+            pool = usable
+
         def combined(r: RunPick) -> float:
             return r.score + (_num(r.vertex or {}, "cinematic_score", 5.0) - 5.0) * 25.0
 
