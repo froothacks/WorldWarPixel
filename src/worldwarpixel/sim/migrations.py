@@ -377,7 +377,16 @@ def migrate_postgres(conn: psycopg.Connection[tuple[Any, ...]]) -> list[int]:
     for migration in MIGRATIONS:
         if migration.version in applied or not migration.postgres_concurrent_statements:
             continue
-        conn.execute("SELECT pg_advisory_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
+        deadline = time.monotonic() + 300
+        while True:
+            locked = conn.execute(
+                "SELECT pg_try_advisory_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,)
+            ).fetchone()
+            if locked is not None and bool(locked[0]):
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("timed out waiting for Postgres migration lock")
+            time.sleep(0.1)
         try:
             applied_now = {
                 int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")
