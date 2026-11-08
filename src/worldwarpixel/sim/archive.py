@@ -10,10 +10,17 @@ from worldwarpixel.sim.board import Board, Post
 from worldwarpixel.sim.canvas import PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME
 from worldwarpixel.sim.events import REJECTED, EventStore
-from worldwarpixel.sim.run import GOD_ID, GOD_NAME, Run, RunConfig
+from worldwarpixel.sim.run import GOD_ID, GOD_NAME, MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.societies import SOCIETY_NAMES, Migration
 from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
+
+
+def _stored_config(raw: dict[str, Any]) -> RunConfig:
+    data = raw.copy()
+    if "pixel_interval" in data:
+        data["pixel_interval"] = max(data["pixel_interval"], MIN_PIXEL_INTERVAL)
+    return RunConfig.model_validate(data)
 
 
 def restore_run(
@@ -29,7 +36,7 @@ def restore_run(
     if first is None or first.kind != "run.created":
         return None
     created = cast(dict[str, Any], first.payload)
-    config = RunConfig.model_validate(created["config"])
+    config = _stored_config(cast(dict[str, Any], created["config"]))
     if config.societies and config.society_names is None:  # logged before names were generated
         config.society_names = list(SOCIETY_NAMES[: config.societies])
     # Runs logged before the roster was recorded fall back to re-seeding (exact only with a seed).
@@ -133,7 +140,7 @@ def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:
         run_id, first_ts, pixels, posts, turns, errors, updates, answers, deleted, config = row
         if run_id in skip or deleted or config is None:
             continue
-        cfg = RunConfig.model_validate(json.loads(config)).model_dump()
+        cfg = _stored_config(json.loads(config)).model_dump()
         rows.append(
             {
                 "id": run_id,

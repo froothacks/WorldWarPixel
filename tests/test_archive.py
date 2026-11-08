@@ -17,7 +17,7 @@ from worldwarpixel.sim.board import Board, Post
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME
 from worldwarpixel.sim.events import EventLog, EventStore
 from worldwarpixel.sim.hub import FRAME_SNAPSHOT
-from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 
 SMALL = {"width": 32, "height": 16, "agents": 3, "cooldown": 0.01, "jitter": 0, "policy": "random"}
 
@@ -74,6 +74,37 @@ def test_runs_survive_a_restart_as_stopped_runs(server: None) -> None:
         assert client.get("/runs").json() == []
         assert client.get(f"/runs/{rid}").status_code == 404
         assert client.delete(f"/runs/{rid}").status_code == 404
+
+
+def test_archived_runs_floor_legacy_pixel_intervals(server: None) -> None:
+    with TestClient(app) as client:
+        log = app.state.runs.log
+        run_ids = ("legacy-003", "legacy-zero")
+        expected = (0.03, MIN_PIXEL_INTERVAL)  # 0.03 is valid now; 0 is floored
+        for run_id, pixel_interval in zip(run_ids, (0.03, 0), strict=True):
+            log.append(
+                run_id,
+                1.0,
+                "run.created",
+                None,
+                {"config": {**SMALL, "pixel_interval": pixel_interval}},
+            )
+            restored = restore_run(log, run_id)
+            assert restored is not None
+            assert restored.config.pixel_interval == expected[run_ids.index(run_id)]
+
+        listed = client.get("/runs")
+        assert listed.status_code == 200
+        summaries = {run["id"]: run for run in listed.json()}
+        assert set(run_ids) <= summaries.keys()
+        assert all(
+            summaries[run_id]["config"]["pixel_interval"] == expected[run_ids.index(run_id)]
+            for run_id in run_ids
+        )
+        for run_id in run_ids:
+            opened = client.get(f"/runs/{run_id}")
+            assert opened.status_code == 200
+            assert opened.json()["config"]["pixel_interval"] == expected[run_ids.index(run_id)]
 
 
 def test_unknown_and_legacy_runs() -> None:
