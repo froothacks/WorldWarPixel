@@ -59,6 +59,10 @@ done <<< "$secret_names"
 secret_args=""
 secret_display=""
 for secret_name in "${APP_SECRETS[@]}"; do
+  if [ "$secret_name" = DATABASE_URL ] && [ -z "$CLOUDSQL_INSTANCE" ]; then
+    echo "CLOUDSQL_INSTANCE is empty; DATABASE_URL not mounted (SQLite event log)"
+    continue
+  fi
   if [[ -z "${existing_secrets[$secret_name]+x}" ]]; then
     echo "Secret Manager has no $secret_name; skipped"
     continue
