@@ -27,6 +27,8 @@ class Settings(BaseSettings):
         "https://advait-m--ep-deepseek-v4-1-flash-server.us-west.modal.direct/v1"
     )
     """Endpoint of the 'deepseek' model preset (see models.py); override for another deployment."""
+    glm_base_url: str = "https://advait-m--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1"
+    """Endpoint of the 'glm' model preset (see models.py); override for another deployment."""
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
     device_tokens: SecretStr = SecretStr("")
