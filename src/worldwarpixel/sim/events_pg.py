@@ -29,7 +29,9 @@ class PostgresEventLog(EventStore):
 
     def __init__(self, database_url: str, *, initialize_schema: bool = True) -> None:
         self.database_url = database_url
-        self._conn: psycopg.Connection[tuple[Any, ...]] = psycopg.connect(database_url)
+        self._conn: psycopg.Connection[tuple[Any, ...]] = psycopg.connect(
+            database_url, autocommit=True
+        )
         self._batch_depth = 0
         if initialize_schema:
             try:

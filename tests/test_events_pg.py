@@ -58,6 +58,23 @@ def test_batch_is_a_transaction_visible_to_other_connections(pg_log: PostgresEve
         reader.close()
 
 
+def test_batch_commits_after_reads_without_a_later_append(pg_url: str) -> None:
+    log = PostgresEventLog(pg_url)
+    try:
+        log.append("r", 1.0, "run.created", None, {})
+        log.count("r")
+        with log.batch():
+            log.append("r", 2.0, "pixel", 1, {})
+    finally:
+        log.close()
+
+    check = PostgresEventLog(pg_url)
+    try:
+        assert check.count("r") == 2
+    finally:
+        check.close()
+
+
 def test_run_totals_match_the_sqlite_shape(pg_log: PostgresEventLog) -> None:
     config = {"width": 16, "height": 16, "agents": 2}
     pg_log.append("r", 1.0, "run.created", None, {"config": config, "agents": []})
