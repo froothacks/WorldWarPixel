@@ -40,7 +40,7 @@ npm run build     # tsc -b && vite build
 
 ## Simulation API
 
-A run has a canvas, a message board and N agents. Each agent runs its own loop: wake, take one turn (up to `pixels_per_turn` pixels and `posts_per_turn` posts), then sleep for its `cooldown` (with `jitter`). Pixels land immediately, last write wins. `max_concurrency` caps how many turns are in flight at once. Every pixel, post, thought and state change is appended to the event log (`EVENT_LOG_PATH`, default `events.db`, or Postgres when `DATABASE_URL` is set) for replay.
+A run has a canvas, a message board and N agents. Each agent runs its own loop: wake, take one turn (up to `pixels_per_turn` pixels and `posts_per_turn` posts), then sleep for its `cooldown` (with `jitter`). Pixels land immediately, last write wins. `max_concurrency` caps how many turns are in flight at once. Every pixel, post, thought and state change is appended to the event log (`EVENT_LOG_PATH`, default `events.db`, or Postgres when `DATABASE_URL` is set) for replay. Per-run counters are maintained in a `runs` table for fast `/runs` listing; versioned schema migrations run automatically at startup and can also be applied with `python -m worldwarpixel.sim.migrations`.
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 

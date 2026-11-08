@@ -1,0 +1,232 @@
+"""Versioned schema migrations for the SQLite and Postgres event stores."""
+
+import argparse
+import os
+import sqlite3
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import psycopg
+
+POSTGRES_MIGRATION_LOCK_ID = 7_790_184_232_151_091
+
+
+@dataclass(frozen=True, slots=True)
+class Migration:
+    version: int
+    name: str
+    sqlite_statements: tuple[str, ...]
+    postgres_statements: tuple[str, ...]
+
+
+def postgres_run_rollup_sql(*, filter_run_ids: bool = False) -> str:
+    """Return the per-run event rollup SELECT, optionally limited to run ids in ``%s``."""
+    where = "WHERE run_id = ANY(%s)" if filter_run_ids else ""
+    return f"""
+        SELECT run_id, MIN(ts),
+            COUNT(*) FILTER (WHERE kind = 'pixel'),
+            COUNT(*) FILTER (WHERE kind = 'post'),
+            COUNT(*) FILTER (WHERE kind = 'agent.thought'),
+            COUNT(*) FILTER (WHERE kind = 'agent.thought'
+                AND substr(payload::jsonb ->> 'thought', 1, 18) = 'Tool call rejected'),
+            COUNT(*) FILTER (WHERE kind = 'narrator.update'
+                AND (payload::jsonb ->> 'kind') IS DISTINCT FROM 'answer'),
+            COUNT(*) FILTER (WHERE kind = 'narrator.update'
+                AND payload::jsonb ->> 'kind' = 'answer'),
+            COALESCE(bool_or(kind = 'run.deleted'), false),
+            MAX(CASE WHEN kind = 'run.created'
+                THEN (payload::jsonb -> 'config')::text END)
+        FROM events
+        {where}
+        GROUP BY run_id
+    """
+
+
+MIGRATIONS = (
+    Migration(
+        version=1,
+        name="events",
+        sqlite_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                ts REAL NOT NULL,
+                kind TEXT NOT NULL,
+                agent_id INTEGER,
+                payload TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id)",
+        ),
+        postgres_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                ts DOUBLE PRECISION NOT NULL,
+                kind TEXT NOT NULL,
+                agent_id INTEGER,
+                payload TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id)",
+        ),
+    ),
+    Migration(
+        version=2,
+        name="runs",
+        sqlite_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+                id TEXT PRIMARY KEY,
+                created_at REAL NOT NULL,
+                config TEXT,
+                pixels INTEGER NOT NULL DEFAULT 0,
+                posts INTEGER NOT NULL DEFAULT 0,
+                turns INTEGER NOT NULL DEFAULT 0,
+                errors INTEGER NOT NULL DEFAULT 0,
+                updates INTEGER NOT NULL DEFAULT 0,
+                answers INTEGER NOT NULL DEFAULT 0,
+                deleted INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            """
+            INSERT INTO runs (
+                id, created_at, config, pixels, posts, turns, errors, updates, answers, deleted
+            )
+            SELECT run_id, MIN(ts),
+                MAX(CASE WHEN kind = 'run.created' THEN json_extract(payload, '$.config') END),
+                SUM(kind = 'pixel'),
+                SUM(kind = 'post'),
+                SUM(kind = 'agent.thought'),
+                SUM(kind = 'agent.thought'
+                    AND substr(json_extract(payload, '$.thought'), 1, 18) = 'Tool call rejected'),
+                SUM(kind = 'narrator.update'
+                    AND json_extract(payload, '$.kind') IS NOT 'answer'),
+                SUM(kind = 'narrator.update'
+                    AND json_extract(payload, '$.kind') = 'answer'),
+                MAX(kind = 'run.deleted')
+            FROM events
+            GROUP BY run_id
+            """,
+        ),
+        postgres_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+                id TEXT PRIMARY KEY,
+                created_at DOUBLE PRECISION NOT NULL,
+                config TEXT,
+                pixels BIGINT NOT NULL DEFAULT 0,
+                posts BIGINT NOT NULL DEFAULT 0,
+                turns BIGINT NOT NULL DEFAULT 0,
+                errors BIGINT NOT NULL DEFAULT 0,
+                updates BIGINT NOT NULL DEFAULT 0,
+                answers BIGINT NOT NULL DEFAULT 0,
+                deleted BOOLEAN NOT NULL DEFAULT false
+            )
+            """,
+            f"""
+            INSERT INTO runs (
+                id, created_at, pixels, posts, turns, errors, updates, answers, deleted, config
+            )
+            {postgres_run_rollup_sql()}
+            """,
+            """
+            ALTER TABLE events
+            ADD CONSTRAINT events_run_fk
+            FOREIGN KEY (run_id) REFERENCES runs (id)
+            ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE
+            """,
+        ),
+    ),
+)
+
+SQLITE_MIGRATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at REAL NOT NULL
+)
+"""
+POSTGRES_MIGRATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at DOUBLE PRECISION NOT NULL
+)
+"""
+
+
+def migrate_sqlite(conn: sqlite3.Connection) -> list[int]:
+    """Apply pending SQLite migrations under a write lock and return their versions."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(SQLITE_MIGRATIONS_TABLE)
+        applied = {int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")}
+        newly_applied: list[int] = []
+        for migration in MIGRATIONS:
+            if migration.version in applied:
+                continue
+            for statement in migration.sqlite_statements:
+                conn.execute(statement)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                (migration.version, migration.name, time.time()),
+            )
+            newly_applied.append(migration.version)
+        conn.commit()
+        return newly_applied
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def migrate_postgres(conn: psycopg.Connection[tuple[Any, ...]]) -> list[int]:
+    """Apply pending Postgres migrations under an advisory transaction lock."""
+    newly_applied: list[int] = []
+    with conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (POSTGRES_MIGRATION_LOCK_ID,))
+        conn.execute(POSTGRES_MIGRATIONS_TABLE)
+        applied = {int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")}
+        for migration in MIGRATIONS:
+            if migration.version in applied:
+                continue
+            for statement in migration.postgres_statements:
+                conn.execute(statement)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (%s, %s, %s)",
+                (migration.version, migration.name, time.time()),
+            )
+            newly_applied.append(migration.version)
+    return newly_applied
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    backend = parser.add_mutually_exclusive_group()
+    backend.add_argument("--database-url", metavar="URL")
+    backend.add_argument("--sqlite", type=Path, metavar="PATH")
+    args = parser.parse_args(argv)
+
+    if args.sqlite is not None:
+        with sqlite3.connect(args.sqlite) as conn:
+            applied = migrate_sqlite(conn)
+    else:
+        database_url = args.database_url or os.environ.get("DATABASE_URL")
+        if not database_url:
+            parser.error("set DATABASE_URL or pass --database-url or --sqlite")
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            applied = migrate_postgres(conn)
+
+    if applied:
+        print(f"Applied migrations: {', '.join(map(str, applied))}")
+    else:
+        print("up to date")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

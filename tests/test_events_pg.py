@@ -1,6 +1,7 @@
 import json
 import os
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psycopg
@@ -17,9 +18,9 @@ pytestmark = pytest.mark.skipif(PG_URL is None, reason="DATABASE_URL_TEST is not
 @pytest.fixture
 def pg_url() -> str:
     assert PG_URL is not None
-    PostgresEventLog(PG_URL).close()
     with psycopg.connect(PG_URL) as conn:
-        conn.execute("TRUNCATE events RESTART IDENTITY")
+        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+    PostgresEventLog(PG_URL).close()
     return PG_URL
 
 
@@ -85,7 +86,7 @@ def test_run_totals_match_the_sqlite_shape(pg_log: PostgresEventLog) -> None:
     pg_log.append("r", 6.0, "narrator.update", None, {"kind": "update", "text": "Hi"})
     pg_log.append("r", 7.0, "narrator.update", None, {"kind": "answer", "text": "Yes"})
 
-    [row] = pg_log.run_totals("Tool call rejected")
+    [row] = pg_log.run_totals()
     assert row[:2] == ("r", 1.0)
     assert row[2:8] == (1, 1, 2, 1, 1, 1)
     assert row[8] is False
@@ -106,6 +107,9 @@ def test_migrate_sqlite_to_pg_is_idempotent(pg_url: str, tmp_path: Path) -> None
     try:
         assert [e.id for e in target.read("m")] == [1, 2]
         assert target.count("m") == 2
+        [row] = target.run_totals()
+        assert row[:9] == ("m", 1.0, 1, 0, 0, 0, 0, 0, False)
+        assert row[9] is not None and json.loads(row[9]) == {"width": 16}
         assert target.append("m", 3.0, "post", 1, {}) == 3
     finally:
         target.close()
@@ -132,3 +136,76 @@ def test_migrate_sqlite_to_pg_rejects_conflicting_ids(pg_url: str, tmp_path: Pat
         assert check.count("sqlite") == 0
     finally:
         check.close()
+
+
+def test_events_reject_unknown_run_ids(pg_url: str) -> None:
+    with psycopg.connect(pg_url) as conn, pytest.raises(psycopg.errors.ForeignKeyViolation):
+        conn.execute(
+            "INSERT INTO events (run_id, ts, kind, payload) VALUES (%s, %s, %s, %s)",
+            ("unknown", 1.0, "pixel", "{}"),
+        )
+
+
+def test_legacy_postgres_events_are_backfilled_and_constrained(pg_url: str) -> None:
+    config = {"width": 16, "height": 16, "agents": 2}
+    with psycopg.connect(pg_url) as conn:
+        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+        conn.execute(
+            """
+            CREATE TABLE events (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                ts DOUBLE PRECISION NOT NULL,
+                kind TEXT NOT NULL,
+                agent_id INTEGER,
+                payload TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX events_run ON events (run_id, id)")
+        rows = [
+            ("legacy", 1.0, "run.created", None, {"config": config}),
+            ("legacy", 2.0, "pixel", 1, {}),
+            ("legacy", 3.0, "agent.thought", 1, {"thought": "Tool call rejected: bad input"}),
+            ("legacy", 4.0, "narrator.update", None, {"kind": "answer"}),
+        ]
+        for run_id, ts, kind, agent_id, payload in rows:
+            conn.execute(
+                "INSERT INTO events (run_id, ts, kind, agent_id, payload)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (run_id, ts, kind, agent_id, json.dumps(payload)),
+            )
+
+    log = PostgresEventLog(pg_url)
+    try:
+        [row] = log.run_totals()
+        assert row[:9] == ("legacy", 1.0, 1, 0, 1, 1, 0, 1, False)
+        assert row[9] is not None and json.loads(row[9]) == config
+    finally:
+        log.close()
+
+    with psycopg.connect(pg_url) as conn:
+        [constraint] = conn.execute(
+            "SELECT condeferrable, condeferred FROM pg_constraint WHERE conname = 'events_run_fk'"
+        ).fetchall()
+    assert constraint == (True, False)
+
+
+def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
+    with psycopg.connect(pg_url) as conn:
+        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+
+    def construct_and_close(_: int) -> list[str]:
+        log = PostgresEventLog(pg_url)
+        try:
+            return log.run_ids()
+        finally:
+            log.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(construct_and_close, range(2))) == [[], []]
+
+    with psycopg.connect(pg_url) as conn:
+        assert conn.execute(
+            "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
+        ).fetchall() == [(1, 1), (2, 1)]
