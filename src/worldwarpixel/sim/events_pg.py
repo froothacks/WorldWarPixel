@@ -51,8 +51,8 @@ class PostgresEventLog(EventStore):
                     """
                     INSERT INTO runs (
                         id, created_at, config, pixels, posts, turns, errors, updates, answers,
-                        deleted
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        deleted, state
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         created_at = LEAST(runs.created_at, EXCLUDED.created_at),
                         config = COALESCE(runs.config, EXCLUDED.config),
@@ -62,7 +62,8 @@ class PostgresEventLog(EventStore):
                         errors = runs.errors + EXCLUDED.errors,
                         updates = runs.updates + EXCLUDED.updates,
                         answers = runs.answers + EXCLUDED.answers,
-                        deleted = runs.deleted OR EXCLUDED.deleted
+                        deleted = runs.deleted OR EXCLUDED.deleted,
+                        state = COALESCE(EXCLUDED.state, runs.state)
                     """,
                     (
                         run_id,
@@ -75,6 +76,7 @@ class PostgresEventLog(EventStore):
                         delta.updates,
                         delta.answers,
                         delta.deleted,
+                        delta.state,
                     ),
                 )
             row = self._conn.execute(
@@ -175,6 +177,12 @@ class PostgresEventLog(EventStore):
             for r in rows
         ]
 
+    def interrupted_runs(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT id FROM runs WHERE state = 'interrupted' AND NOT deleted ORDER BY id"
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
     def reader(self) -> PostgresEventLog:
         """A log on a new connection for use from another thread; ``close`` it when done."""
         return PostgresEventLog(self.database_url, initialize_schema=False)
@@ -238,6 +246,9 @@ class BufferedPostgresEventLog(EventStore):
 
     def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
         return self._reader.run_totals()
+
+    def interrupted_runs(self) -> list[str]:
+        return self._reader.interrupted_runs()
 
     def reader(self) -> PostgresEventLog:
         """An unbuffered log on a new connection, for readers in other threads."""

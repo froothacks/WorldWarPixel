@@ -248,6 +248,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             auto_video=settings.timelapse_auto,
         )
+        if settings.resume_runs:
+            app.state.runs.start_resuming()
         try:
             yield
         finally:

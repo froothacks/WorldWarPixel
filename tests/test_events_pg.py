@@ -208,7 +208,7 @@ def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
     with psycopg.connect(pg_url) as conn:
         assert conn.execute(
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
-        ).fetchall() == [(1, 1), (2, 1)]
+        ).fetchall() == [(1, 1), (2, 1), (3, 1)]
 
 
 def test_buffered_writes_flush_in_order(pg_url: str) -> None:
@@ -239,3 +239,20 @@ def test_buffered_batch_still_flushes_in_order(pg_url: str) -> None:
         assert [e.payload["body"] for e in events] == ["0", "1", "2", "3"]
     finally:
         check.close()
+
+
+def test_postgres_tracks_interrupted_runs() -> None:
+    assert PG_URL is not None
+    log = PostgresEventLog(PG_URL)
+    try:
+        run_id = f"int-{os.getpid()}-{id(log)}"
+        log.append(run_id, 1.0, "run.state", None, {"state": "running"})
+        log.append(run_id, 2.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+        log.append(run_id, 3.0, "run.state", None, {"state": "interrupted", "was": "running"})
+        assert run_id in log.interrupted_runs()
+        log.append(run_id, 4.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+        assert run_id in log.interrupted_runs()
+        log.append(run_id, 5.0, "run.state", None, {"state": "running"})
+        assert run_id not in log.interrupted_runs()
+    finally:
+        log.close()

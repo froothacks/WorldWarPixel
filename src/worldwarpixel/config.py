@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     event_log_batch_size: int = 2000
     """Max events the Postgres writer inserts per transaction."""
     max_active_runs: int = 4
+    resume_runs: bool = True
+    """Continue runs the previous server process interrupted on shutdown (e.g. a redeploy)."""
 
     @property
     def is_modal_endpoint(self) -> bool:

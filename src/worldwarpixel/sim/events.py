@@ -40,6 +40,7 @@ class RunDelta:
     answers: int = 0
     deleted: bool = False
     config: str | None = None
+    state: str | None = None
 
     @property
     def has_changes(self) -> bool:
@@ -47,6 +48,7 @@ class RunDelta:
             any((self.pixels, self.posts, self.turns, self.errors, self.updates, self.answers))
             or self.deleted
             or self.config is not None
+            or self.state is not None
         )
 
 
@@ -65,6 +67,8 @@ def run_deltas(kind: str, payload: Mapping[str, object]) -> RunDelta:
         return RunDelta(updates=1)
     if kind == "run.deleted":
         return RunDelta(deleted=True)
+    if kind == "run.state" and "state" in payload:
+        return RunDelta(state=str(payload["state"]))
     if kind == "run.created" and "config" in payload:
         return RunDelta(config=json.dumps(payload["config"], separators=(",", ":")))
     return RunDelta()
@@ -88,6 +92,10 @@ class EventStore(Protocol):
     def run_totals(
         self,
     ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]: ...
+
+    def interrupted_runs(self) -> list[str]:
+        """Runs a server shut down mid-run (and nothing resumed or stopped since)."""
+        ...
 
     def reader(self) -> EventStore: ...
 
@@ -117,8 +125,9 @@ class EventLog:
             self._conn.execute(
                 """
                 INSERT INTO runs (
-                    id, created_at, config, pixels, posts, turns, errors, updates, answers, deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, created_at, config, pixels, posts, turns, errors, updates, answers, deleted,
+                    state
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     created_at = MIN(runs.created_at, excluded.created_at),
                     config = COALESCE(runs.config, excluded.config),
@@ -128,7 +137,8 @@ class EventLog:
                     errors = runs.errors + excluded.errors,
                     updates = runs.updates + excluded.updates,
                     answers = runs.answers + excluded.answers,
-                    deleted = MAX(runs.deleted, excluded.deleted)
+                    deleted = MAX(runs.deleted, excluded.deleted),
+                    state = COALESCE(excluded.state, runs.state)
                 """,
                 (
                     run_id,
@@ -141,6 +151,7 @@ class EventLog:
                     delta.updates,
                     delta.answers,
                     int(delta.deleted),
+                    delta.state,
                 ),
             )
         cur = self._conn.execute(
@@ -213,6 +224,12 @@ class EventLog:
             )
             for row in rows
         ]
+
+    def interrupted_runs(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT id FROM runs WHERE state = 'interrupted' AND NOT deleted ORDER BY id"
+        ).fetchall()
+        return [str(r[0]) for r in rows]
 
     def reader(self) -> EventLog:
         """A log on the same database for use from another thread; ``close`` it when done.
