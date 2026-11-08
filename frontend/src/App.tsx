@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type RunSummary } from "./api";
 import StartScreen from "./StartScreen";
 import LiveView from "./LiveView";
@@ -6,11 +6,6 @@ import Screen from "./Screen";
 
 function runFromUrl(): string | null {
   return new URLSearchParams(location.search).get("run");
-}
-
-function setUrl(runId: string | null) {
-  const url = runId ? `?run=${runId}` : location.pathname;
-  history.replaceState(null, "", url);
 }
 
 export default function App() {
@@ -22,24 +17,66 @@ export default function App() {
 function Main() {
   const [run, setRun] = useState<RunSummary | null>(null);
   const [loading, setLoading] = useState(() => runFromUrl() !== null);
+  const loadGeneration = useRef(0);
 
   useEffect(() => {
-    const id = runFromUrl();
-    if (!id) return;
-    api
-      .getRun(id)
-      .then(setRun)
-      .catch(() => setUrl(null))
-      .finally(() => setLoading(false));
+    const load = (id: string) => {
+      const generation = ++loadGeneration.current;
+      setLoading(true);
+      api
+        .getRun(id)
+        .then((result) => {
+          if (generation === loadGeneration.current) setRun(result);
+        })
+        .catch(() => {
+          if (generation === loadGeneration.current) {
+            history.replaceState(null, "", location.pathname);
+            setRun(null);
+          }
+        })
+        .finally(() => {
+          if (generation === loadGeneration.current) setLoading(false);
+        });
+    };
+
+    const popstate = () => {
+      const id = runFromUrl();
+      if (id) {
+        load(id);
+      } else {
+        loadGeneration.current += 1;
+        setLoading(false);
+        setRun(null);
+      }
+    };
+
+    window.addEventListener("popstate", popstate);
+    const initial = runFromUrl();
+    if (initial) {
+      if (history.state?.run !== initial) {
+        history.replaceState(null, "", location.pathname);
+        history.pushState({ run: initial }, "", `?run=${initial}`);
+      }
+      load(initial);
+    }
+
+    return () => {
+      loadGeneration.current += 1;
+      window.removeEventListener("popstate", popstate);
+    };
   }, []);
 
   const enter = (r: RunSummary) => {
-    setUrl(r.id);
+    history.pushState({ run: r.id }, "", `?run=${r.id}`);
     setRun(r);
   };
   const leave = () => {
-    setUrl(null);
-    setRun(null);
+    if (history.state?.run) {
+      history.back();
+    } else {
+      history.replaceState(null, "", location.pathname);
+      setRun(null);
+    }
   };
 
   if (loading) return <p className="pad muted">Loading run…</p>;
