@@ -5,9 +5,9 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager, nullcontext
-from typing import Any, cast
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
+from typing import Any, TypeVar, cast
 
 import psycopg
 from psycopg import errors as pg_errors
@@ -24,6 +24,11 @@ from worldwarpixel.sim.events import (
 from worldwarpixel.sim.migrations import CANVAS_KINDS_SQL, migrate_postgres
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+RECONNECT_MAX_DELAY = 30.0
+"""Longest pause between attempts to reach Postgres again after the writer lost its connection."""
 
 _Row = tuple[str, float, str, int | None, Mapping[str, object]]
 """One queued event: run id, timestamp, kind, agent id and JSON-able payload."""
@@ -378,9 +383,11 @@ class BufferedPostgresEventLog(EventStore):
         self.flush_interval = flush_interval
         self.batch_size = batch_size
         self._reader = PostgresEventLog(database_url, initialize_schema=initialize_schema)
+        self._reader_lock = threading.Lock()
         self._queue: queue.Queue[Any] = queue.Queue()
         self._stop = object()
         self._closed = False
+        self._closing = threading.Event()
         self._thread = threading.Thread(target=self._writer, name="event-log-writer", daemon=True)
         self._thread.start()
 
@@ -397,28 +404,30 @@ class BufferedPostgresEventLog(EventStore):
     def read(
         self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
     ) -> list[Event]:
-        return self._reader.read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
+        return self._read(
+            lambda r: r.read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
+        )
 
     def count(self, run_id: str) -> int:
-        return self._reader.count(run_id)
+        return self._read(lambda r: r.count(run_id))
 
     def run_meta(self, run_id: str) -> RunMeta | None:
-        return self._reader.run_meta(run_id)
+        return self._read(lambda r: r.run_meta(run_id))
 
     def posts(self, run_id: str, thread_id: int | None = None) -> list[tuple[Post, int | None]]:
-        return self._reader.posts(run_id, thread_id)
+        return self._read(lambda r: r.posts(run_id, thread_id))
 
     def thread_votes(self, run_id: str) -> dict[int, int]:
-        return self._reader.thread_votes(run_id)
+        return self._read(lambda r: r.thread_votes(run_id))
 
     def run_ids(self) -> list[str]:
-        return self._reader.run_ids()
+        return self._read(lambda r: r.run_ids())
 
     def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
-        return self._reader.run_totals()
+        return self._read(lambda r: r.run_totals())
 
     def interrupted_runs(self) -> list[str]:
-        return self._reader.interrupted_runs()
+        return self._read(lambda r: r.interrupted_runs())
 
     def reader(self) -> PostgresEventLog:
         """An unbuffered log on a new connection, for readers in other threads."""
@@ -428,17 +437,36 @@ class BufferedPostgresEventLog(EventStore):
         if self._closed:
             return
         self._closed = True
+        self._closing.set()
         self._queue.put(self._stop)
         self._thread.join(timeout=10)
         self._reader.close()
 
-    def _writer(self) -> None:
-        log = PostgresEventLog(
+    def _read(self, query: Callable[[PostgresEventLog], T]) -> T:
+        reader = self._reader
+        try:
+            return query(reader)
+        except psycopg.OperationalError:
+            if not _connection_lost(reader):
+                raise
+            logger.warning("event log reader lost its connection; reconnecting", exc_info=True)
+            with self._reader_lock:
+                if self._reader is reader:
+                    with suppress(Exception):
+                        reader.close()
+                    self._reader = PostgresEventLog(self.database_url, initialize_schema=False)
+            return query(self._reader)
+
+    def _connect_writer(self) -> PostgresEventLog:
+        return PostgresEventLog(
             self.database_url,
             initialize_schema=False,
             lock_timeout_ms=30_000,
             statement_timeout_ms=300_000,
         )
+
+    def _writer(self) -> None:
+        log: PostgresEventLog | None = None
         try:
             while True:
                 batch: list[_Row] = []
@@ -459,26 +487,65 @@ class BufferedPostgresEventLog(EventStore):
                     if len(batch) >= self.batch_size:
                         break
                 if batch:
-                    self._flush(log, batch)
+                    log = self._flush(log, batch)
                 if stop:
                     break
         finally:
-            log.close()
+            if log is not None:
+                log.close()
 
-    @staticmethod
-    def _flush(log: PostgresEventLog, batch: list[_Row]) -> None:
-        for attempt in range(5):
+    def _flush(self, log: PostgresEventLog | None, batch: list[_Row]) -> PostgresEventLog | None:
+        """Insert ``batch`` in one transaction and return the writer's (possibly new) connection.
+
+        Lock/statement timeouts are retried a few times. A lost connection (e.g. a Cloud SQL
+        restart) is reopened and the batch retried until it lands, holding later events in the
+        queue meanwhile, so a database blip doesn't silently drop the rest of every live run.
+        """
+        timeouts = 0
+        lost = 0
+        while True:
             try:
+                if log is None:
+                    log = self._connect_writer()
                 log.append_many(batch)
-                return
+                if lost:
+                    logger.warning("event log writer reconnected after %d attempts", lost)
+                return log
             except (pg_errors.LockNotAvailable, pg_errors.QueryCanceled):
-                if attempt == 4:
+                timeouts += 1
+                if timeouts == 5:
                     logger.exception(
                         "event log flush failed after retries; dropped %d events", len(batch)
                     )
-                    return
+                    return log
                 logger.warning("event log flush hit a lock/statement timeout; retrying")
-                time.sleep(min(2**attempt, 8))
+                time.sleep(min(2 ** (timeouts - 1), 8))
             except Exception:
-                logger.exception("event log flush failed; dropped %d events", len(batch))
-                return
+                if log is not None and not _connection_lost(log):
+                    logger.exception("event log flush failed; dropped %d events", len(batch))
+                    return log
+                lost += 1
+                if self._closed and lost > 3:
+                    logger.exception(
+                        "event log unreachable while closing; dropped %d events", len(batch)
+                    )
+                    return log
+                logger.warning(
+                    "event log writer lost its connection (attempt %d); %d events waiting",
+                    lost,
+                    len(batch) + self._queue.qsize(),
+                    exc_info=lost == 1,
+                )
+                if log is not None:
+                    with suppress(Exception):
+                        log.close()
+                    log = None
+                # Wait on the closing event so shutdown cuts a long backoff short.
+                self._closing.wait(min(2.0 ** (lost - 1), RECONNECT_MAX_DELAY))
+                if self._closed:
+                    time.sleep(0.5)
+
+
+def _connection_lost(log: PostgresEventLog) -> bool:
+    conn = log._conn
+    return bool(conn.closed or conn.broken)

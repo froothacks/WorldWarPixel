@@ -1,6 +1,7 @@
 import json
 import os
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -498,5 +499,32 @@ def test_postgres_tracks_interrupted_runs() -> None:
         assert run_id in log.interrupted_runs()
         log.append(run_id, 5.0, "run.state", None, {"state": "running"})
         assert run_id not in log.interrupted_runs()
+    finally:
+        log.close()
+
+
+def _wait_for(check: Callable[[], bool], timeout: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not check():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.05)
+
+
+def test_buffered_log_reconnects_after_losing_its_connections(pg_url: str) -> None:
+    log = BufferedPostgresEventLog(pg_url, flush_interval=0.05)
+    try:
+        log.append("d", 0.0, "run.state", None, {"state": "running"})
+        _wait_for(lambda: log.count("d") == 1)
+        with psycopg.connect(pg_url, autocommit=True) as admin:
+            admin.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+            )
+        for i in range(1, 5):
+            log.append("d", float(i), "pixel", 1, {"x": i, "y": 0, "color": 1})
+        log.append("d", 5.0, "run.state", None, {"state": "interrupted", "was": "running"})
+        _wait_for(lambda: log.count("d") == 6)
+        assert [e.ts for e in log.read("d")] == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+        assert "d" in log.interrupted_runs()
     finally:
         log.close()
