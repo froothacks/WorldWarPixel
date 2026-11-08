@@ -110,7 +110,7 @@ class PostgresEventLog(EventStore):
     def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
-            " WHERE run_id = %s AND id > %s ORDER BY id LIMIT %s",
+            " WHERE run_id = %s AND id > %s ORDER BY run_id, id LIMIT %s",
             (run_id, after_id, limit),
         ).fetchall()
         return [

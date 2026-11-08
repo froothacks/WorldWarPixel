@@ -161,7 +161,7 @@ class EventLog:
     def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
-            " WHERE run_id = ? AND id > ? ORDER BY id LIMIT ?",
+            " WHERE run_id = ? AND id > ? ORDER BY run_id, id LIMIT ?",
             (run_id, after_id, limit),
         ).fetchall()
         return [Event(r[0], r[1], r[2], r[3], r[4], json.loads(r[5])) for r in rows]
