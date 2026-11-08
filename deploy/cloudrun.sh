@@ -5,7 +5,8 @@
 #
 #   APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh
 #
-# App secrets come from Secret Manager by name, exposed as env vars at version latest.
+# Only the app secrets allowlisted below are read from Secret Manager by name and exposed as env
+# vars at version latest. Adding one requires an APP_SECRETS entry here and a Secret Manager secret.
 # APP_ENV_FILE is optional and only for non-secret settings (KEY=value lines). Keep it outside the
 # repo so `gcloud builds submit` never uploads it with the build context.
 # One-time IAM prerequisites (granted by a project owner; this script does not grant them):
@@ -27,6 +28,17 @@ RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 # set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
 
+# App secrets Cloud Run reads from Secret Manager (secret name = env var name). Anything else in
+# the project stays out. Model endpoint secrets must match models.py (tests/test_deploy_secrets.py).
+APP_SECRETS=(
+  OPENAI_API_KEY
+  MODAL_KEY MODAL_SECRET
+  CHRYZTOPH_MODAL_KEY CHRYZTOPH_MODAL_SECRET
+  MEGANWCHUN_MODAL_KEY MEGANWCHUN_MODAL_SECRET
+  GOD_TOKEN DATABASE_URL DEVICE_TOKENS
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+)
+
 if [ -n "${APP_ENV_FILE:-}" ]; then
   case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
 fi
@@ -37,13 +49,36 @@ if ! secret_names="$(gcloud secrets list --project "$PROJECT" --format='value(na
   echo "Unable to list Secret Manager secrets in $PROJECT; the deployer SA needs roles/secretmanager.viewer on the project." >&2
   exit 1
 fi
+declare -A existing_secrets=()
+while IFS= read -r secret_name; do
+  if [[ -n "$secret_name" ]]; then
+    existing_secrets["$secret_name"]=1
+  fi
+done <<< "$secret_names"
 secret_args=""
 secret_display=""
-while IFS= read -r secret_name; do
-  [ -n "$secret_name" ] || continue
+mounted_secret_names=""
+for secret_name in "${APP_SECRETS[@]}"; do
+  if [[ -z "${existing_secrets[$secret_name]+x}" ]]; then
+    echo "Secret Manager has no $secret_name; skipped"
+    continue
+  fi
+  if ! enabled_version="$(gcloud secrets versions list "$secret_name" \
+    --project "$PROJECT" --filter='state=ENABLED' --limit 1 --format='value(name)')"; then
+    echo "Unable to list Secret Manager secrets in $PROJECT; the deployer SA needs roles/secretmanager.viewer on the project." >&2
+    exit 1
+  fi
+  if [ -z "$enabled_version" ]; then
+    echo "::warning::$secret_name has no enabled version; skipped"
+    continue
+  fi
   secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
   secret_display+="${secret_display:+, }${secret_name}"
-done <<< "$secret_names"
+  if [ -n "$mounted_secret_names" ]; then
+    mounted_secret_names+=$'\n'
+  fi
+  mounted_secret_names+="$secret_name"
+done
 
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
   || gcloud artifacts repositories create "$REPO" --location="$REGION" --repository-format=docker
@@ -94,7 +129,7 @@ else
   echo "Secrets from Secret Manager: (none)"
 fi
 if [ -n "${APP_ENV_FILE:-}" ]; then
-  awk -v secret_names="$secret_names" '
+  awk -v secret_names="$mounted_secret_names" '
     BEGIN {
       count = split(secret_names, names, "\n")
       for (i = 1; i <= count; i++) {
