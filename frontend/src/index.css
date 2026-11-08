@@ -147,7 +147,7 @@ button.text:hover { background: none; color: var(--text); }
 .logo::after { content: ""; position: absolute; inset: 6px; background: conic-gradient(var(--bg) 0 25%, transparent 0 50%, var(--bg) 0 75%, transparent 0); }
 .crumb { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
 .crumb .slash { color: var(--faint); }
-.kpis { display: flex; margin: 0; padding: 16px 20px; border-bottom: 1px solid var(--border); min-width: 0; overflow: hidden; }
+.kpis { display: flex; flex-wrap: wrap; row-gap: 12px; margin: 0; padding: 16px 20px; border-bottom: 1px solid var(--border); min-width: 0; }
 .kpi { display: flex; flex-direction: column; gap: 4px; padding: 0 24px; border-left: 1px solid var(--border); white-space: nowrap; }
 .kpi:first-child { padding-left: 0; border-left: 0; }
 .kpi dt { font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); }
