@@ -32,6 +32,7 @@ CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
 # the project stays out. Model endpoint secrets must match models.py (tests/test_deploy_secrets.py).
 APP_SECRETS=(
   OPENAI_API_KEY
+  TTS_API_KEY
   MODAL_KEY MODAL_SECRET
   CHRYZTOPH_MODAL_KEY CHRYZTOPH_MODAL_SECRET
   MEGANWCHUN_MODAL_KEY MEGANWCHUN_MODAL_SECRET
