@@ -234,7 +234,9 @@ async def list_models() -> list[dict[str, Any]]:
                         "base_url": e.base_url,
                         "secrets": list(e.secrets),
                         "available": e.name in ready,
-                        **usage.get(e.name, {}),
+                        **usage.get(
+                            e.name, {"calls": 0, "errors": 0, "failovers": 0, "cooling": False}
+                        ),
                     }
                     for e in spec.endpoints
                 ],

@@ -79,6 +79,7 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
     glm = next(m for m in models if m["id"] == "glm")
     assert [e["name"] for e in glm["endpoints"]] == ["advait-m", "chryztoph", "meganwchun"]
     assert glm["endpoints"][1]["secrets"] == ["CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"]
+    assert glm["endpoints"][0]["calls"] == 0 and glm["endpoints"][0]["cooling"] is False
 
 
 def test_unknown_model_is_rejected_before_the_run_starts(client: TestClient) -> None:
