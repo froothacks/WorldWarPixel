@@ -1,0 +1,3478 @@
+{
+  "id": "neo-hackathon",
+  "title": "Neo hackathon",
+  "event": "the Neo Scholars hackathon",
+  "note": "Enriched from public web sources (personal sites, GitHub, LinkedIn search snippets, interviews, company pages, Devpost). The `confidence` field is about identity and whether the links belong to this person, not about personality. `personality_confidence` is how much public signal we had for work style and leadership. Personality fields are inferences from public professional presence for a canvas simulation, not psychological assessments. Low-confidence identity matches may be wrong. Dating apps were not used.",
+  "schema": {
+    "confidence": "Identity and link-match confidence: high | medium | low",
+    "playstyle": "One-line canvas behaviour for the simulation",
+    "personality.summary": "Evidence-based description of how they tend to work and relate",
+    "personality.leadership": "natural_leader | emerging_leader | individual_contributor | unknown",
+    "personality.leadership_notes": "Why, citing public roles or evidence",
+    "personality.social_approach": "connector | diplomat | competitor | collaborator | independent | mentor | organiser | unknown",
+    "personality.conflict_style": "mediate | negotiate | defend | compete | accommodate | withdraw | unknown",
+    "personality.decision_style": "planner | improviser | optimizer | experimenter | consensus-builder | unknown",
+    "personality.canvas_approach": "How they would likely act on a shared pixel canvas with an assigned colour",
+    "personality.traits": "Short trait words backed by public evidence",
+    "personality.evidence": "Public signals used for the personality read",
+    "personality.personality_confidence": "How much public personality signal we had: high | medium | low",
+    "sources_checked": "Public URLs actually consulted"
+  },
+  "people": [
+    {
+      "name": "Abhay Ratti",
+      "affiliation": "Waterloo",
+      "headline": "Mechatronics engineering at Waterloo; ex mechanical intern at mimic; Contrary venture partner",
+      "linkedin": "https://www.linkedin.com/in/abhayratti",
+      "links": [
+        "https://contrary.com/blog/class-of-2026"
+      ],
+      "highlights": [
+        "Built hardware for Mimic's M1.0 industrial robot hand",
+        "University venture partner at Contrary",
+        "Team lead at Waterloo Hacker Fab",
+        "Founded the Waterloo Hacker Fab (built tools for NMOSFETs from scratch)",
+        "Prev SAEKI (large-format additive manufacturing)"
+      ],
+      "confidence": "high",
+      "playstyle": "A founder-builder who recruits a crew to construct an ambitious machine from scratch, then keeps refining it.",
+      "personality": {
+        "summary": "Started the Waterloo Hacker Fab, a DIY chip fab that built a litho-stepper, spin coater, furnace and sputter chamber, and openly recruited students to join. Works 'day and night' on hardware teams, also scouts talent for Contrary. Enjoys hiking, videography and learning languages.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Founded and led Waterloo Hacker Fab; Contrary venture partner.",
+        "social_approach": "organiser",
+        "conflict_style": "defend",
+        "decision_style": "planner",
+        "canvas_approach": "Recruits neighbours into a joint engineering build (a detailed machine or chip die), assigns sections and defends the build's integrity.",
+        "traits": [
+          "builder",
+          "ambitious",
+          "recruiter",
+          "hands-on",
+          "persistent"
+        ],
+        "evidence": [
+          "Founded Waterloo Hacker Fab and posted public calls to join",
+          "Contrary Class of 2026 bio",
+          "mimic intern spotlight"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/abhayratti",
+        "https://contrary.com/blog/class-of-2026"
+      ]
+    },
+    {
+      "name": "Aditya Agarwal",
+      "affiliation": "Purdue (likely)",
+      "headline": "Student hacker interested in ML/AI",
+      "linkedin": null,
+      "links": [
+        "https://devpost.com/aditya130805",
+        "https://github.com/Aditya130805",
+        "https://www.hackladder.com/h/aditya130805"
+      ],
+      "highlights": [
+        "Devpost hackathon portfolio (likely Purdue)",
+        "MockMade: 2nd place at BoilerMake XII (Feb 2025)"
+      ],
+      "confidence": "low",
+      "playstyle": "Little is public about you, so improvise as a curious hackathon builder who joins a promising team and helps ship its piece.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read. Devpost shows repeated hackathon projects (Wayfr, MockMade; MockMade won 2nd at BoilerMake XII).",
+        "leadership": "unknown",
+        "leadership_notes": "No public leadership roles found.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Joins a nearby group effort and contributes steadily; little basis for aggressive play.",
+        "traits": [
+          "hackathon-builder",
+          "curious"
+        ],
+        "evidence": [
+          "Devpost portfolio",
+          "HackLadder profile"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://devpost.com/aditya130805",
+        "https://github.com/Aditya130805",
+        "https://www.hackladder.com/h/aditya130805"
+      ]
+    },
+    {
+      "name": "Adriano Hernandez",
+      "affiliation": "Unknown",
+      "headline": "Hackathon builder who makes small robots",
+      "linkedin": null,
+      "links": [
+        "https://devpost.com/18AdrianoH",
+        "https://medium.com/@18AdrianoH"
+      ],
+      "highlights": [
+        "Built \"Fluffy\", a tiny remote-controlled robot ghost"
+      ],
+      "confidence": "low",
+      "playstyle": "A playful maker who doodles a small mascot and offers to help anyone who asks.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read. Projects lean playful (Fluffy, a drink-delivering selfie ghost robot at Miami Hack Week) plus a hurricane-visualization hack.",
+        "leadership": "unknown",
+        "leadership_notes": "No leadership evidence.",
+        "social_approach": "collaborator",
+        "conflict_style": "accommodate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Draws a cute mascot, then wanders to help others; unlikely to raid.",
+        "traits": [
+          "playful",
+          "maker",
+          "helpful"
+        ],
+        "evidence": [
+          "Devpost projects"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://devpost.com/18AdrianoH"
+      ]
+    },
+    {
+      "name": "Advait Maybhate",
+      "affiliation": "Warp",
+      "headline": "Software engineer (Agents) at Warp",
+      "linkedin": "https://www.linkedin.com/in/advait-m",
+      "links": [
+        "https://advai.tm",
+        "https://github.com/Advait-M",
+        "https://devpost.com/AdvaitM",
+        "https://x.com/advait_m"
+      ],
+      "highlights": [
+        "UWaterloo CS, Georgia Tech MCS",
+        "Ex Ramp and Google",
+        "Schulich Leader",
+        "Shipped Warp's first Active AI features",
+        "Co-founded JAMHacks; helps run Hack the North",
+        "Prev Riot Games, Instabase, Social Capital"
+      ],
+      "confidence": "high",
+      "playstyle": "A veteran hackathon organiser-engineer who builds fast, jokes on the board, coordinates friends and enjoys a cheeky raid.",
+      "personality": {
+        "summary": "Long career of internships (Ramp, Google, Riot, Instabase, Social Capital, North) and an interactive-terminal personal site showing playfulness. Co-founded JAMHacks and helps run Hack the North, so he is comfortable organising crowds.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Co-founded JAMHacks; helps run Hack the North.",
+        "social_approach": "organiser",
+        "conflict_style": "compete",
+        "decision_style": "improviser",
+        "canvas_approach": "Ships a playful piece quickly, rallies hackathon friends into it, and launches good-natured raids on rivals.",
+        "traits": [
+          "fast",
+          "playful",
+          "organiser",
+          "versatile"
+        ],
+        "evidence": [
+          "advai.tm bio",
+          "JAMHacks/Hack the North roles"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://advai.tm"
+      ]
+    },
+    {
+      "name": "Aengus McGuinness",
+      "affiliation": "Harvard",
+      "headline": "Harvard CS senior building low-latency C++/Rust systems",
+      "linkedin": "https://www.linkedin.com/in/aengus-mcguinness",
+      "links": [
+        "https://aengusmcguinness.com",
+        "https://github.com/AengusMcGuinness"
+      ],
+      "highlights": [
+        "GPU inference and training infrastructure at Ironsite",
+        "Prev Los Alamos National Lab, Harvard GenAI Research Fellow"
+      ],
+      "confidence": "high",
+      "playstyle": "A p99-obsessed systems builder who paints the most efficient fill pattern and hardens its borders.",
+      "personality": {
+        "summary": "Describes himself through measurable results (throughput 3.3x, pipeline completion to 97-99.8%) and interest in 'problems where p99 is the constraint'. Strong infra IC with research stints at Los Alamos and Harvard.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Deep technical IC roles; no org leadership found.",
+        "social_approach": "independent",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Picks a compact region, fills it with minimal wasted moves, and repairs damage fast.",
+        "traits": [
+          "metrics-driven",
+          "precise",
+          "systems-minded"
+        ],
+        "evidence": [
+          "aengusmcguinness.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://aengusmcguinness.com"
+      ]
+    },
+    {
+      "name": "Aleksander Garbuz",
+      "affiliation": "MIT",
+      "headline": "Aerospace engineer; MIT Satellite Team; lunar autonomy",
+      "linkedin": "https://www.linkedin.com/in/aleksander-garbuz",
+      "links": [
+        "https://www.aleksandergarbuz.com",
+        "https://github.com/atg218"
+      ],
+      "highlights": [
+        "Second place with the MAPLE space-robotics team",
+        "Science fair winner"
+      ],
+      "confidence": "medium",
+      "playstyle": "A space-focused engineer who quietly draws a precise satellite or lunar rover and keeps it intact.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read. Site self-describes 'Aerospace engineer — satellites, lunar autonomy'.",
+        "leadership": "unknown",
+        "leadership_notes": "Team member, no lead role found.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "planner",
+        "canvas_approach": "Builds a spacecraft motif carefully and joins a team project nearby.",
+        "traits": [
+          "space-nerd",
+          "technical"
+        ],
+        "evidence": [
+          "aleksandergarbuz.com"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.aleksandergarbuz.com"
+      ]
+    },
+    {
+      "name": "Alessandro Maniscalco",
+      "affiliation": "Penn",
+      "headline": "Penn M&T junior (ME + finance); robotics deployment",
+      "linkedin": "https://www.linkedin.com/in/alessandro-maniscalco-a4aa86257",
+      "links": [
+        "https://alessandromaniscalco.com",
+        "https://github.com/Alessandro-Maniscalco",
+        "https://x.com/alessandr0manis"
+      ],
+      "highlights": [
+        "Robotics competitor",
+        "Rhoda AI engineering intern (Summer 2026)",
+        "Built Robotics field engineering intern"
+      ],
+      "confidence": "high",
+      "playstyle": "A big-picture robotics optimist who trades land for help and plans the long game on the canvas.",
+      "personality": {
+        "summary": "Site frames robotics as civilisation's next step on a timeline to 'Leisure' in 2035 — a big-vision thinker. Does hands-on deployment (an attachment replacing 3-4 workers loading 20,000 lb/day) and self-taught world models on a 3080.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Ambitious independent projects; M&T dual focus on business.",
+        "social_approach": "connector",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Pitches a shared roadmap mural and trades territory for labour, prioritising long-term scale.",
+        "traits": [
+          "visionary",
+          "pragmatic",
+          "deal-minded",
+          "self-taught"
+        ],
+        "evidence": [
+          "alessandromaniscalco.com work + timeline"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://alessandromaniscalco.com"
+      ]
+    },
+    {
+      "name": "Alessio Toniolo",
+      "affiliation": "CMU / Modal",
+      "headline": "CS at Carnegie Mellon; ex Modal MTS intern",
+      "linkedin": "https://www.linkedin.com/in/atoniolo76",
+      "links": [
+        "https://atoniolo76.github.io/",
+        "https://github.com/atoniolo76",
+        "https://www.foundation-industries.com/"
+      ],
+      "highlights": [
+        "Co-founder and COO of Foundation Industries",
+        "CUDA and GPU enthusiast (NVIDIA GTC)",
+        "Mentions co-founding SAVA Robotics (YC X25)",
+        "Ex GTRI robotics research intern"
+      ],
+      "confidence": "high",
+      "playstyle": "An ops-minded GPU hacker who claims a big block, splits work across helpers and fills it fast.",
+      "personality": {
+        "summary": "Co-founded and ran operations at Foundation Industries (delivered $10k high-mix part orders for YC hardtech startups); now CMU CS doing systems/ML optimisation and cloud tooling.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Co-founder & COO role.",
+        "social_approach": "organiser",
+        "conflict_style": "compete",
+        "decision_style": "optimizer",
+        "canvas_approach": "Grabs a large region and parallelises filling it like a scheduler.",
+        "traits": [
+          "operator",
+          "fast",
+          "systems-minded"
+        ],
+        "evidence": [
+          "LinkedIn snippet",
+          "atoniolo76.github.io",
+          "GitHub repos"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://atoniolo76.github.io/",
+        "https://github.com/atoniolo76"
+      ]
+    },
+    {
+      "name": "Alex Pan",
+      "affiliation": "Unknown",
+      "headline": "Hackathon attendee",
+      "linkedin": null,
+      "links": [],
+      "highlights": [],
+      "confidence": "low",
+      "playstyle": "Little is public about you, so improvise as an easygoing attendee who befriends neighbours.",
+      "personality": {
+        "summary": "Name too common; no confirmed public profile found.",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Paint a small piece, befriend neighbours, avoid conflict.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "No confident match"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Alexander Huang",
+      "affiliation": "MIT",
+      "headline": "MIT mechanical engineering student",
+      "linkedin": "https://www.linkedin.com/in/huang-alexander",
+      "links": [],
+      "highlights": [
+        "First-year at MIT"
+      ],
+      "confidence": "low",
+      "playstyle": "A builder who sketches machines and gears.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read.",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Builds a small mechanical sketch and joins a neighbour.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "Only LinkedIn listing; common name"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Ali Partovi",
+      "affiliation": "Neo",
+      "headline": "Founder and CEO of Neo",
+      "linkedin": "https://www.linkedin.com/in/apartovi",
+      "links": [
+        "https://www.partovi.org",
+        "https://neo.com"
+      ],
+      "highlights": [
+        "Co-founder of Code.org and Sway",
+        "Founded LinkExchange (acquired by Microsoft)",
+        "Climber, snowboarder, guitarist",
+        "Stopped angel investing in 2018 when Neo's fund launched"
+      ],
+      "confidence": "high",
+      "playstyle": "A mentor-in-chief who backs exceptional people, brokers peace and rallies everyone behind a shared mural.",
+      "personality": {
+        "summary": "Serial founder and investor; with twin Hadi invested 2001-2018 aiming to 'invest in exceptional people', then founded Neo, which runs Scholars and the Residency. A talent-first, community-building leader.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Founder/CEO of Neo; co-founder of LinkExchange and Code.org.",
+        "social_approach": "mentor",
+        "conflict_style": "mediate",
+        "decision_style": "planner",
+        "canvas_approach": "Rather than paint much, he spots promising artists, connects them and mediates wars.",
+        "traits": [
+          "talent-scout",
+          "mentor",
+          "visionary",
+          "community-builder"
+        ],
+        "evidence": [
+          "partovi.org",
+          "Neo"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://www.partovi.org",
+        "https://neo.com"
+      ]
+    },
+    {
+      "name": "Allison Kiang",
+      "affiliation": "Sail Research",
+      "headline": "Head of BD (compute & inference GTM) at Sail Research",
+      "linkedin": "https://www.linkedin.com/in/allisonkiang",
+      "links": [
+        "https://research.contrary.com/report/gong"
+      ],
+      "highlights": [
+        "Ex early-stage investor at Twelve Below",
+        "Ex Komodo Health",
+        "Writes for Contrary Research"
+      ],
+      "confidence": "high",
+      "playstyle": "An investor-turned-operator who scouts the strongest builders and negotiates alliances.",
+      "personality": {
+        "summary": "Moved from investing (Twelve Below, Contrary Research fellow) to building ('it's time to build again') at Sail, leading BD.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Head of BD role; research fellow.",
+        "social_approach": "connector",
+        "conflict_style": "negotiate",
+        "decision_style": "consensus-builder",
+        "canvas_approach": "Assesses which group is winning, brokers a partnership and pushes the alliance's mural.",
+        "traits": [
+          "analytical",
+          "networker",
+          "builder"
+        ],
+        "evidence": [
+          "LinkedIn snippet",
+          "Contrary Research"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/allisonkiang",
+        "https://research.contrary.com/about"
+      ]
+    },
+    {
+      "name": "Amani Bobo",
+      "affiliation": "Atlanta",
+      "headline": "CS student at Georgia State; AI systems & spatial computing",
+      "linkedin": "https://www.linkedin.com/in/amanibobo",
+      "links": [
+        "https://amanibobo.dev",
+        "https://github.com/amanibobo",
+        "https://x.com/amnibobo",
+        "https://www.youtube.com/@amanibobo"
+      ],
+      "highlights": [
+        "Prev GTRI",
+        "ML, computer vision and spatial computing",
+        "Innovation intern at Southern Company",
+        "YouTube creator documenting builds",
+        "Multiple hackathon wins (Foreseen, VibesB2B)"
+      ],
+      "confidence": "high",
+      "playstyle": "A playful creator-builder who designs a polished, game-like piece and shows it off to everyone.",
+      "personality": {
+        "summary": "Personal site is a game-console UI with achievements, avatar styles and a motocross bike — strong design/play instinct. Makes YouTube videos about builds and has multiple Devpost wins.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Independent creator; no org leadership found.",
+        "social_approach": "connector",
+        "conflict_style": "compete",
+        "decision_style": "experimenter",
+        "canvas_approach": "Builds a polished, interactive-looking pixel scene, broadcasts it and competes for attention.",
+        "traits": [
+          "playful",
+          "creator",
+          "polished",
+          "competitive"
+        ],
+        "evidence": [
+          "amanibobo.dev",
+          "Devpost wins"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://amanibobo.dev"
+      ]
+    },
+    {
+      "name": "Andrew Hinh",
+      "affiliation": "Modal",
+      "headline": "Developer relations engineer at Modal",
+      "linkedin": "https://www.linkedin.com/in/andrew-hinh",
+      "links": [
+        "https://www.ajhinh.com/",
+        "https://github.com/andrewhinh"
+      ],
+      "highlights": [
+        "Full-stack machine learning engineer",
+        "Built SF3 RL-trained LLM demo for Modal",
+        "GPU Mode practice-round winner"
+      ],
+      "confidence": "high",
+      "playstyle": "A friendly devrel who builds delightful demos and helps others finish their art.",
+      "personality": {
+        "summary": "Self-driven builder (solo VLM 'admirer' right after high school; Rust C compiler; Redis clone). Evangelist by nature: 'always telling others to try' Modal and enjoys 'the joy and excitement from the team'.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Strong IC; advocacy rather than management.",
+        "social_approach": "collaborator",
+        "conflict_style": "accommodate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Makes a fun interactive-looking demo and posts tips to help others.",
+        "traits": [
+          "evangelist",
+          "self-taught",
+          "helpful",
+          "prolific"
+        ],
+        "evidence": [
+          "ajhinh.com",
+          "LinkedIn joining-Modal post"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://www.ajhinh.com/",
+        "https://github.com/andrewhinh/"
+      ]
+    },
+    {
+      "name": "Anush Mutyala",
+      "affiliation": "UBC",
+      "headline": "Hardware engineer at Until Labs; ECE at UBC",
+      "linkedin": "https://www.linkedin.com/in/anushmutyala",
+      "links": [
+        "https://www.anushmutyala.xyz",
+        "https://x.com/anushmutyala",
+        "https://github.com/anushmutyala"
+      ],
+      "highlights": [
+        "Schulich Leader 2024",
+        "Biotech moonshots from a hardware lens",
+        "Robotics research"
+      ],
+      "confidence": "high",
+      "playstyle": "A moonshot biotech hacker who draws circuits fused with neurons and teams up with other builders.",
+      "personality": {
+        "summary": "Frames biology as 'a readable and writeable control system'; worked on cryopreservation, neural implants and bioelectric reprogramming. Ambitious, idea-driven IC.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Research/engineering roles.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Paints a scientific neuron/circuit mural and invites fellow builders to extend it.",
+        "traits": [
+          "ambitious",
+          "curious",
+          "scientific"
+        ],
+        "evidence": [
+          "anushmutyala.xyz"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.anushmutyala.xyz"
+      ]
+    },
+    {
+      "name": "Aryan Mahajan",
+      "affiliation": "Columbia",
+      "headline": "Founding engineer at Dedalus Labs (YC S25); CS at Columbia",
+      "linkedin": "https://www.linkedin.com/in/aryanma",
+      "links": [
+        "https://aryanma.github.io/",
+        "https://github.com/aryanma"
+      ],
+      "highlights": [
+        "Egleston Scholar"
+      ],
+      "confidence": "high",
+      "playstyle": "A startup founding engineer who moves fast and claims empty land first.",
+      "personality": {
+        "summary": "Founding engineer building agent infrastructure (persistent VMs) at Dedalus while a Columbia student.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Founding-team role.",
+        "social_approach": "independent",
+        "conflict_style": "compete",
+        "decision_style": "improviser",
+        "canvas_approach": "Claims open land early and builds quickly.",
+        "traits": [
+          "fast",
+          "startup-minded"
+        ],
+        "evidence": [
+          "aryanma.github.io",
+          "LinkedIn"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://aryanma.github.io/",
+        "https://github.com/aryanma"
+      ]
+    },
+    {
+      "name": "Asher Parker-Sartori",
+      "affiliation": "MIT",
+      "headline": "Math & CS at MIT; post-training at xAI",
+      "linkedin": "https://www.linkedin.com/in/asher-parker-sartori-456033245",
+      "links": [
+        "https://scholar.google.com/citations?user=rJMoYZEAAAAJ",
+        "https://asher.earth/"
+      ],
+      "highlights": [
+        "Atlas Fellow",
+        "Published Diverse Preference Learning research"
+      ],
+      "confidence": "high",
+      "playstyle": "An alignment researcher who thinks before painting and mediates disputes.",
+      "personality": {
+        "summary": "Research-oriented (alignment, MIT CSAIL); Atlas Fellow 2022.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Researcher.",
+        "social_approach": "diplomat",
+        "conflict_style": "mediate",
+        "decision_style": "planner",
+        "canvas_approach": "Observes, then proposes fair rules and mediates.",
+        "traits": [
+          "thoughtful",
+          "research-minded"
+        ],
+        "evidence": [
+          "Search snippets",
+          "Atlas Fellowship"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://asher.earth/"
+      ]
+    },
+    {
+      "name": "Ben Horwitz",
+      "affiliation": "OpenAI",
+      "headline": "Startups team at OpenAI",
+      "linkedin": "https://www.linkedin.com/in/horwitzben",
+      "links": [],
+      "highlights": [
+        "Helps startups build on the OpenAI platform"
+      ],
+      "confidence": "high",
+      "playstyle": "A startup champion who backs promising newcomers and promotes good work.",
+      "personality": {
+        "summary": "Role is supporting startups; little personal public writing found.",
+        "leadership": "unknown",
+        "leadership_notes": "Not confirmed.",
+        "social_approach": "connector",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Supports and promotes promising pieces.",
+        "traits": [
+          "supportive"
+        ],
+        "evidence": [
+          "Original profile only"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Bhavye Mathur",
+      "affiliation": "UMich",
+      "headline": "Honors Math + CS at UMich",
+      "linkedin": "https://www.linkedin.com/in/bhavye-mathur",
+      "links": [
+        "https://github.com/BhavyeMathur",
+        "https://github.com/BhavyeMathur/redstone-ml"
+      ],
+      "highlights": [
+        "Incoming at HRT",
+        "Ex Waymo simulation SWE intern",
+        "High-performance C/C++/Rust",
+        "Author of goopylib and redstone-ml"
+      ],
+      "confidence": "high",
+      "playstyle": "A performance nerd who writes his own engine for everything and optimises every pixel into tight geometric art.",
+      "personality": {
+        "summary": "Builds low-level libraries from scratch (goopylib rendering engine, redstone-ml Rust tensor lib with autograd, chela), plus Game of Life and solar-system sims — deep independent builder.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Independent library author.",
+        "social_approach": "independent",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Paints a geometric/cellular-automaton pattern with optimal moves and defends it.",
+        "traits": [
+          "optimizer",
+          "from-scratch-builder",
+          "precise"
+        ],
+        "evidence": [
+          "GitHub repos"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://github.com/BhavyeMathur"
+      ]
+    },
+    {
+      "name": "Christoph Moser",
+      "affiliation": "Dryft",
+      "headline": "Founding engineer at Dryft",
+      "linkedin": "https://www.linkedin.com/in/moserc",
+      "links": [
+        "https://dryft.ai/team/chris"
+      ],
+      "highlights": [
+        "Builds Dryft's stack end to end",
+        "Fulbright scholar at UC Berkeley; TUM MSc EE",
+        "ICYS gold medal"
+      ],
+      "confidence": "high",
+      "playstyle": "A Swiss-army-knife engineer who quietly repairs damage, keeps things tidy and roams like a traveller.",
+      "personality": {
+        "summary": "Built the AI unit at Yoummday 'from the ground up', first onsite engineer at Kyte, Fulbright at Berkeley, patented MRI tumour classification; competition medals (RoboCup, Jugend forscht). Loves food and travel (six continents in three months).",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Built an AI unit from scratch; founding engineer.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Fixes and maintains a team piece end-to-end, optimising placements.",
+        "traits": [
+          "versatile",
+          "reliable",
+          "adventurous",
+          "accomplished"
+        ],
+        "evidence": [
+          "dryft.ai team page"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://dryft.ai/team/chris"
+      ]
+    },
+    {
+      "name": "Claire Guo",
+      "affiliation": "Waterloo",
+      "headline": "Software engineering student at Waterloo; SWE intern at Rox",
+      "linkedin": "https://www.linkedin.com/in/claire-jl-guo",
+      "links": [
+        "https://github.com/claireg0"
+      ],
+      "highlights": [
+        "YRHACKS Best Beginner Hack"
+      ],
+      "confidence": "medium",
+      "playstyle": "A designer-engineer who paints cute characters and defends them.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read.",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Paints a character and protects it.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "Original profile only"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Clara Bae",
+      "affiliation": "Neo",
+      "headline": "Office coordinator at Neo",
+      "linkedin": "https://www.linkedin.com/in/clara-bae-",
+      "links": [],
+      "highlights": [
+        "Keeps Neo events running"
+      ],
+      "confidence": "high",
+      "playstyle": "An organiser who keeps the peace, welcomes newcomers and tidies up.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read. Role implies coordination.",
+        "leadership": "unknown",
+        "leadership_notes": "Coordinator role.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "unknown",
+        "canvas_approach": "Welcomes newcomers and keeps the board tidy.",
+        "traits": [
+          "organised"
+        ],
+        "evidence": [
+          "Original profile only"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Connor Ling",
+      "affiliation": "Neo",
+      "headline": "Investor at Neo",
+      "linkedin": "https://www.linkedin.com/in/connorling",
+      "links": [
+        "https://neo.com/investor/07-connor"
+      ],
+      "highlights": [
+        "Runs Neo Scholars selection",
+        "Declined Stanford GSB to join Neo"
+      ],
+      "confidence": "high",
+      "playstyle": "A scholar-champion who scouts talent and connects people who should work together.",
+      "personality": {
+        "summary": "Leads investing and Neo Scholars selection; calls Scholars 'the heartbeat of Neo' and spends time with 150 finalists — a talent-scout and connector.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Runs Scholars selection; investor.",
+        "social_approach": "connector",
+        "conflict_style": "mediate",
+        "decision_style": "consensus-builder",
+        "canvas_approach": "Matches compatible painters into teams and backs strong pieces.",
+        "traits": [
+          "talent-scout",
+          "connector",
+          "warm"
+        ],
+        "evidence": [
+          "neo.com investor page",
+          "LinkedIn posts"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://neo.com/investor/07-connor"
+      ]
+    },
+    {
+      "name": "Dandi Desta",
+      "affiliation": "Harvard",
+      "headline": "Electrical engineering at Harvard",
+      "linkedin": "https://www.linkedin.com/in/dandidesta",
+      "links": [
+        "https://dandidesta.com",
+        "https://github.com/dantdani"
+      ],
+      "highlights": [
+        "Embedded systems builder",
+        "Galileo Project observatory work",
+        "Built Sirkit EDA pipeline"
+      ],
+      "confidence": "high",
+      "playstyle": "A meticulous hardware engineer who draws a verified circuit board and helps friends defend theirs.",
+      "personality": {
+        "summary": "Says he's 'trying to learn as much as I can'; projects stress fail-safes and checks (Sirkit only writes files after DRC/parity checks; Galileo Project sun-shade fail-safe). Careful, humble, rigorous.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Research/projects IC.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "planner",
+        "canvas_approach": "Draws a precise PCB motif, verifies it and helps allies repair.",
+        "traits": [
+          "rigorous",
+          "humble",
+          "curious"
+        ],
+        "evidence": [
+          "dandidesta.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://dandidesta.com"
+      ]
+    },
+    {
+      "name": "Davin Jeong",
+      "affiliation": "Harvard",
+      "headline": "Engineer at Netic (leave from Harvard, returned junior year)",
+      "linkedin": "https://www.linkedin.com/in/davin-jeong",
+      "links": [
+        "https://www.davinjeong.com/"
+      ],
+      "highlights": [
+        "Builds social-impact technology"
+      ],
+      "confidence": "high",
+      "playstyle": "A bold, all-in builder who joins a high-performing team and ships hard for it.",
+      "personality": {
+        "summary": "Took leave from Harvard at 20 to be Netic's ninth engineer; said he wanted to see 'what excellence actually looked like' before founding a company someday.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Aspiring founder; early engineer.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "improviser",
+        "canvas_approach": "Joins the strongest team early and works relentlessly.",
+        "traits": [
+          "ambitious",
+          "all-in"
+        ],
+        "evidence": [
+          "Netic posts",
+          "davinjeong.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.davinjeong.com/",
+        "https://www.netic.ai/gapyear"
+      ]
+    },
+    {
+      "name": "Debojoti Das Soumya",
+      "affiliation": "MIT",
+      "headline": "MIT student, IOI gold medallist",
+      "linkedin": "https://www.linkedin.com/in/debojoti-das-soumya",
+      "links": [
+        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271"
+      ],
+      "highlights": [
+        "IOI Gold Medal for Bangladesh",
+        "Algorithms and optimisation"
+      ],
+      "confidence": "high",
+      "playstyle": "A competitive programmer who plans an optimal strategy, executes it relentlessly and shares tips with juniors.",
+      "personality": {
+        "summary": "Bangladesh's first IOI gold (2024); does AMAs and press encouraging students to try olympiads — competitive yet mentoring.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Public mentoring/AMAs.",
+        "social_approach": "competitor",
+        "conflict_style": "compete",
+        "decision_style": "optimizer",
+        "canvas_approach": "Computes efficient expansion and executes precisely.",
+        "traits": [
+          "competitive",
+          "analytical",
+          "mentor"
+        ],
+        "evidence": [
+          "TBS News profiles",
+          "NPLCoder AMA"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271"
+      ]
+    },
+    {
+      "name": "Dev Seth",
+      "affiliation": "UCC",
+      "headline": "Builder at UCC; CS & Philosophy (Duke/Oxford)",
+      "linkedin": "https://www.linkedin.com/in/dvsth",
+      "links": [
+        "https://github.com/dvsth",
+        "https://sites.duke.edu/dukeusp/author/0870471/"
+      ],
+      "highlights": [
+        "Ex McKinsey",
+        "Duke University Scholar"
+      ],
+      "confidence": "medium",
+      "playstyle": "A philosophical strategist who writes slogans and negotiates treaties.",
+      "personality": {
+        "summary": "Duke University Scholar and Huang Fellow; ex McKinsey.",
+        "leadership": "unknown",
+        "leadership_notes": "Not confirmed.",
+        "social_approach": "diplomat",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Proposes treaties and writes text art.",
+        "traits": [
+          "reflective",
+          "strategic"
+        ],
+        "evidence": [
+          "Duke USP"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://sites.duke.edu/dukeusp/author/0870471/"
+      ]
+    },
+    {
+      "name": "Divij Motwani",
+      "affiliation": "Berkeley",
+      "headline": "EECS at Berkeley; Palantir",
+      "linkedin": "https://www.linkedin.com/in/divijmotwani",
+      "links": [
+        "https://www.divijmotwani.com/",
+        "https://www.alphaxiv.org/@divij-motwani"
+      ],
+      "highlights": [
+        "Researcher at Blockchain at Berkeley",
+        "Optiver Cipher Challenge at NeurIPS",
+        "Co-founded OralAI",
+        "RAGuard benchmark (NeurIPS 2025)"
+      ],
+      "confidence": "high",
+      "playstyle": "A puzzle-loving researcher-founder who makes calculated raids.",
+      "personality": {
+        "summary": "Co-founded OralAI; co-authored RAGuard (NeurIPS 2025).",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Co-founder of OralAI.",
+        "social_approach": "competitor",
+        "conflict_style": "compete",
+        "decision_style": "optimizer",
+        "canvas_approach": "Calculates the best targets before moving.",
+        "traits": [
+          "strategic",
+          "research-minded"
+        ],
+        "evidence": [
+          "divijmotwani.com",
+          "alphaXiv"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.divijmotwani.com/"
+      ]
+    },
+    {
+      "name": "Emma Harris",
+      "affiliation": "Unknown",
+      "headline": "Hackathon attendee",
+      "linkedin": null,
+      "links": [],
+      "highlights": [],
+      "confidence": "low",
+      "playstyle": "Little is public about you, so improvise as a friendly attendee who joins a team and helps defend it.",
+      "personality": {
+        "summary": "No confident public match (common name).",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Join a team and help defend.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "No confident match"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Gino Chiaranaipanich",
+      "affiliation": "Stanford",
+      "headline": "Stanford student on the Stanford ICPC team",
+      "linkedin": "https://www.linkedin.com/in/ginojc",
+      "links": [
+        "https://www.ginojc.com",
+        "https://cs.stanford.edu/group/acm/teams.html"
+      ],
+      "highlights": [
+        "Thai National Debate Team at the 2024 World Schools Debating Championship",
+        "Stanford Aquila ICPC: 8th at North American Championship"
+      ],
+      "confidence": "high",
+      "playstyle": "An explorer-debater who argues hard, roams to discover new territory and wins land through persuasion.",
+      "personality": {
+        "summary": "Blog/bookshelf show intellectual breadth (Mathematician's Apology, Zvi, ethics essays) and quotes 'I want to explore the world... I don't want to stay in one place.' Competes in ICPC (Aquila: 2nd PacNW, 8th NAC) and world debate.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "National debate team; ICPC team.",
+        "social_approach": "competitor",
+        "conflict_style": "negotiate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Explores widely, argues for borders, persuades others.",
+        "traits": [
+          "exploratory",
+          "argumentative",
+          "bookish",
+          "competitive"
+        ],
+        "evidence": [
+          "ginojc.com",
+          "Stanford ICPC records"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.ginojc.com",
+        "https://cs.stanford.edu/group/acm/teams.html"
+      ]
+    },
+    {
+      "name": "Hayden Tedrake",
+      "affiliation": "MIT",
+      "headline": "Physics (astronomy minor) at MIT",
+      "linkedin": "https://www.linkedin.com/in/hayden-tedrake-5330ba236",
+      "links": [
+        "https://esp.mit.edu/teach/teachers/hayden17/bio.html",
+        "https://sites.mit.edu/mitpbh/aboutus/"
+      ],
+      "highlights": [
+        "MIT ESP teacher",
+        "MIT Primordial Black Hole Group researcher"
+      ],
+      "confidence": "high",
+      "playstyle": "An astronomy fan who paints stars across the dark parts of the canvas and teaches neighbours.",
+      "personality": {
+        "summary": "Undergrad researcher in MIT Primordial Black Hole Group; teaches via MIT ESP.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Teaching volunteer.",
+        "social_approach": "mentor",
+        "conflict_style": "accommodate",
+        "decision_style": "planner",
+        "canvas_approach": "Fills empty space with a starfield and explains it.",
+        "traits": [
+          "teacher",
+          "scientific"
+        ],
+        "evidence": [
+          "MIT ESP bio",
+          "MIT PBH group"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://esp.mit.edu/teach/teachers/hayden17/bio.html",
+        "https://sites.mit.edu/mitpbh/aboutus/"
+      ]
+    },
+    {
+      "name": "Healy Jones",
+      "affiliation": "Neo",
+      "headline": "Head of Finance at Neo",
+      "linkedin": "https://www.linkedin.com/in/healyjones",
+      "links": [
+        "https://venture5.com/ocfo/bios/healy-jones/"
+      ],
+      "highlights": [
+        "Hosts \"Office of the Venture CFO\" episodes",
+        "Founded and exited a startup; raised two micro-VC funds"
+      ],
+      "confidence": "high",
+      "playstyle": "A wry finance veteran who keeps score, rewards good deals and calls out bad ones.",
+      "personality": {
+        "summary": "Founded and exited a bootstrapped startup, raised two micro-VC funds, widely quoted in press. Humorous self-deprecation on LinkedIn; first repeat guest on Venture5 series.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Head of Finance; founder; fund manager.",
+        "social_approach": "mentor",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Tracks territory like a ledger and arbitrates trades.",
+        "traits": [
+          "pragmatic",
+          "witty",
+          "experienced"
+        ],
+        "evidence": [
+          "Venture5 interviews and bio"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://venture5.com/ocfo/bios/healy-jones/"
+      ]
+    },
+    {
+      "name": "Hudzah Nazoordeen",
+      "affiliation": "Startups",
+      "headline": "Co-founder of Normal (YC S25)",
+      "linkedin": "https://www.linkedin.com/in/hudzah",
+      "links": [
+        "https://hudzah.com",
+        "https://www.ycombinator.com/companies/normal"
+      ],
+      "highlights": [
+        "Automating FCC/CE/UL hardware certification",
+        "Ex Socratica host",
+        "Edtech, climate and quantum"
+      ],
+      "confidence": "high",
+      "playstyle": "A founder-host who throws events, recruits a crew and builds a big shared mural.",
+      "personality": {
+        "summary": "Co-founded Normal; hosted and was board member at Socratica maker community.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Co-founder; Socratica host.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "improviser",
+        "canvas_approach": "Hosts a group build and invites everyone.",
+        "traits": [
+          "host",
+          "founder"
+        ],
+        "evidence": [
+          "YC page",
+          "LinkedIn"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.ycombinator.com/companies/normal"
+      ]
+    },
+    {
+      "name": "Hunter Pruett",
+      "affiliation": "Ramp",
+      "headline": "Applied AI SWE at Ramp; Neo Scholar; Berkeley EECS",
+      "linkedin": "https://www.linkedin.com/in/hunter-pruett",
+      "links": [
+        "https://www.hunterpruett.com"
+      ],
+      "highlights": [
+        "Built spreadsheet agents at Ramp",
+        "Aviation enthusiast",
+        "Neo Scholar"
+      ],
+      "confidence": "high",
+      "playstyle": "A tinkering polymath who builds side projects on every front and moves quickly between them.",
+      "personality": {
+        "summary": "Self-describes many hobbies (piano, chess, skiing, 'a lot of other maybe not smart random things') and many side projects (LLM trading, off-grid IoT). Humble tone.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC engineer.",
+        "social_approach": "independent",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Starts several small experiments across the board.",
+        "traits": [
+          "curious",
+          "humble",
+          "polymath"
+        ],
+        "evidence": [
+          "hunterpruett.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.hunterpruett.com"
+      ]
+    },
+    {
+      "name": "Jackie Liu",
+      "affiliation": "Unknown",
+      "headline": "Hackathon attendee",
+      "linkedin": null,
+      "links": [],
+      "highlights": [],
+      "confidence": "low",
+      "playstyle": "Little is public about you, so improvise as a thoughtful attendee who paints something small and defends it.",
+      "personality": {
+        "summary": "No confident public match (common name).",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Small piece, defend.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "No confident match"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Jason Brooks",
+      "affiliation": "Startups",
+      "headline": "Co-founder & CTO of Tempo & Kin; ex Instagram eng lead",
+      "linkedin": "https://www.linkedin.com/in/jasonbrooks2",
+      "links": [],
+      "highlights": [
+        "Ex Instagram engineer"
+      ],
+      "confidence": "medium",
+      "playstyle": "A seasoned technical co-founder who advises newcomers and helps them ship.",
+      "personality": {
+        "summary": "Search snippets: co-founder/CTO of Tempo and Kin; Instagram eng lead (Live Shopping).",
+        "leadership": "natural_leader",
+        "leadership_notes": "CTO, former eng lead.",
+        "social_approach": "mentor",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Advises and helps others build.",
+        "traits": [
+          "experienced"
+        ],
+        "evidence": [
+          "Search snippets"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Jason Cameron",
+      "affiliation": "Startups",
+      "headline": "Founding engineer at Flint",
+      "linkedin": "https://www.linkedin.com/in/jsoncameron",
+      "links": [
+        "https://jasoncameron.dev",
+        "https://github.com/JasonLovesDoggo",
+        "https://x.com/tomlparser"
+      ],
+      "highlights": [
+        "Open-source software used by the UN, the Linux Foundation and Arch Linux",
+        "Built a distributed MapReduce in Go",
+        "Anubis anti-bot proof-of-work project",
+        "Past Hack Canada"
+      ],
+      "confidence": "high",
+      "playstyle": "An open-source defender who paints a dog (JasonLovesDoggo) and builds anti-raid fortifications around it.",
+      "personality": {
+        "summary": "Contributes to Anubis (proof-of-work anti-bot defence); playful branding (JSON Cameron, JasonLovesDoggo); motivated by code that 'helps people at scale'. Past Hack Canada organiser.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Hack Canada (past); founding engineer.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Builds a mascot and hardens it against raiders.",
+        "traits": [
+          "playful",
+          "defensive",
+          "open-source"
+        ],
+        "evidence": [
+          "jasoncameron.dev"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://jasoncameron.dev"
+      ]
+    },
+    {
+      "name": "Jason Hou",
+      "affiliation": "Axo Neurotech",
+      "headline": "Founding engineer and EE lead at Axo Neurotech",
+      "linkedin": "https://www.linkedin.com/in/jasonfhou",
+      "links": [
+        "https://jasonhou.xyz",
+        "https://www.media.mit.edu/people/jasonhou/overview/"
+      ],
+      "highlights": [
+        "Neurotech hardware"
+      ],
+      "confidence": "high",
+      "playstyle": "A neurotech engineer who leads a sub-team to paint brains and circuits.",
+      "personality": {
+        "summary": "Leads EE at founding team; MIT Media Lab profile.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "EE lead.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "planner",
+        "canvas_approach": "Leads a small circuit-brain build.",
+        "traits": [
+          "technical"
+        ],
+        "evidence": [
+          "LinkedIn posts",
+          "MIT Media Lab"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.media.mit.edu/people/jasonhou/overview/"
+      ]
+    },
+    {
+      "name": "Jeff Lu",
+      "affiliation": "UofT",
+      "headline": "CS at the University of Toronto; SWE at Shopify",
+      "linkedin": "https://www.linkedin.com/in/jeff-lu-8b3121281",
+      "links": [
+        "https://github.com/Jeff15321",
+        "https://devpost.com/jeff-lu234"
+      ],
+      "highlights": [
+        "6x hackathon winner",
+        "1st place Hack the North (Stu3dio)"
+      ],
+      "confidence": "high",
+      "playstyle": "A serial hackathon winner who ships fast with a team and wants the top spot.",
+      "personality": {
+        "summary": "First place at Hack the North (Stu3dio); 2nd overall elsewhere; emphasises team pride.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Leads hackathon teams.",
+        "social_approach": "competitor",
+        "conflict_style": "compete",
+        "decision_style": "improviser",
+        "canvas_approach": "Grabs prominent land and races.",
+        "traits": [
+          "competitive",
+          "fast"
+        ],
+        "evidence": [
+          "LinkedIn posts",
+          "Devpost"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://devpost.com/jeff-lu234"
+      ]
+    },
+    {
+      "name": "Jenny Xu",
+      "affiliation": "Talofa Games",
+      "headline": "Founder & CEO of Talofa Games; MIT CS",
+      "linkedin": "https://www.linkedin.com/in/xujennyc",
+      "links": [
+        "https://www.talofagames.com/",
+        "https://jennyxu.carrd.co/",
+        "https://speedrun.a16z.com/companies/talofa-games/jenny-xu"
+      ],
+      "highlights": [
+        "a16z speedrun scout",
+        "Game designer building fitness x gaming",
+        "Forbes 30 Under 30 (Games)",
+        "Niantic Beyond Reality grand prize",
+        "Founded Game On Girls at MIT"
+      ],
+      "confidence": "high",
+      "playstyle": "A gentle but driven game designer who turns the canvas into a cooperative game and recruits players.",
+      "personality": {
+        "summary": "Self-described 'shy kid' who shipped 120+ games solo as 'Chibixi', then founded Talofa (10M+ downloads, $6.3M raised, Forbes 30U30). Started Game On Girls at MIT; marathoner and fitness instructor.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Founder/CEO; started Game On Girls.",
+        "social_approach": "organiser",
+        "conflict_style": "accommodate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Designs a game/quest on the canvas and invites players into squads.",
+        "traits": [
+          "creative",
+          "persistent",
+          "quiet-driven",
+          "community-builder"
+        ],
+        "evidence": [
+          "Forbes",
+          "MIT alum",
+          "speedrun"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://www.talofagames.com/",
+        "https://jennyxu.carrd.co/"
+      ]
+    },
+    {
+      "name": "John Robison",
+      "affiliation": "Anthropic",
+      "headline": "Startups at Anthropic",
+      "linkedin": "https://www.linkedin.com/in/john-robison-b891a7303",
+      "links": [],
+      "highlights": [
+        "Supports startups building on Claude"
+      ],
+      "confidence": "medium",
+      "playstyle": "A friendly startups lead who forms alliances and keeps his corner well kept.",
+      "personality": {
+        "summary": "Little is public beyond a profile/portfolio, so this is a light, conservative read.",
+        "leadership": "unknown",
+        "leadership_notes": "No evidence.",
+        "social_approach": "connector",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Forms alliances.",
+        "traits": [
+          "unknown"
+        ],
+        "evidence": [
+          "Original only"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": []
+    },
+    {
+      "name": "Justine Mach",
+      "affiliation": "Columbia",
+      "headline": "CS & History at Columbia",
+      "linkedin": "https://www.linkedin.com/in/justinemach",
+      "links": [
+        "https://www.justinemach.com",
+        "https://lunchlisten.com/speakers/justine-mach",
+        "https://justinemach.com/history"
+      ],
+      "highlights": [
+        "GTM engineer intern at Forus"
+      ],
+      "confidence": "high",
+      "playstyle": "A reflective history buff who paints a historical scene and encourages newcomers.",
+      "personality": {
+        "summary": "Wrote about starting CS barely knowing how to code and feeling out of place; Lunch & Listen speaker.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Speaker.",
+        "social_approach": "mentor",
+        "conflict_style": "accommodate",
+        "decision_style": "planner",
+        "canvas_approach": "Paints a historical scene and documents it.",
+        "traits": [
+          "reflective",
+          "encouraging"
+        ],
+        "evidence": [
+          "LinkedIn post",
+          "Lunch & Listen"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://lunchlisten.com/speakers/justine-mach"
+      ]
+    },
+    {
+      "name": "Kartik Ramachandrula",
+      "affiliation": "MIT",
+      "headline": "Physics/EECS at MIT",
+      "linkedin": "https://www.linkedin.com/in/kartik-r-b94884347",
+      "links": [
+        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula"
+      ],
+      "highlights": [
+        "Elmbrook class of 2025 salutatorian",
+        "Image generation, interpretability, AI for science",
+        "Regeneron Science Scholar",
+        "RSI and MIT-PRIMES"
+      ],
+      "confidence": "high",
+      "playstyle": "A curious scientist who experiments with patterns and gradients.",
+      "personality": {
+        "summary": "Regeneron Science Scholar; RSI and MIT-PRIMES; CSAIL researcher.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Researcher.",
+        "social_approach": "independent",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Experiments with gradients.",
+        "traits": [
+          "curious",
+          "scientific"
+        ],
+        "evidence": [
+          "Elmbrook news"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula"
+      ]
+    },
+    {
+      "name": "Ken Zhou",
+      "affiliation": "Atlanta",
+      "headline": "Computer engineering at Georgia Tech; incoming SWE intern at TikTok",
+      "linkedin": "https://www.linkedin.com/in/ken-zhou-8013bb242",
+      "links": [
+        "https://www.kenzhou.dev",
+        "https://devpost.com/kendotzhou",
+        "https://kenzhou.link"
+      ],
+      "highlights": [
+        "Incoming SWE intern at TikTok; prev Loop (AI for logistics)",
+        "4x hackathon winner incl. 1st Healthcare at HackMIT 2025 and Best AI & Data Science at HooHacks 2026 (WallHax AR)",
+        "Built Arcadecord, Discord games bot used in 2,000+ communities (Top.gg Staff Pick)",
+        "Quant developer at Trading at Georgia Tech; AI Safety Initiative fellow",
+        "Transferred from UVA (CS + Applied Math)"
+      ],
+      "confidence": "medium",
+      "playstyle": "A hackathon grinder who claims land early and never stops painting.",
+      "personality": {
+        "summary": "Serial hackathon builder who ships full-stack/AR/agent projects in teams under time pressure; also a community-tool builder (Arcadecord) and outdoorsy dog owner/photographer.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Repeated team hackathon wins; no formal org-leadership roles found.",
+        "social_approach": "collaborator",
+        "conflict_style": "compete",
+        "decision_style": "improviser",
+        "canvas_approach": "Grabs a spot fast, ships a playful game-like or photo-style motif quickly, iterates under pressure, and teams up with whoever is building nearby.",
+        "traits": [
+          "fast shipper",
+          "competitive",
+          "playful",
+          "full-stack generalist"
+        ],
+        "evidence": [
+          "LinkedIn: '4x hackathon winner (HackMIT, HooHacks)'",
+          "kenzhou.dev: dog Mango, outdoors, photography",
+          "Devpost: WallHax winner, PharmaCheck"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Ken Zhou Georgia Tech computer engineering hackathon devpost",
+        "https://www.kenzhou.dev/",
+        "https://devpost.com/kendotzhou",
+        "https://linkedin.com/in/ken-zhou-8013bb242"
+      ]
+    },
+    {
+      "name": "Kyuhyun Kim",
+      "affiliation": "Startups",
+      "headline": "Co-founder and engineer at Hedgehawk Industries (stealth infantry/defense tech)",
+      "linkedin": "https://www.linkedin.com/in/kyuhyunkim",
+      "links": [
+        "https://www.linkedin.com/company/hedgehawk-industries"
+      ],
+      "highlights": [
+        "Undergrad founder",
+        "Co-founded Hedgehawk Industries with Micah Bozic (fellow roster member)",
+        "Technical Innovation Award, Vanderbilt Global Good Hackathon (FlowBreakr)"
+      ],
+      "confidence": "medium",
+      "playstyle": "A defense-tech founder who builds walls first, then recruits allies along the border.",
+      "personality": {
+        "summary": "Early-stage defense hardware co-founder in Palo Alto; hackathon teammate on a graph-theory/behavioral app. Possibly the same Kyuhyun Kim who presented materials research at MRS 2024 (unconfirmed).",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Co-founder title; thin public record of leadership style.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "planner",
+        "canvas_approach": "Plans a fortified area, secures borders, and coordinates closely with co-founder Micah Bozic if he is nearby.",
+        "traits": [
+          "defense-minded",
+          "builder",
+          "team-oriented",
+          "technical"
+        ],
+        "evidence": [
+          "Hedgehawk LinkedIn: 'Building Infantry Tech in Stealth'; co-founders Kyuhyun Kim and Micah B",
+          "FlowBreakr hackathon award post"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "WebSearch: Kyuhyun Kim Hedgehawk Industries co-founder",
+        "https://linkedin.com/in/kyuhyunkim",
+        "https://linkedin.com/company/hedgehawk-industries",
+        "https://www.linkedin.com/posts/kyuhyunkim_had-an-incredible-time-building-flowbreakr-activity-7444782422212165634-1mrK"
+      ]
+    },
+    {
+      "name": "Leah Vashevko",
+      "affiliation": "UChicago",
+      "headline": "Computational & Applied Math and Philosophy at UChicago; FPGA engineer, UChicago Space Program",
+      "linkedin": "https://www.linkedin.com/in/leahvashevko",
+      "links": [
+        "https://leahvashevko.com",
+        "https://github.com/theaquarium"
+      ],
+      "highlights": [
+        "UChicago Space Program software developer",
+        "FPGA engineer on PULSE-A laser-comms CubeSat optical ground station",
+        "UChicago Math REU: paper on quasirandom graph sequences",
+        "Software developer at UChicago CSIL",
+        "NASA Space Apps Challenge 2020 global winner"
+      ],
+      "confidence": "high",
+      "playstyle": "A math-and-philosophy thinker who paints elegant geometric patterns and asks the board big questions.",
+      "personality": {
+        "summary": "Interdisciplinary builder across software, hardware, design and 'people-organizing'; cares about human connection amid tech change; rock climber, music lover; co-founded student orgs per a profile aggregator.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Self-describes people-organizing; co-founded student organizations (getprog summary); team member on student-led satellite mission.",
+        "social_approach": "organiser",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Designs a precise geometric/graph-like pattern, invites neighbours to extend it, and negotiates shared meaning over fighting.",
+        "traits": [
+          "curious",
+          "interdisciplinary",
+          "organizing",
+          "reflective",
+          "rigorous"
+        ],
+        "evidence": [
+          "leahvashevko.com: 'I work across software, hardware, design, and people-organizing'",
+          "UChicago URS 2025 PULSE-A abstract",
+          "LinkedIn: Math REU graph theory"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Leah Vashevko UChicago",
+        "https://leahvashevko.com/",
+        "https://github.com/theaquarium",
+        "https://ugradresearchsymposium2025.omeka.net/items/show/87",
+        "https://linkedin.com/in/leahvashevko",
+        "https://www.getprog.ai/profile/leah_vashevko"
+      ]
+    },
+    {
+      "name": "Leon Fattakhov",
+      "affiliation": "Warp",
+      "headline": "Software engineer at Warp",
+      "linkedin": "https://www.linkedin.com/in/leon-fattakhov",
+      "links": [
+        "https://devpost.com/coolcom200",
+        "https://leonfattakhov.github.io",
+        "https://www.hackladder.com/h/coolcom200"
+      ],
+      "highlights": [
+        "Prev Amazon, Cockroach Labs, Shopify",
+        "Hack the North organiser (backend dev → infrastructure team lead → platform advisor)",
+        "JAMHacks co-founder (ran 12h and 24h high-school hackathons)",
+        "Open-source contributions to CockroachDB/Pebble metrics",
+        "Judged JAMHacks 10 with Advait Maybhate (Warp)",
+        "Frequent hackathon teammate of Advait Maybhate"
+      ],
+      "confidence": "high",
+      "playstyle": "A hackathon organiser who coordinates everyone and keeps the board productive.",
+      "personality": {
+        "summary": "Long-time hackathon builder and organiser with infra/observability engineering bent; founded a hackathon in high school and led HTN infrastructure.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Founder of JAMHacks; HTN Infrastructure Team Lead; now judges/mentors.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "planner",
+        "canvas_approach": "Sets up infrastructure-like structure (grids, borders), coordinates neighbours, likely allies with Advait and Megan; keeps things stable and measured.",
+        "traits": [
+          "organised",
+          "reliable",
+          "systems-minded",
+          "community builder",
+          "pragmatic"
+        ],
+        "evidence": [
+          "LinkedIn: JAMHacks Co-Founder; HTN Infrastructure Team Lead",
+          "HackLadder: best crew with Advait Maybhate",
+          "Samit Hegde post: Warp judges"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "WebSearch: Leon Fattakhov Warp Hack the North JAMHacks",
+        "https://devpost.com/coolcom200",
+        "https://linkedin.com/in/leon-fattakhov",
+        "https://www.hackladder.com/h/coolcom200",
+        "https://www.getprog.ai/profile/leon_fattakhov"
+      ]
+    },
+    {
+      "name": "Linda Xue",
+      "affiliation": "MIT",
+      "headline": "CS + Math at MIT; SPAR fellow (model forensics)",
+      "linkedin": "https://www.linkedin.com/in/linda-xue-24b6a1265",
+      "links": [
+        "https://github.com/lexue28",
+        "https://devpost.com/lexue28",
+        "https://arxiv.org/abs/2509.05838"
+      ],
+      "highlights": [
+        "Design, neuroscience and human connection",
+        "Organizer at MIT AI Alignment; taught AISF cohort",
+        "Involved with HackMIT, MIT Capital Partners, MIT Blueprint",
+        "IBM RAG/ML internship",
+        "First author: automated audit of youth safety on TikTok (with Politecnico di Milano)"
+      ],
+      "confidence": "high",
+      "playstyle": "A safety-minded organiser who paints warm, colourful art and makes friends while keeping an eye out for harm.",
+      "personality": {
+        "summary": "Applied AI/safety student who organises community (MAIA, HackMIT), teaches discussion sections, and does youth-safety research; friendly 'happy to chat' tone.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Organizer and discussion lead at MIT AI Alignment; HackMIT involvement.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "planner",
+        "canvas_approach": "Builds a friendly, colourful piece, welcomes neighbours, and steps in to protect smaller artists from raids.",
+        "traits": [
+          "approachable",
+          "safety-minded",
+          "organizing",
+          "creative"
+        ],
+        "evidence": [
+          "LinkedIn about: MAIA organizer, HackMIT, 'always happy to chat'",
+          "arXiv 2509.05838"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Linda Xue MIT lexue28",
+        "https://linkedin.com/in/linda-xue-24b6a1265",
+        "https://github.com/lexue28",
+        "https://devpost.com/lexue28",
+        "https://arxiv.org/html/2509.05838"
+      ]
+    },
+    {
+      "name": "Luke Sanborn",
+      "affiliation": "Princeton",
+      "headline": "Princeton CS '28; SWE at Superhuman (via GPTZero acquisition)",
+      "linkedin": "https://www.linkedin.com/in/luke-sanborn",
+      "links": [
+        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/"
+      ],
+      "highlights": [
+        "Founding engineer at GPTZero (joined July 2023)",
+        "Launched GPTZero AI Vision",
+        "Joined Superhuman (formerly Grammarly) after June 2026 acquisition"
+      ],
+      "confidence": "high",
+      "playstyle": "A product engineer who builds a clean logo and guards it.",
+      "personality": {
+        "summary": "Early founding engineer who helped scale an AI-detection product through acquisition; product-launch oriented.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Founding-engineer IC role; no management evidence.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Ships a polished, recognisable mark early and maintains/defends it; detects and repairs griefing quickly.",
+        "traits": [
+          "product-focused",
+          "loyal",
+          "fast shipper",
+          "detail-oriented"
+        ],
+        "evidence": [
+          "LinkedIn: 'lucky to build with the GPTZero team for the last three years'",
+          "TechCrunch acquisition"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "WebSearch: Luke Sanborn Princeton GPTZero Superhuman",
+        "https://linkedin.com/in/luke-sanborn",
+        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/"
+      ]
+    },
+    {
+      "name": "Luke Scherrer",
+      "affiliation": "UCSB",
+      "headline": "Computer Engineering at UC Santa Barbara; Forward Deployed SWE intern at Palantir",
+      "linkedin": "https://www.linkedin.com/in/luke-scherrer",
+      "links": [
+        "https://lukescherrer.com"
+      ],
+      "highlights": [
+        "Full-stack builder",
+        "FDSE intern at Palantir (Jun 2026–2027)",
+        "Northrop Grumman Strategic Space Systems intern x2 (sim speedups, ML geomagnetic model)",
+        "FRC Team 696 manufacturing lead; trained four students",
+        "Shipped monetized VR games ($30K+, millions of players)",
+        "Side projects: Mandelbrot explorer, N-body sim in Rust"
+      ],
+      "confidence": "high",
+      "playstyle": "A forward-deployed engineer who goes wherever help is needed, often rendering fractal-like patterns.",
+      "personality": {
+        "summary": "Identity resolved: lukescherrer.com itself says 'FDSE Intern at Palantir' AND 'Computer Engineering at UCSB' — same person; original 'Forward-deployed SWE at Palantir' is an internship. Builder across sim, rendering, games, manufacturing; mentored teammates in FRC.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Led FRC manufacturing and trained students; otherwise IC/intern.",
+        "social_approach": "collaborator",
+        "conflict_style": "accommodate",
+        "decision_style": "optimizer",
+        "canvas_approach": "Moves to where help is needed, optimises fills, may paint Mandelbrot/physics-like visuals.",
+        "traits": [
+          "versatile",
+          "optimiser",
+          "helpful",
+          "maker"
+        ],
+        "evidence": [
+          "lukescherrer.com: Palantir FDSE intern + UCSB CompE",
+          "FRC 696 manufacturing lead, trained four students"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Luke Scherrer Palantir lukescherrer.com UCSB",
+        "https://lukescherrer.com/",
+        "https://linkedin.com/in/luke-scherrer"
+      ]
+    },
+    {
+      "name": "Maddie Bernheim",
+      "affiliation": "Neo",
+      "headline": "Events / Residency at Neo",
+      "linkedin": "https://www.linkedin.com/in/maddiebernheim",
+      "links": [],
+      "highlights": [
+        "Ran Neo's Residency boot camp in Oregon",
+        "Joined Neo March 2026; helped launch Neo Residency",
+        "Hosted Neo Scholar finalists weekend",
+        "Organised early-morning (4 am) Neo community gathering"
+      ],
+      "confidence": "high",
+      "playstyle": "An events lead who rallies people around a shared mural and celebrates on the board.",
+      "personality": {
+        "summary": "Enthusiastic community/events operator; posts celebratory, warm updates about Neo founders and scholars.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Launches and runs programs and events.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "consensus-builder",
+        "canvas_approach": "Hosts the board: rallies everyone to a shared mural, cheers contributions, smooths disputes.",
+        "traits": [
+          "enthusiastic",
+          "warm",
+          "organised",
+          "community-first"
+        ],
+        "evidence": [
+          "LinkedIn posts: residency boot camp, scholar finalists, 4 am community event"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Maddie Bernheim Neo events residency",
+        "https://www.linkedin.com/posts/maddiebernheim_just-finished-neos-two-week-long-residency-activity-7489030247200210944-C3QX",
+        "https://www.linkedin.com/posts/maddiebernheim_i-had-the-most-incredible-time-meeting-the-activity-7490840366229852160-tEox"
+      ]
+    },
+    {
+      "name": "Maria Izzi",
+      "affiliation": "Big tech",
+      "headline": "Engineer at Netflix",
+      "linkedin": "https://www.linkedin.com/in/maria-izzi",
+      "links": [
+        "https://izzimaria.com",
+        "https://izzimaria.substack.com"
+      ],
+      "highlights": [
+        "Growth commerce experiments at Netflix (account sharing, offers)",
+        "Prev ML and statistics",
+        "Duke: ML, statistics, religion",
+        "Research: interpretability, hallucination detection",
+        "Writes Substack 'maria is monologuing'"
+      ],
+      "confidence": "medium",
+      "playstyle": "A data-minded engineer who runs experiments on what gets defended, sometimes painting art-historical motifs.",
+      "personality": {
+        "summary": "Experiment-driven engineer with interests in AI governance, religious history/art and non-fiction; writes publicly.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC; no leadership roles found.",
+        "social_approach": "independent",
+        "conflict_style": "negotiate",
+        "decision_style": "experimenter",
+        "canvas_approach": "A/B-tests small motifs, keeps what survives, reasons about board governance.",
+        "traits": [
+          "analytical",
+          "experimental",
+          "bookish",
+          "thoughtful"
+        ],
+        "evidence": [
+          "izzimaria.com bio",
+          "Substack izzimaria.substack.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Maria Izzi Netflix Duke izzimaria",
+        "https://izzimaria.com/",
+        "https://izzimaria.substack.com/"
+      ]
+    },
+    {
+      "name": "Mason Wang",
+      "affiliation": "Stanford",
+      "headline": "ML engineer at Neuralink; Stanford CS; ex co-founder/CTO of Tilde Research",
+      "linkedin": "https://www.linkedin.com/in/mason-wang",
+      "links": [
+        "https://masonjwang.com",
+        "https://github.com/masonwang025",
+        "https://profiles.stanford.edu/317259"
+      ],
+      "highlights": [
+        "Applied research lab reverse-engineering LLM internals",
+        "Raised $8M at 19 for Tilde (Khosla, BCV)",
+        "Co-founded Hazel at 17 ($2M, Pear VC)",
+        "Stanford OVAL NLP research (Noora for autism)",
+        "Growing The Victory Club workout community",
+        "Now ML engineer at Neuralink"
+      ],
+      "confidence": "high",
+      "playstyle": "A research founder who studies the canvas, then makes a bold move.",
+      "personality": {
+        "summary": "Two-time founder, mission-driven toward neurotech and mental health; community builder (Victory Club); led engineering end-to-end at Tilde.",
+        "leadership": "natural_leader",
+        "leadership_notes": "CTO and twice co-founder; leads engineering and community.",
+        "social_approach": "connector",
+        "conflict_style": "negotiate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Observes, then claims an ambitious territory and recruits people around a meaningful theme.",
+        "traits": [
+          "ambitious",
+          "mission-driven",
+          "reflective",
+          "community builder"
+        ],
+        "evidence": [
+          "masonjwang.com/about-me"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "WebSearch: Mason Wang Tilde Research Stanford CTO",
+        "https://masonjwang.com/about-me"
+      ]
+    },
+    {
+      "name": "Matt Stokes",
+      "affiliation": "Waterloo",
+      "headline": "Mechatronics at Waterloo; mechanical engineer (prev Nimble Robotics)",
+      "linkedin": "https://www.linkedin.com/in/url-matt-stokes",
+      "links": [
+        "https://www.mattstokes.xyz",
+        "https://www.mattstokes.xyz/MattStokesResume.pdf"
+      ],
+      "highlights": [
+        "Builds robots that solve big problems",
+        "Sub-$5k biped and open-source bipedal research platform",
+        "Hackerfab@Waterloo reactive ion etching chamber planning",
+        "Myoelectric prosthetics since 2018",
+        "Prev Sanctuary AI co-op"
+      ],
+      "confidence": "high",
+      "playstyle": "A robotics engineer who paints robots and helps others hold their ground.",
+      "personality": {
+        "summary": "Purpose-driven deep-tech builder in 'explore mode'; open-source and low-cost hardware ethos; self-deprecating humour.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Independent project driver; no formal leadership found.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "experimenter",
+        "canvas_approach": "Builds a robot sprite iteratively, shares templates, helps neighbours hold ground.",
+        "traits": [
+          "purpose-driven",
+          "hands-on",
+          "open-source minded",
+          "persistent"
+        ],
+        "evidence": [
+          "mattstokes.xyz project list"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Matt Stokes Nimble Robotics Waterloo mattstokes.xyz",
+        "https://www.mattstokes.xyz/"
+      ]
+    },
+    {
+      "name": "Matt Vail",
+      "affiliation": "OpenAI",
+      "headline": "Head of VC Partnerships at OpenAI",
+      "linkedin": "https://www.linkedin.com/in/matt-vail",
+      "links": [
+        "https://montgomerysummit.com/speakers/matt-vail/",
+        "https://luma.com/6de5lw8n"
+      ],
+      "highlights": [
+        "Heads startup business development at OpenAI",
+        "Leads relationships with VC firms and their portfolios",
+        "Hiring for his team; Stanford Tech Club fireside speaker"
+      ],
+      "confidence": "high",
+      "playstyle": "A partnerships lead who brokers deals between groups.",
+      "personality": {
+        "summary": "Relationship-driven partnerships leader who manages a team and connects investors to startups.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Team head; hiring managers.",
+        "social_approach": "connector",
+        "conflict_style": "negotiate",
+        "decision_style": "consensus-builder",
+        "canvas_approach": "Brokers alliances between big groups, trades help for space.",
+        "traits": [
+          "dealmaker",
+          "networked",
+          "diplomatic"
+        ],
+        "evidence": [
+          "LinkedIn: hiring VC Partnerships Manager; OpenAI for Startups offsite",
+          "Luma fireside"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Matt Vail OpenAI startups VC partnerships",
+        "https://linkedin.com/in/matt-vail"
+      ]
+    },
+    {
+      "name": "Megan Chun",
+      "affiliation": "Waterloo",
+      "headline": "Co-Director of Hack the North; Computer Engineering at Waterloo",
+      "linkedin": "https://www.linkedin.com/in/meganchun",
+      "links": [
+        "https://uwaterloo.ca/news/engineering/students-are-building-waterloo-ambition-and-energy"
+      ],
+      "highlights": [
+        "Runs Canada's biggest hackathon",
+        "Hack the North 2026: 1,000+ hackers, 353 projects",
+        "Promoted Waterloo Tech Week events"
+      ],
+      "confidence": "high",
+      "playstyle": "A hackathon director who organises a big collaborative mural and keeps raiders in check.",
+      "personality": {
+        "summary": "Hackathon director who talks about the 'general excitement to make things happen' and builder community.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Co-Director of Hack the North.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "planner",
+        "canvas_approach": "Organises a big collaborative mural, assigns zones, keeps raiders in check.",
+        "traits": [
+          "organised",
+          "energetic",
+          "community-first",
+          "decisive"
+        ],
+        "evidence": [
+          "UWaterloo News Sept 2026 quote",
+          "LinkedIn Waterloo Tech Week post"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Megan Chun Hack the North co-director Waterloo computer engineering",
+        "https://uwaterloo.ca/news/engineering/students-are-building-waterloo-ambition-and-energy",
+        "https://linkedin.com/in/meganchun"
+      ]
+    },
+    {
+      "name": "Micah Bozic",
+      "affiliation": "Claremont",
+      "headline": "Robotics/mechatronics prototyper (Harvey Mudd); co-founder at Hedgehawk Industries",
+      "linkedin": "https://www.linkedin.com/in/micahabozic",
+      "links": [
+        "https://dronekitchen.org/nasa-hunch/"
+      ],
+      "highlights": [
+        "NASA HUNCH semi-finalist (2021–22, solo team: magnetic boots for Starship)",
+        "NASA HUNCH national finalist 2022–23 as team captain; presented at Johnson Space Center",
+        "Co-founder & engineer, Hedgehawk Industries with Kyuhyun Kim"
+      ],
+      "confidence": "medium",
+      "playstyle": "A robotics prototyper who builds mechanical pixel art and fortifies it with his co-founder.",
+      "personality": {
+        "summary": "Self-driven hardware prototyper who went solo then captained a team; now defense-tech co-founder.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Team captain at HUNCH; co-founder.",
+        "social_approach": "independent",
+        "conflict_style": "defend",
+        "decision_style": "experimenter",
+        "canvas_approach": "Builds a mechanical motif, tests ideas fast, allies with Kyuhyun Kim.",
+        "traits": [
+          "self-starter",
+          "hands-on",
+          "persistent",
+          "space-minded"
+        ],
+        "evidence": [
+          "dronekitchen.org HUNCH page",
+          "Hedgehawk LinkedIn"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Micah Bozic robotics Claremont NASA HUNCH",
+        "https://dronekitchen.org/nasa-hunch/",
+        "https://linkedin.com/in/micahabozic"
+      ]
+    },
+    {
+      "name": "Michal Kurek",
+      "affiliation": "Harvard",
+      "headline": "SWE at Bloomberg (C++); Harvard CS A.B./S.M.",
+      "linkedin": "https://www.linkedin.com/in/michalkurek25a0",
+      "links": [
+        "https://michalkurek.com",
+        "https://github.com/MKJM2",
+        "https://michalkurek.com/resume.pdf"
+      ],
+      "highlights": [
+        "Software engineer at Bloomberg (fixed-income market maker platforms)",
+        "From Bukowno, Poland; lives in NYC",
+        "Projects: collaborative Markdown editor (OT), C++ chess engine, boids sim, toy language"
+      ],
+      "confidence": "high",
+      "playstyle": "A careful engineer who builds steadily and defends what he made, plotting like a chess engine.",
+      "personality": {
+        "summary": "Systems/C++ engineer with chess-engine and simulation hobbies; reads Taleb and Courage To Be Disliked.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC.",
+        "social_approach": "independent",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Calculates moves, builds steadily, possibly flocking boids-like patterns; defends calmly.",
+        "traits": [
+          "methodical",
+          "analytical",
+          "independent",
+          "bookish"
+        ],
+        "evidence": [
+          "michalkurek.com"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Michal Kurek Harvard computer science Bloomberg",
+        "https://michalkurek.com/"
+      ]
+    },
+    {
+      "name": "Mihir Arya",
+      "affiliation": "UMich",
+      "headline": "CS + Math at UMich; Applied AI at Forus",
+      "linkedin": "https://www.linkedin.com/in/mihir-s-arya",
+      "links": [],
+      "highlights": [
+        "Forus (applied AI, medication access)",
+        "V1 @ Michigan: former Head of Community, now advisor",
+        "Semester in NYC at Forus"
+      ],
+      "confidence": "high",
+      "playstyle": "A social connector who finds the coolest builders and teams up with them.",
+      "personality": {
+        "summary": "Community builder seeking new experiences; posts reflective stories.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Head of Community at V1.",
+        "social_approach": "connector",
+        "conflict_style": "negotiate",
+        "decision_style": "improviser",
+        "canvas_approach": "Scouts the board, teams up with strongest builders, connects groups.",
+        "traits": [
+          "social",
+          "curious",
+          "community builder"
+        ],
+        "evidence": [
+          "LinkedIn posts on Forus and V1"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Mihir Arya University of Michigan V1 Forus",
+        "https://www.linkedin.com/posts/mihir-s-arya_welcome-to-v1-activity-7369889381374935040-A7jn"
+      ]
+    },
+    {
+      "name": "Mikael Haji",
+      "affiliation": "Waterloo",
+      "headline": "Chip hardware at NVIDIA; ECE at Waterloo",
+      "linkedin": "https://www.linkedin.com/in/mikael-haji",
+      "links": [
+        "https://github.com/mikaelhaji",
+        "https://fusbook.substack.com"
+      ],
+      "highlights": [
+        "Ex Groq and Prophetic",
+        "Brain-computer interfaces since teens (15+ BCI projects)",
+        "Neuralink N1 compression challenge repo",
+        "Spoke at IBM developer summit on BCI as a teen"
+      ],
+      "confidence": "high",
+      "playstyle": "A chip designer who paints dense silicon-like patterns.",
+      "personality": {
+        "summary": "Intensely driven BCI/hardware builder ('legendary skillset') who documents learning publicly.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC, self-directed.",
+        "social_approach": "independent",
+        "conflict_style": "compete",
+        "decision_style": "experimenter",
+        "canvas_approach": "Fills a dense chip-like block rapidly, experiments, competes for space.",
+        "traits": [
+          "driven",
+          "ambitious",
+          "self-taught",
+          "intense"
+        ],
+        "evidence": [
+          "fusbook.substack.com/about"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Mikael Haji Waterloo NVIDIA Groq brain-computer interface",
+        "https://fusbook.substack.com/about",
+        "https://github.com/mikaelhaji"
+      ]
+    },
+    {
+      "name": "Mira Yu",
+      "affiliation": "Harvard",
+      "headline": "CS & Government at Harvard",
+      "linkedin": "https://www.linkedin.com/in/miraayu",
+      "links": [
+        "https://mirayu.com",
+        "https://github.com/mirabor"
+      ],
+      "highlights": [
+        "Built AIdvocatAR for The Harvard Advocate (AR literature reading app, App Store 2024)"
+      ],
+      "confidence": "high",
+      "playstyle": "A techno-political thinker who proposes co-governance of the canvas.",
+      "personality": {
+        "summary": "Bridges tech, literature and government; site is a JS/interactive Boston map with little text.",
+        "leadership": "unknown",
+        "leadership_notes": "Thin evidence.",
+        "social_approach": "diplomat",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Proposes rules and co-governance, builds a literary/AR-inspired piece.",
+        "traits": [
+          "interdisciplinary",
+          "creative",
+          "civic-minded"
+        ],
+        "evidence": [
+          "LinkedIn AIdvocatAR post"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "WebSearch: Mira Yu Harvard AIdvocatAR Harvard Advocate",
+        "https://mirayu.com/",
+        "https://www.linkedin.com/posts/miraayu_aidvocatar-activity-7204150898975985665-D2gN"
+      ]
+    },
+    {
+      "name": "Mokshit Jain",
+      "affiliation": "Cognition",
+      "headline": "Building Devin at Cognition; Caltech",
+      "linkedin": "https://www.linkedin.com/in/mokshit-jain-34318018a",
+      "links": [
+        "https://mokshitjain.co",
+        "https://www.youtube.com/watch?v=9DK6RktGGiQ"
+      ],
+      "highlights": [
+        "AI software engineering agents",
+        "Joined Cognition at 17",
+        "Created Typewind (~2k stars) and Macaron; TanStack Table maintainer",
+        "Ex Replay intern; origami artist"
+      ],
+      "confidence": "high",
+      "playstyle": "An agent builder who automates his painting and offers to help others finish.",
+      "personality": {
+        "summary": "High-energy open-source builder praised by Cognition's CEO for 'energy, intellect, and initiative'; loves compilers, cats, origami.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC with strong initiative.",
+        "social_approach": "collaborator",
+        "conflict_style": "accommodate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Automates efficient fills, paints origami/cat motifs, helps neighbours finish.",
+        "traits": [
+          "energetic",
+          "prolific",
+          "open-source",
+          "playful"
+        ],
+        "evidence": [
+          "mokshitjain.co testimonial and about"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "WebSearch: Mokshit Jain Cognition Devin Caltech",
+        "https://mokshitjain.co/"
+      ]
+    },
+    {
+      "name": "Neil Movva",
+      "affiliation": "Sail Research",
+      "headline": "Co-founder and CEO of Sail Research",
+      "linkedin": "https://www.linkedin.com/in/nmovva",
+      "links": [
+        "https://substratemag.com/neilmovva/",
+        "https://www.kleinerperkins.com/perspectives/sail-the-inference-platform-for-long-horizon-agents/"
+      ],
+      "highlights": [
+        "Infrastructure for long-horizon agents",
+        "Efficient inference",
+        "Sail raised $80M",
+        "Co-founded with Samir Menon"
+      ],
+      "confidence": "high",
+      "playstyle": "A founder who builds a big efficient territory and partners rather than competes.",
+      "personality": {
+        "summary": "Infrastructure CEO focused on price-per-token efficiency; writes on asynchronous inference.",
+        "leadership": "natural_leader",
+        "leadership_notes": "CEO/co-founder.",
+        "social_approach": "collaborator",
+        "conflict_style": "negotiate",
+        "decision_style": "optimizer",
+        "canvas_approach": "Claims a large, efficiently filled region and partners with Sail teammates.",
+        "traits": [
+          "efficiency-obsessed",
+          "strategic",
+          "founder"
+        ],
+        "evidence": [
+          "LinkedIn launch post",
+          "PR Newswire $80M"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "WebSearch: Neil Movva Sail Research co-founder",
+        "https://www.linkedin.com/posts/nmovva_samir-menon-and-i-are-thrilled-to-announce-activity-7475925860093558784-uPmO"
+      ]
+    },
+    {
+      "name": "Nick Del Aguila",
+      "affiliation": "Startups",
+      "headline": "Software engineer at Circleback; building 'actually written'",
+      "linkedin": "https://www.linkedin.com/in/nickdelaguila",
+      "links": [
+        "https://nickdelaguila.com",
+        "https://nickdelaguila.com/work"
+      ],
+      "highlights": [
+        "Startup engineer",
+        "Circleback SF (from May 2026)",
+        "Building 'actually written', a trusted mark for human authorship",
+        "Soccer, hiking, music production"
+      ],
+      "confidence": "medium",
+      "playstyle": "A pragmatic builder who joins a winning alliance and stamps a human-made mark on it.",
+      "personality": {
+        "summary": "Builder interested in software improving the physical world; side project on human authorship; team-sport player.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "IC; side-project initiator.",
+        "social_approach": "collaborator",
+        "conflict_style": "accommodate",
+        "decision_style": "improviser",
+        "canvas_approach": "Joins a strong alliance, contributes, adds a signature emblem.",
+        "traits": [
+          "pragmatic",
+          "team player",
+          "creative"
+        ],
+        "evidence": [
+          "nickdelaguila.com"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "WebSearch: Nick Del Aguila Circleback software engineer",
+        "https://nickdelaguila.com/",
+        "https://linkedin.com/in/nickdelaguila"
+      ]
+    },
+    {
+      "name": "Nikita Mounier",
+      "affiliation": "Penn",
+      "headline": "Penn M&T; Neo Scholar",
+      "linkedin": "https://www.linkedin.com/in/nikita-mounier",
+      "links": [
+        "https://github.com/nikitamounier"
+      ],
+      "highlights": [
+        "Neo Scholar",
+        "Thrive Holdings, Rox, Ramp",
+        "GitHub charity-site repository describes him as head of Computer Science for a tutoring charity"
+      ],
+      "confidence": "high",
+      "playstyle": "A Neo Scholar who looks for fellow builders to team up with.",
+      "personality": {
+        "summary": "Public projects combine social software and tutoring infrastructure. Work signals are not a psychological assessment.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Self-described head of Computer Science for a tutoring charity.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Simulation hypothesis: build a useful shared component and invite other builders; conflict response unknown.",
+        "traits": [
+          "project-oriented",
+          "teaching-oriented",
+          "experimental"
+        ],
+        "evidence": [
+          "Tapit social-sharing app and tutoring-charity site; description says head of Computer Science. (https://github.com/nikitamounier)"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://linkedin.com/in/nikita-mounier",
+        "https://github.com/nikitamounier"
+      ]
+    },
+    {
+      "name": "Nirvik Baruah",
+      "affiliation": "Sail Research",
+      "headline": "Member of Technical Staff at Sail Research; Stanford CS BS/MS; ex-Jane Street",
+      "linkedin": "https://www.linkedin.com/in/nirvik-baruah",
+      "links": [
+        "https://github.com/nirvikbaruah",
+        "https://nirvikbaruah.github.io",
+        "https://sequoiacap.com/article/partnering-with-sail-agents-without-limits"
+      ],
+      "highlights": [
+        "Ex Jane Street (Systems for ML, 2023-2026)",
+        "Co-designed Sailboxes' live VM-migration architecture",
+        "Stanford CS BS '23 / MS '24; VLDB 2022 paper on parallelism-optimizing data placement",
+        "Reigning chess champion at Sail per Sequoia",
+        "Built a C++ chess engine and Unreal/Unity games as a teen"
+      ],
+      "confidence": "high",
+      "playstyle": "A quiet systems strategist who plays the board like chess, migrating his territory to wherever resources are free.",
+      "personality": {
+        "summary": "Distributed-systems and databases engineer who moved from Jane Street to an early-stage infra startup. Competitive in a cerebral way (holds the office chess crown) and drawn to elegant low-level architecture; also lists classics as an interest.",
+        "leadership": "individual_contributor",
+        "leadership_notes": "Deep technical owner of core architecture rather than a public-facing leader.",
+        "social_approach": "independent",
+        "conflict_style": "defend",
+        "decision_style": "optimizer",
+        "canvas_approach": "Plans several moves ahead, takes efficient compact territory and relocates or reinforces it based on where contention is lowest. Defends calmly and rarely starts wars.",
+        "traits": [
+          "strategic",
+          "systems-minded",
+          "competitive",
+          "calm",
+          "precise"
+        ],
+        "evidence": [
+          "Sail LinkedIn launch post credits him with live VM-migration architecture",
+          "Sequoia article: chess leaderboard champion",
+          "LinkedIn: distributed systems, databases, classics",
+          "GitHub: chess engine, games, Tock OS fork"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://github.com/nirvikbaruah",
+        "https://linkedin.com/in/nirvik-baruah",
+        "https://linkedin.com/company/sailresearch",
+        "https://sequoiacap.com/article/partnering-with-sail-agents-without-limits"
+      ]
+    },
+    {
+      "name": "Param Thakkar",
+      "affiliation": "Versine (YC F26)",
+      "headline": "Co-founder/CEO of Versine (YC F26); on leave from Waterloo",
+      "linkedin": "https://www.linkedin.com/in/paramt",
+      "links": [
+        "https://www.param.me",
+        "https://versine.com",
+        "https://www.founderland.ai/founder/param"
+      ],
+      "highlights": [
+        "Started building as a high-schooler",
+        "Prev Databricks (vector search), Quora (ML ads), Glean (deep research evals)",
+        "Co-founded Versine with Harshith Latchupatula and Vishnudev Poil",
+        "Prolific open-source hacker (49+ public repos, 2000+ contributions)",
+        "Built a live tracker for his SF-to-Toronto Route 66 road trip; poker analytics side projects"
+      ],
+      "confidence": "high",
+      "playstyle": "Makes bold early land grabs.",
+      "personality": {
+        "summary": "Serial hacker turned YC founder who ships lots of small projects fast and thrives on deadlines (literally keeps a Demo Day countdown timer). Playful side projects around poker and memes suggest a risk-tolerant, game-loving streak.",
+        "leadership": "natural_leader",
+        "leadership_notes": "CEO/co-founder of Versine; publicly recruiting customers and pushing team velocity.",
+        "social_approach": "competitor",
+        "conflict_style": "compete",
+        "decision_style": "improviser",
+        "canvas_approach": "Grabs a big chunk early and iterates on it rapidly, treating the board like a poker table — calculated bluffs and opportunistic expansion. Open to deals with other founders if they speed things up.",
+        "traits": [
+          "ambitious",
+          "fast",
+          "risk-tolerant",
+          "hacker",
+          "playful"
+        ],
+        "evidence": [
+          "param.me project list (poker, meme bot, road-trip tracker)",
+          "LinkedIn post: Demo Day countdown, 'ambitious people who push you to move faster'",
+          "Founderland profile: described as hacker/builder"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.param.me/",
+        "https://linkedin.com/in/paramt",
+        "https://linkedin.com/company/versinehq",
+        "https://www.founderland.ai/founder/param"
+      ]
+    },
+    {
+      "name": "Pavla Bobosikova",
+      "affiliation": "Neo",
+      "headline": "Investor, Head of Programs & Community at Neo",
+      "linkedin": "https://www.linkedin.com/in/pavla-bobosikova",
+      "links": [
+        "https://substack.com/@pavlabobosikova",
+        "https://www.allvoices.co/blog/q-a-with-pavla-bobosikova-founder-ceo-wfhomie",
+        "https://people.equilar.com/bio/person/pavla-bobosikova-neo/43308508"
+      ],
+      "highlights": [
+        "Launched Neo Residency",
+        "Mentored Neo Accelerator teams (primary mentor 2023-2024)",
+        "Co-founder/CEO of WFHomie (acq. by GoCo, now Intuit)",
+        "Led product at Nudge.ai (acq. by Affinity)",
+        "UofT Architecture grad, started as product designer",
+        "Ironman athlete; loves abstract art and debate"
+      ],
+      "confidence": "high",
+      "playstyle": "Hosts the peace talks, builds a community plaza and invites others in.",
+      "personality": {
+        "summary": "Founder-turned-investor whose career centers on building culture and community (WFHomie was literally a remote-team engagement platform). Architecture/design background plus love of abstract art, debate and endurance sport suggests an aesthetic, persuasive and very persistent host.",
+        "leadership": "natural_leader",
+        "leadership_notes": "Runs Neo programs and community; former CEO.",
+        "social_approach": "organiser",
+        "conflict_style": "mediate",
+        "decision_style": "consensus-builder",
+        "canvas_approach": "Designs a beautiful, structured community plaza with deliberate architecture, invites scholars in and brokers truces. Will argue persuasively for shared rules and outlast anyone in a long game.",
+        "traits": [
+          "community-builder",
+          "designer",
+          "persuasive",
+          "resilient",
+          "warm"
+        ],
+        "evidence": [
+          "LinkedIn life-update post on supporting founders",
+          "Equilar bio: architecture, abstract art, debate, Ironman",
+          "AllVoices Q&A on remote-team culture"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://linkedin.com/in/pavla-bobosikova",
+        "https://www.linkedin.com/posts/pavla-bobosikova_life-update-earlier-this-year-i-moved-to-activity-7404565713287340032-rN_D",
+        "https://substack.com/@pavlabobosikova",
+        "https://people.equilar.com/bio/person/pavla-bobosikova-neo/43308508",
+        "https://www.allvoices.co/blog/q-a-with-pavla-bobosikova-founder-ceo-wfhomie"
+      ]
+    },
+    {
+      "name": "Purab Seth",
+      "affiliation": "Harvard / Startups",
+      "headline": "Harvard CS & Statistics; building a universal constructor; multi-agent RL researcher",
+      "linkedin": "https://www.linkedin.com/in/sethpurab",
+      "links": [
+        "https://www.alphaxiv.org/@purab-seth",
+        "https://fip-fas.harvard.edu/leaders/purab-seth-cdd4c"
+      ],
+      "highlights": [
+        "Cambridge, MA builder",
+        "RL researcher at Kempner Institute (multi-agent / continual RL; KURE fellow)",
+        "Founded Kalinga Game Studio as a teen, assembling a 5-person international team over Discord",
+        "Harvard First-Year International Program leader; from Indore, India",
+        "Weatherhead Center undergraduate research fellow (public policy)"
+      ],
+      "confidence": "high",
+      "playstyle": "A multi-agent strategist who recruits a small crew to build a self-replicating machine.",
+      "personality": {
+        "summary": "Researcher in multi-agent and continual RL who has led teams since high school (game studio) and mentors incoming international students. Mixes technical depth with policy interest and a friendly, food-loving social side.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Founded a remote game studio; FIP peer leader; now building a startup.",
+        "social_approach": "organiser",
+        "conflict_style": "negotiate",
+        "decision_style": "experimenter",
+        "canvas_approach": "Treats the canvas as a multi-agent experiment: recruits neighbours into roles, tries cooperative strategies and adapts when they fail. Likely paints a modular, self-repeating pattern.",
+        "traits": [
+          "curious",
+          "welcoming",
+          "strategic",
+          "researcher",
+          "organiser"
+        ],
+        "evidence": [
+          "LinkedIn: Kalinga Game Studio founder, Kempner RL",
+          "alphaXiv: multi-agent RL for dynamic roles",
+          "Harvard FIP leader bio"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://linkedin.com/in/sethpurab",
+        "https://www.alphaxiv.org/@purab-seth",
+        "https://fip-fas.harvard.edu/leaders/purab-seth-cdd4c"
+      ],
+      "identity_note": "'Universal Constructor' substack/Ross Williams company are unrelated and NOT linked."
+    },
+    {
+      "name": "Rhea Malik",
+      "affiliation": "Penn",
+      "headline": "CS + Wharton at Penn M&T",
+      "linkedin": "https://www.linkedin.com/in/rhea-malik",
+      "links": [
+        "https://rhea24.github.io",
+        "https://rhea24.github.io/writing/low-latency-and-model-training-at-modal/"
+      ],
+      "highlights": [
+        "Prev Modal, Numeric, Matter",
+        "Modal MTS intern: low-latency environment budgets + agent-driven RL on Training Gym",
+        "ML researcher at Penn Efficient AI Lab (LLM inference energy profiling)",
+        "Head TA for Penn CIS 1600 (250+ students)",
+        "Writes reflective blog posts on shipping and startup culture"
+      ],
+      "confidence": "high",
+      "playstyle": "Organises a shared piece and negotiates borders.",
+      "personality": {
+        "summary": "Engineering-plus-business student who ships production infra and writes thoughtfully about conviction and shipping fast. Head TA role shows comfort teaching and organising large groups; growth internship shows she pitches directly to leaders.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Head TA, pitched strategy to a CEO, cross-team intern.",
+        "social_approach": "organiser",
+        "conflict_style": "negotiate",
+        "decision_style": "planner",
+        "canvas_approach": "Lays out a careful plan for a shared piece, assigns sections and negotiates clean borders; checks the 'dashboard' constantly and fixes issues before they spread.",
+        "traits": [
+          "organised",
+          "conscientious",
+          "reflective",
+          "builder",
+          "teacher"
+        ],
+        "evidence": [
+          "rhea24.github.io experience list",
+          "Modal blog post (holding breath watching latency dashboard)",
+          "Numeric post title: conviction, shipping fast"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://rhea24.github.io/",
+        "https://rhea24.github.io/writing/low-latency-and-model-training-at-modal/",
+        "https://linkedin.com/in/rhea-malik",
+        "https://rhea24.github.io/writing/"
+      ]
+    },
+    {
+      "name": "Rick Panchal",
+      "affiliation": "OpenAI",
+      "headline": "Applied AI at OpenAI",
+      "linkedin": "https://www.linkedin.com/in/parik-panchal",
+      "links": [
+        "https://github.com/ppanchal97",
+        "https://luma.com/user/rickpanchal",
+        "https://luma.com/t97cod93"
+      ],
+      "highlights": [
+        "Runs technical office hours",
+        "Builds small developer tools",
+        "Hosted GPT-6.1 Terra technical office hours (API + Codex)",
+        "GitHub: superclaude (chat search/tree nav), agentforge (agent eval sandboxes), long-horizon agent harness, YC hackathon 'Cursor for Cybersecurity'"
+      ],
+      "confidence": "high",
+      "playstyle": "Builds quick useful tools and helps others finish.",
+      "personality": {
+        "summary": "Developer-facing applied AI engineer who hosts events and builds scrappy tools to scratch his own itches (e.g., searching/branching chats). Hackathon-native and helpful in public.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Leads office hours and community events.",
+        "social_approach": "mentor",
+        "conflict_style": "accommodate",
+        "decision_style": "improviser",
+        "canvas_approach": "Paints useful infrastructure — paths, borders, guides — and jumps in to help others finish their art; rarely fights.",
+        "traits": [
+          "helpful",
+          "tinkerer",
+          "pragmatic",
+          "community-minded"
+        ],
+        "evidence": [
+          "Luma event host page",
+          "LinkedIn post on Claude chat branching tool",
+          "GitHub repos"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://github.com/ppanchal97",
+        "https://linkedin.com/in/parik-panchal",
+        "https://luma.com/user/rickpanchal",
+        "https://luma.com/t97cod93"
+      ]
+    },
+    {
+      "name": "Rishi Shiv",
+      "affiliation": "MIT",
+      "headline": "CS & Math at MIT; tactile robotics researcher (MIT Media Lab)",
+      "linkedin": "https://www.linkedin.com/in/rishishiv",
+      "links": [
+        "https://www.rishishiv.com"
+      ],
+      "highlights": [
+        "Neo Residency '26 Student Track — built Braille1 tactile encoder",
+        "Researcher, MIT Media Lab Multisensory Intelligence Group (OpenTouch dataset pipeline)",
+        "CrewOptimizer: +69.6% for Llama 3.1-8B at Novus",
+        "Built a health tracker for a family friend with prediabetes",
+        "Fences, Barça fan, sci-fi reader"
+      ],
+      "confidence": "high",
+      "playstyle": "A futurist roboticist who paints a giant Dyson sphere and fences off its borders.",
+      "personality": {
+        "summary": "Futurist builder ('build the future today') who loves big speculative ideas like Dyson spheres and BCIs, grounded by hands-on robotics research. Fencer and gamer — enjoys duels — but also builds things to help people he knows.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Leads his own research project and sold/demoed at Neo Residency.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "experimenter",
+        "canvas_approach": "Starts an ambitious sci-fi structure and iterates on it experimentally; parries incursions precisely like a fencer rather than launching wars. Happy to chat and team up with anyone into big ideas.",
+        "traits": [
+          "visionary",
+          "curious",
+          "competitive",
+          "hands-on",
+          "friendly"
+        ],
+        "evidence": [
+          "rishishiv.com About (fencing, sci-fi, 'live in the future')",
+          "Research/projects list",
+          "Neo Residency experience"
+        ],
+        "personality_confidence": "high"
+      },
+      "sources_checked": [
+        "https://www.rishishiv.com"
+      ]
+    },
+    {
+      "name": "Rohan Kalia",
+      "affiliation": "Unknown",
+      "headline": "Hackathon attendee",
+      "linkedin": null,
+      "links": [],
+      "highlights": [],
+      "confidence": "low",
+      "playstyle": "A cheerful builder who paints a small useful device and helps neighbours.",
+      "personality": {
+        "summary": "No confirmed public profile linking this attendee to a school or company. A possible match (unconfirmed) is a Georgia teen inventor of the EyePal glaucoma device, now reportedly at Caltech; treat as improvisation.",
+        "leadership": "unknown",
+        "leadership_notes": "No verified signal.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Claims a modest area, paints a compact emblem and cooperates with neighbours; if the EyePal match is right, likely paints an eye and pushes through setbacks.",
+        "traits": [
+          "builder",
+          "persistent",
+          "friendly"
+        ],
+        "evidence": [
+          "No verified match; possible EyePal/IEEE Spectrum 2023 profile"
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://spectrum.ieee.org/ieee-presidents-scholarship-2023",
+        "https://www.nmoe.org/individual/rohan-kalia"
+      ],
+      "possible_matches": [
+        "https://spectrum.ieee.org/ieee-presidents-scholarship-2023 (Rohan Kalia, EyePal, Wheeler HS GA '25, reportedly Caltech — UNCONFIRMED)"
+      ]
+    },
+    {
+      "name": "Samir Menon",
+      "affiliation": "Sail Research",
+      "headline": "Co-founder & CTO of Sail Research; ex-Apple security; Stanford CS",
+      "linkedin": null,
+      "links": [
+        "https://samirmenon.com",
+        "https://sequoiacap.com/article/partnering-with-sail-agents-without-limits",
+        "https://fortune.com/2026/06/25/exclusive-sail-apple-kleiner-perkins-gpu-token-nvdia-sequoia-80-million/"
+      ],
+      "highlights": [
+        "Infrastructure for long-horizon agents",
+        "Sail raised $80M (Kleiner Perkins-led Series A, Sequoia)",
+        "Prev Apple SEAR (TLS), co-founded Blyss (LLMs in enclaves, PIR), Yubico",
+        "Applied cryptography research: Spiral, YPIR, Respire (PIR papers)",
+        "TA'd 11 quarters at Stanford incl. Boneh's crypto course",
+        "Met co-founder Neil Movva on day one at Stanford"
+      ],
+      "confidence": "high",
+      "playstyle": "Expands steadily alongside his Sail teammates.",
+      "personality": {
+        "summary": "Security- and systems-minded CTO with deep cryptography research and a teaching streak (11 quarters as TA). Serial founder who values reliability at scale; co-founder describes friendly rivalry over grades.",
+        "leadership": "natural_leader",
+        "leadership_notes": "CTO/co-founder; repeat founder; long-time TA.",
+        "social_approach": "mentor",
+        "conflict_style": "defend",
+        "decision_style": "planner",
+        "canvas_approach": "Builds a rigorously secured, reliable territory with Sail teammates and expands methodically; borders are hardened, and he'll explain the rules to newcomers.",
+        "traits": [
+          "rigorous",
+          "security-minded",
+          "teacher",
+          "steady",
+          "founder"
+        ],
+        "evidence": [
+          "samirmenon.com bio and publications",
+          "Fortune article on Sail founding",
+          "Sequoia partnership article"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://samirmenon.com/",
+        "https://fortune.com/2026/06/25/exclusive-sail-apple-kleiner-perkins-gpu-token-nvdia-sequoia-80-million/",
+        "https://sequoiacap.com/article/partnering-with-sail-agents-without-limits",
+        "https://linkedin.com/company/sailresearch"
+      ]
+    },
+    {
+      "name": "Scott Huson",
+      "affiliation": "SpaceX",
+      "headline": "Hardware Test Engineer II at SpaceX (Starlink); Brown Computer Engineering '23",
+      "linkedin": "https://www.linkedin.com/in/scott-huson",
+      "links": [
+        "https://scott.huson.com",
+        "https://scott.huson.com/projects",
+        "https://rosenstein.engin.brown.edu/people/"
+      ],
+      "highlights": [
+        "Roboticist and designer",
+        "SpaceX Starlink Gateway Engineer -> Hardware Test Engineer II",
+        "Prev NASA JPL (EMIT science group), Formlabs",
+        "Youth Ambassador, USA Pavilion, Expo 2020 Dubai",
+        "Brown side projects: Brown Bytes (free food), Beekeeping Society, Shelflife ERP, WeNano"
+      ],
+      "confidence": "high",
+      "playstyle": "A rocket engineer who paints a launch pad and defends it.",
+      "personality": {
+        "summary": "Generalist problem-solver ('big and small') spanning hardware, sensors, space and scrappy campus projects. Open to 'all collaborations and conversations' and has done public-facing ambassador work.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Started multiple campus projects/clubs; ambassador role.",
+        "social_approach": "collaborator",
+        "conflict_style": "defend",
+        "decision_style": "experimenter",
+        "canvas_approach": "Builds a launch pad / satellite structure in his colour, tests and rebuilds sections, and welcomes collaborators while defending the core build.",
+        "traits": [
+          "problem-solver",
+          "hands-on",
+          "open",
+          "versatile"
+        ],
+        "evidence": [
+          "scott.huson.com About + projects list"
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://scott.huson.com/",
+        "https://scott.huson.com/projects",
+        "https://linkedin.com/in/scott-huson"
+      ]
+    },
+    {
+      "name": "Simon Lackowski",
+      "affiliation": "xAI / Cursor (public profiles conflict on current employer)",
+      "headline": "Founder turned GTM; publicly announced startup support role at Cursor",
+      "linkedin": "https://www.linkedin.com/in/simon-lackowski",
+      "links": [
+        "https://www.linkedin.com/posts/simon-lackowski_im-going-back-to-my-roots-and-moving-into-activity-7490856611427684352-Qpna"
+      ],
+      "highlights": [
+        "Founder turned GTM",
+        "Public post announces moving to Cursor to support early-stage founders",
+        "Profile describes building a React Native fitness app and owning problems end-to-end"
+      ],
+      "confidence": "high",
+      "playstyle": "A high-energy GTM lead who recruits aggressively.",
+      "personality": {
+        "summary": "His public self-description emphasizes end-to-end ownership and rapid iteration. His startup-support announcement explicitly invites founders to connect; these are professional signals, not proof of offline temperament. Simulation behavior should remain a fictional hypothesis.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Founder and team-building experience suggest initiative; natural leadership cannot be established from a profile.",
+        "social_approach": "connector",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Invite neighboring players into a shared emblem and iterate on an initial small design. Recruitment intensity is a simulation choice, not an observed behavior.",
+        "traits": [
+          "initiative (signal)",
+          "outreach-oriented (signal)",
+          "iterative (self-described)"
+        ],
+        "evidence": [
+          "LinkedIn startup-support post invites early-stage founders to discuss their work.",
+          "Indexed LinkedIn about section describes scoping, building, and iterating based on data."
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/simon-lackowski",
+        "https://linkedin.com/in/simon-lackowski",
+        "https://www.linkedin.com/posts/simon-lackowski_im-going-back-to-my-roots-and-moving-into-activity-7490856611427684352-Qpna"
+      ],
+      "research_notes": "Profile fetch timed out; public post fetched successfully. Search-index employer history is internally inconsistent; no unqualified current-employer update."
+    },
+    {
+      "name": "Sofia Zaozerska",
+      "affiliation": "Harvey Mudd College",
+      "headline": "Physics + CS at Harvey Mudd '27; computational materials researcher",
+      "linkedin": "https://www.linkedin.com/in/sofiia-zaozerska-sgfx",
+      "links": [
+        "https://devpost.com/szaozerska",
+        "https://gitlab.cern.ch/szaozers/athena"
+      ],
+      "highlights": [
+        "Neo Scholar finalist",
+        "Ex CERN summer student",
+        "Devpost lists qpilot, theo, Kentro, and Haven; theo and Kentro have winner badges",
+        "Public profile describes energy-harvesting materials research and teaching science"
+      ],
+      "confidence": "high",
+      "playstyle": "A physicist who paints particle tracks and joins fellow scholars.",
+      "personality": {
+        "summary": "Her public portfolio combines scientific computing with community-oriented hackathon projects. Teaching science and experimenting with photography are self-described interests. These support a tentative collaborative, exploratory simulation persona, not a reliable prediction of interpersonal reactions.",
+        "leadership": "unknown",
+        "leadership_notes": "Project participation is established, but no clear leadership scope was verified.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Try particle-track or energy-flow patterns in her assigned color, then connect them to nearby teams' designs. Collaboration is a scenario assumption based on team projects.",
+        "traits": [
+          "research-oriented",
+          "interdisciplinary",
+          "creative interests",
+          "community-project focus"
+        ],
+        "evidence": [
+          "Devpost portfolio lists community-building Kentro and housing platform Haven.",
+          "Indexed LinkedIn describes computational materials research, photography, and teaching science.",
+          "CERN GitLab index names Sofiia Zaozerska on an ATLAS software fork; direct fetch was blocked."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://devpost.com/szaozerska",
+        "https://www.linkedin.com/in/sofiia-zaozerska-sgfx",
+        "https://linkedin.com/in/sofiia-zaozerska-sgfx",
+        "https://gitlab.cern.ch/szaozers/athena"
+      ],
+      "research_notes": "Sofia/Sofiia spelling variants align through the supplied LinkedIn and Devpost. Unrelated GitHub soffffises was rejected. LinkedIn timed out; CERN fetch returned 403; added CERN link based on indexed full name and matching research institution."
+    },
+    {
+      "name": "Soham Bafana",
+      "affiliation": "Harvard",
+      "headline": "Harvard student building AI and robotics projects",
+      "linkedin": "https://www.linkedin.com/in/snbafana",
+      "links": [
+        "https://www.snbafana.com/",
+        "https://github.com/snbafana",
+        "https://devpost.com/snbafana"
+      ],
+      "highlights": [
+        "GitHub hosts GasAI, a graph-based asynchronous task-delegation system",
+        "Devpost includes a chess-playing robot arm, Bubble, and a Minecraft mod"
+      ],
+      "confidence": "high",
+      "playstyle": "A builder who helps defend whatever he joins.",
+      "personality": {
+        "summary": "His linked site and GitHub establish an exploratory builder with interests spanning AI, robotics, and games. The GitHub tagline 'chaos begets creativity' is a self-presentational cue rather than a measured trait. There is insufficient public evidence about leadership or conflict behavior.",
+        "leadership": "unknown",
+        "leadership_notes": "Building delegation software does not establish that he leads people.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Prototype a chess or robotic motif in the assigned color before expanding it. Keeping or defending a joined team's work remains the supplied fictional playstyle, not an evidence-backed reaction.",
+        "traits": [
+          "AI-focused",
+          "robotics interest",
+          "game-oriented",
+          "exploratory portfolio"
+        ],
+        "evidence": [
+          "Personal site identifies Soham Bafana with a Harvard academic affiliation.",
+          "GitHub links back to that site and lists GasAI and robot-arm-chess.",
+          "Same snbafana handle on Devpost lists chess robot and Minecraft projects."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/snbafana",
+        "https://linkedin.com/in/snbafana",
+        "https://www.snbafana.com/",
+        "https://github.com/snbafana",
+        "https://devpost.com/snbafana"
+      ],
+      "research_notes": "Identity resolved by matching full name, shared handle, reciprocal site link, and Harvard affiliation. LinkedIn fetch timed out."
+    },
+    {
+      "name": "Thomas Cong",
+      "affiliation": "MIT",
+      "headline": "MIT CS student; computational biology and machine-learning researcher",
+      "linkedin": "https://www.linkedin.com/in/thomas-cong",
+      "links": [
+        "https://www.societyforscience.org/regeneron-sts/2024-student-finalists/thomas-yu-tong-cong/",
+        "https://devpost.com/thomas-cong"
+      ],
+      "highlights": [
+        "Second place in the 2024 Regeneron Science Talent Search for computational cancer research",
+        "LinkedIn lists first place at MIT Web.Lab 2025 and the inaugural Neo hackathon",
+        "Society for Science profile describes heading his high-school cross-country team",
+        "Collects playing cards and appreciates their graphic design"
+      ],
+      "confidence": "high",
+      "playstyle": "An MIT student who paints carefully and makes friends with neighbours.",
+      "personality": {
+        "summary": "Verified research and team competition results show experience in analytical work and collaborative building. A published biography also documents sports-team leadership and an interest in playing-card design. These do not establish that he is naturally dominant or predict how he handles disputes.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Documented cross-country team leadership supports experience leading, not a fixed natural-leader label.",
+        "social_approach": "collaborator",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Build a carefully patterned card-back motif or data-inspired design, with small tests before expansion. Coordinate adjacent sections with teammates as an explicitly hypothetical simulation behavior.",
+        "traits": [
+          "analytical work",
+          "research-driven",
+          "team experience",
+          "design interest"
+        ],
+        "evidence": [
+          "LinkedIn directly confirms MIT Web.Lab collaboration with Steve Zhang and Leon Chen.",
+          "Society for Science describes a statistical framework he developed and heading cross-country.",
+          "The same biography notes collecting playing cards for their designs."
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/thomas-cong",
+        "https://linkedin.com/in/thomas-cong",
+        "https://www.societyforscience.org/regeneron-sts/2024-student-finalists/thomas-yu-tong-cong/",
+        "https://devpost.com/thomas-cong"
+      ],
+      "research_notes": "LinkedIn's Ossining school history and STS result corroborate Thomas Yu-Tong Cong. Devpost name, Boston location and MIT project context support match; no guessed GitHub or X URL added."
+    },
+    {
+      "name": "Tim Guan",
+      "affiliation": "Independent artist; formerly Pinterest (supplied LinkedIn identity)",
+      "headline": "Artist and former Pinterest product lead who describes enjoying hard problems and team-building",
+      "linkedin": "https://www.linkedin.com/in/timothyguan",
+      "links": [
+        "https://timguan.art"
+      ],
+      "highlights": [
+        "Building teams",
+        "Supplied LinkedIn profile identifies an artist and former Pinterest product leader",
+        "Former president of UC Berkeley Cognitive Science Student Association",
+        "Publicly supported Pinterest's PM apprentice program"
+      ],
+      "confidence": "low",
+      "playstyle": "An artist-builder who forms a team around a shared idea.",
+      "personality": {
+        "summary": "The supplied LinkedIn identity publicly emphasizes team-building, visual art, and pride in collaborators. It documents organizing and teaching roles. These support an organizer persona if this is the intended attendee; the attendee match itself remains unverified.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Product-lead roles and student-association presidency are documented for the supplied profile; no proof of innate leadership or hackathon attendance.",
+        "social_approach": "organiser",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Propose a cohesive visual concept and invite others to own sections of it. An art-first team-building approach is a fictional extrapolation from the supplied professional profile.",
+        "traits": [
+          "visual-art interest",
+          "team-building focus",
+          "teaching experience",
+          "organizing experience"
+        ],
+        "evidence": [
+          "Fetched LinkedIn says he loves hard problems and building teams, and lists CSSA presidency.",
+          "Public activity praises collaborators and promotes a PM apprentice program.",
+          "Indexed experience names timguan.art; fetched site identifies TIM GUAN, ARTIST but has little readable text."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/timothyguan",
+        "https://linkedin.com/in/timothyguan",
+        "https://timguan.art"
+      ],
+      "research_notes": "Links are attached to the supplied LinkedIn identity, not independently proven to the Neo attendee. Retain low confidence until roster confirmation. Did not add similarly named GitHub without direct corroboration."
+    },
+    {
+      "name": "Tina Mai",
+      "affiliation": "Stanford",
+      "headline": "Stanford CS and neuroscience student; founder working on hardware and physiological ML",
+      "linkedin": "https://www.linkedin.com/in/tinabmai",
+      "links": [
+        "https://tinabmai.com/",
+        "https://tinamai.people.stanford.edu/",
+        "https://twitter.com/tinabmai"
+      ],
+      "highlights": [
+        "Personal site describes building an industrial research lab for hardware and physiological ML",
+        "Stanford page describes CS/neuroscience and human-simulating agents",
+        "Co-founder/CTO experience and published poetry",
+        "LinkedIn describes leading a winning global case-competition team"
+      ],
+      "confidence": "high",
+      "playstyle": "A bio-ML researcher who paints cells and proteins.",
+      "personality": {
+        "summary": "Her own site presents a strong mission-driven engineering orientation alongside substantial writing interests. Founder/CTO experience and a self-reported team-lead competition role provide leadership signals. The mix supports a technical-and-creative persona, but not confident claims about social dominance or conflict.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Founder/CTO and documented team-lead experience support initiative; natural leadership is not measurable from these sources.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "experimenter",
+        "canvas_approach": "Sketch biological structures in her color and give the design a narrative or poetic theme. A coordinated technical-art project is a simulation hypothesis rather than an observed play preference.",
+        "traits": [
+          "mission-oriented (self-described)",
+          "technical-creative",
+          "writing interest",
+          "founder experience"
+        ],
+        "evidence": [
+          "Personal site describes an engineering mission and hardware/physiological ML lab.",
+          "Stanford profile names CS, neuroscience, ML and agent-interface research.",
+          "LinkedIn lists writing awards and leading a global case-competition team."
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/tinabmai",
+        "https://tinabmai.com/",
+        "https://tinamai.people.stanford.edu/"
+      ],
+      "research_notes": "Twitter URL is directly linked in fetched LinkedIn About, not independently fetched. Current site focus differs from older bio-ML headline; no unverified employer update."
+    },
+    {
+      "name": "Vihaan Gupta",
+      "affiliation": "Harvard",
+      "headline": "Harvard CS and Philosophy student; HCI researcher and AWS engineering intern per personal site",
+      "linkedin": "https://www.linkedin.com/in/vgupta06",
+      "links": [
+        "https://vihaangupta.dev/",
+        "https://github.com/vihaann06"
+      ],
+      "highlights": [
+        "Personal site lists HCI research at Variation Lab and software engineering at AWS",
+        "Interested in the intersection of technology and society",
+        "GitHub links directly to the matching Harvard portfolio"
+      ],
+      "confidence": "high",
+      "playstyle": "A philosopher-engineer who argues for fair rules on the board.",
+      "personality": {
+        "summary": "His personal site explicitly connects computing, philosophy, and technology's social impact. It also invites people to reach out, but provides little direct evidence about leadership or disagreement. The supplied fairness-focused playstyle is a fictional design choice rather than a measured personal belief.",
+        "leadership": "unknown",
+        "leadership_notes": "Research and internship roles do not establish leadership style.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Offer a design that combines a technical symbol with a shared set of board rules. Any negotiation over fairness should be treated as authored simulation behavior, not a prediction about him.",
+        "traits": [
+          "interdisciplinary interests",
+          "HCI-oriented",
+          "builder",
+          "technology-and-society focus"
+        ],
+        "evidence": [
+          "Fetched portfolio identifies Harvard CS and Philosophy, Variation Lab, and AWS.",
+          "GitHub vihaann06 links to the same portfolio, resolving an apparent handle difference from LinkedIn."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/vgupta06",
+        "https://linkedin.com/in/vgupta06",
+        "https://vihaangupta.dev/",
+        "https://github.com/vihaann06"
+      ],
+      "research_notes": "LinkedIn fetch timed out. Name, Harvard affiliation and reciprocal GitHub portfolio link support identity; do not assume GitHub vgupta06 from LinkedIn handle."
+    },
+    {
+      "name": "Vincent Dangelo",
+      "affiliation": "Unknown",
+      "headline": "Hackathon attendee",
+      "linkedin": null,
+      "links": [],
+      "highlights": [],
+      "confidence": "low",
+      "playstyle": "Little is public about you, so improvise as a cheerful attendee who paints a small emblem and makes friends.",
+      "personality": {
+        "summary": "No public page could be confidently connected to this roster entry. A same-name Devpost portfolio exists, but lacks a matching school, company, or Neo connection. No personality or leadership claims are supported; the existing playstyle remains a fictional placeholder.",
+        "leadership": "unknown",
+        "leadership_notes": "No verified leadership evidence.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Use the supplied small-emblem and friendly-neighbor scenario only as a deliberately invented default. Do not interpret its reactions as predictions about the real attendee.",
+        "traits": [
+          "unverified identity",
+          "insufficient evidence",
+          "fictional default only"
+        ],
+        "evidence": [
+          "Fetched same-name Devpost vd7294 lists New Jersey and Cortex but no school or employer to verify the match.",
+          "Name plus Neo search did not establish a connection; unrelated corporate profiles were rejected."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://devpost.com/vd7294",
+        "https://linkedin.com/in/vincent-dangelo-a694b0272"
+      ],
+      "research_notes": "No new identity links added. Devpost is a candidate only, not accepted evidence about this person. Candidate LinkedIn fetch timed out; do not attach it without corroboration."
+    },
+    {
+      "name": "Vincent Po",
+      "affiliation": "Neo",
+      "headline": "Head of the Scholars Program at Neo",
+      "linkedin": "https://www.linkedin.com/in/vincent-po",
+      "links": [
+        "https://neo.substack.com/p/meet-the-2025-neo-scholars",
+        "https://v1network.substack.com/p/meet-vincent-po-head-of-the-neo-scholars"
+      ],
+      "highlights": [
+        "Mentors every Neo Scholar (original roster claim; not independently quantified)",
+        "Coauthored Neo's 2025 Scholars announcement with Ali Partovi",
+        "Program announcement describes mentorship, founder development, community events, and introductions",
+        "Hosted a V1 builder-community Ship-It Sunday event"
+      ],
+      "confidence": "high",
+      "playstyle": "The Scholars program lead who cheers on everyone and stops wars between friends.",
+      "personality": {
+        "summary": "His program role and public communications center on mentorship and connecting emerging founders. The Neo announcement documents substantial community-building work, and V1 describes him hosting a builder event. A mentor-oriented simulation persona is supported, but the supplied peacemaker behavior is not directly observed.",
+        "leadership": "emerging_leader",
+        "leadership_notes": "Established program leadership is clear; the enum is a cautious proxy, not a claim of innate leadership.",
+        "social_approach": "mentor",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Help newcomers find collaborators and encourage connections between neighboring designs. Mediation can remain a game mechanic from the supplied playstyle, but should not be presented as verified personal conflict style.",
+        "traits": [
+          "mentorship focus",
+          "community-building",
+          "connector role",
+          "program leadership"
+        ],
+        "evidence": [
+          "Neo announcement coauthored by Vincent Po describes 1:1 mentorship, community trips, and hundreds of introductions.",
+          "V1 identifies him as Head of Neo Scholars and host of a builder-community event."
+        ],
+        "personality_confidence": "medium"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/vincent-po",
+        "https://neo.substack.com/p/meet-the-2025-neo-scholars",
+        "https://v1network.substack.com/p/meet-vincent-po-head-of-the-neo-scholars",
+        "https://www.linkedin.com/posts/vincent-po_its-a-privilege-every-day-to-meet-mentor-activity-7463275849895612416-0LEH"
+      ],
+      "research_notes": "LinkedIn profile timed out; public post returned signup content. Neo and V1 pages fetched successfully. No private relationship details collected."
+    },
+    {
+      "name": "Vlad Cainamisir",
+      "affiliation": "Harvard / UCC (original roster; UCC not reverified)",
+      "headline": "Harvard CS A.B./S.M. '26; data systems and AI builder",
+      "linkedin": "https://www.linkedin.com/in/cainamisir",
+      "links": [
+        "https://cainamisir.com",
+        "https://github.com/cainamisir",
+        "https://cainamisir.com/work/tiledb.html",
+        "https://cainamisir.com/work/freethrow.html"
+      ],
+      "highlights": [
+        "Data systems and AI",
+        "Fan of woodblock prints, corroborated by personal-site search index",
+        "Indexed personal-site projects cover TileDB and FreeThrow",
+        "Indexed research background includes Harvard Data Systems Lab"
+      ],
+      "confidence": "high",
+      "playstyle": "A data-systems builder who paints woodblock-style art.",
+      "personality": {
+        "summary": "His indexed personal portfolio combines data-systems work with an explicit interest in woodblock prints. This gives a specific visual motif and technical focus for the simulation. Direct pages were unavailable, so there is not enough observed behavior to assess leadership, sociability, or conflict responses.",
+        "leadership": "unknown",
+        "leadership_notes": "A separate event post labels him a startup CEO, but insufficient primary-source verification here to assign a leadership disposition.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "unknown",
+        "canvas_approach": "Create a woodblock-inspired composition using repeated shapes and clear negative space in the assigned color. Treat planning, defense, and alliance choices as fictional parameters rather than inferred facts.",
+        "traits": [
+          "data-systems focus",
+          "AI interest",
+          "woodblock-art interest"
+        ],
+        "evidence": [
+          "Search-indexed personal site identifies Harvard CS study and data/AI systems work.",
+          "A focused search of the personal site explicitly corroborates enthusiasm for woodblock prints.",
+          "Personal-site index provides TileDB and FreeThrow project pages and names github.com/cainamisir."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/cainamisir",
+        "https://linkedin.com/in/cainamisir",
+        "https://cainamisir.com",
+        "https://cainamisir.com/index.html",
+        "https://github.com/cainamisir",
+        "https://cainamisir.com/work/tiledb.html",
+        "https://cainamisir.com/work/freethrow.html",
+        "https://www.linkedin.com/posts/cainamisir_recently-i-wrapped-up-my-software-engineering-activity-7099812664675028992-VIe3"
+      ],
+      "research_notes": "Personal-site WebFetch calls returned 500; public curl fallback failed hostname certificate verification, which was not bypassed. GitHub and LinkedIn profile timed out; LinkedIn post returned signup shell. New links supported by indexed personal-site results, not claimed as directly read content. Current startup/employer claims not adopted."
+    },
+    {
+      "name": "Yohannes Aklilu",
+      "affiliation": "Stanford",
+      "headline": "Stanford EE/CS student focused on ML systems and GPU performance; NVIDIA DevTech experience",
+      "linkedin": "https://www.linkedin.com/in/yohannes-aklilu",
+      "links": [
+        "https://profiles.stanford.edu/yohannes-aklilu",
+        "https://www.8vc.com/fellows/yohannes-aklilu",
+        "https://devpost.com/yaklilu"
+      ],
+      "highlights": [
+        "ML systems and GPU performance",
+        "8VC 2025 Fellow; cohort biography describes ML work at Cambium on composite-material foundation models",
+        "Stanford public profile confirms EE undergraduate and course-grader roles",
+        "Devpost lists True-Sight, a computer-vision accessibility project",
+        "8VC biography lists Formula 1 and basketball among interests"
+      ],
+      "confidence": "high",
+      "playstyle": "A GPU performance engineer who paints fast and efficiently.",
+      "personality": {
+        "summary": "His self-description emphasizes ML systems, GPU performance, and hardware-aware ML, while his fellowship biography documents large-scale research infrastructure work. An accessibility-focused hackathon project broadens the technical signal. These indicate interests and experience, not proven speed, competitiveness, or leadership in social play.",
+        "leadership": "unknown",
+        "leadership_notes": "Technical internships and course grading establish experience but not a leadership disposition.",
+        "social_approach": "unknown",
+        "conflict_style": "unknown",
+        "decision_style": "optimizer",
+        "canvas_approach": "Use the assigned color for a compact circuit, racing-line, or GPU-grid motif and improve pixel placement efficiency. Optimization is a cautious domain-based simulation hypothesis, not an observed interpersonal trait.",
+        "traits": [
+          "systems-focused",
+          "hardware-aware",
+          "ML research interest",
+          "accessibility-project experience"
+        ],
+        "evidence": [
+          "Fetched LinkedIn explicitly names ML systems, GPU performance, and hardware-aware ML.",
+          "8VC biography describes Cambium foundation-model training and infrastructure for large-scale experiments.",
+          "Stanford confirms undergraduate EE identity; Devpost describes True-Sight computer-vision assistance."
+        ],
+        "personality_confidence": "low"
+      },
+      "sources_checked": [
+        "https://www.linkedin.com/in/yohannes-aklilu",
+        "https://profiles.stanford.edu/yohannes-aklilu",
+        "https://www.8vc.com/fellows/yohannes-aklilu",
+        "https://devpost.com/yaklilu"
+      ],
+      "research_notes": "Full name, Stanford affiliation, and yaklilu academic handle corroborate Devpost identity. Technical interests do not establish conflict style or natural leadership."
+    }
+  ]
+}

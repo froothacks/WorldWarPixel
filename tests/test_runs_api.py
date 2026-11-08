@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
+from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.hub import FRAME_PIXELS, FRAME_SNAPSHOT
 
 SMALL = {
@@ -77,6 +78,28 @@ def test_unknown_model_is_rejected_before_the_run_starts(client: TestClient) -> 
     assert response.status_code == 422
     assert "no-such-model" in response.json()["detail"]
     assert client.get("/runs").json() == []
+
+
+def test_god_model_switches_a_running_llm_run(client: TestClient) -> None:
+    manager = client.app.state.runs  # type: ignore[attr-defined]
+    manager.make_policy = lambda _cfg: RandomWalkPolicy(seed=1)
+    manager.make_narrator = lambda _cfg: None
+    run_id = client.post("/runs", json={**SMALL, "policy": "llm", "model": "qwen"}).json()["id"]
+
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "glm"})
+    assert response.status_code == 200 and response.json()["config"]["model"] == "glm"
+    run = manager.runs[run_id]
+    assert run.config.model == "glm" and isinstance(run.policy, RandomWalkPolicy)
+    events = client.get(f"/runs/{run_id}/events", params={"limit": 100}).json()
+    assert any(e["kind"] == "god.model_changed" and e["payload"]["model"] == "glm" for e in events)
+    client.post(f"/runs/{run_id}/stop")
+
+
+def test_god_model_rejects_random_runs(client: TestClient) -> None:
+    run_id = client.post("/runs", json=SMALL).json()["id"]
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "qwen"})
+    assert response.status_code == 409
+    client.post(f"/runs/{run_id}/stop")
 
 
 def test_random_runs_ignore_the_model_field(client: TestClient) -> None:
@@ -189,3 +212,8 @@ def test_thread_votes_reorder_the_board(client: TestClient) -> None:
         == 422
     )
     client.post(f"/runs/{run_id}/stop")
+
+
+def test_rosters_endpoint_lists_the_hackathon(client: TestClient) -> None:
+    rosters = client.get("/rosters").json()
+    assert {"id": "hackathon", "size": 86}.items() <= rosters[0].items()

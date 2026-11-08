@@ -10,17 +10,19 @@ interface Props {
   onSelect: (id: number | null) => void;
   /** Kept mounted while the drawer is open so the filter and Show more state survive. */
   hidden?: boolean;
+  /** Roster runs: every agent is a real person, so the list reads as people. */
+  people?: boolean;
 }
 
 /** Rows rendered at once; with thousands of agents the DOM gets heavy, so the rest load on demand. */
 const MAX_ROWS = 400;
 
-export default function AgentList({ agents, societies = [], palette, selected, lastThought, onSelect, hidden = false }: Props) {
+export default function AgentList({ agents, societies = [], palette, selected, lastThought, onSelect, hidden = false, people = false }: Props) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(MAX_ROWS);
   const matching = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q)) : agents;
+    return q ? agents.filter((a) => a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q) || `${a.headline ?? ""} ${a.affiliation ?? ""}`.toLowerCase().includes(q)) : agents;
   }, [agents, query]);
   const shown = matching.length > limit ? matching.slice(0, limit) : matching;
   const active = agents.filter((a) => a.status !== "idle").length;
@@ -28,7 +30,7 @@ export default function AgentList({ agents, societies = [], palette, selected, l
   return (
     <aside className="agents" style={hidden ? { display: "none" } : undefined}>
       <header className="panel-head">
-        <span className="label">Agents</span>
+        <span className="label">{people ? "People" : "Agents"}</span>
         <span className="count">
           {agents.length}
           {active > 0 && ` · ${active} active`}
@@ -36,7 +38,7 @@ export default function AgentList({ agents, societies = [], palette, selected, l
       </header>
       <input
         className="search"
-        placeholder="Filter by name or country"
+        placeholder={people ? "Filter by name, school or company" : "Filter by name or country"}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -54,7 +56,7 @@ export default function AgentList({ agents, societies = [], palette, selected, l
             <span className="agent-main">
               <span className="agent-name">
                 {a.name}
-                <span className="agent-country">{a.country}</span>
+                <span className="agent-country">{people ? a.headline : a.country}</span>
                 {a.society != null && societies[a.society] && (
                   <span className="agent-society" style={{ color: societies[a.society].color }} title={`In ${societies[a.society].name}`}>
                     ● {societies[a.society].name}

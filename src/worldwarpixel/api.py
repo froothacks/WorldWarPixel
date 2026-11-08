@@ -19,6 +19,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
+from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
@@ -130,6 +131,13 @@ def get_manager(request: Request) -> RunManager:
 ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+
+
+@rosters_router.get("")
+async def list_rosters() -> list[dict[str, Any]]:
+    """Bundled attendee rosters a run can use instead of the population-seeded world."""
+    return roster_summaries()
 
 
 @router.post("", status_code=201)
@@ -256,6 +264,29 @@ async def god_announce(
 async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
     run.god_set_pace(body.cooldown, body.pixels_per_turn, body.pixel_interval)
+    return run.summary()
+
+
+class GodModel(BaseModel):
+    model: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/{run_id}/god/model")
+async def god_model(
+    run_id: str, body: GodModel, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
+    """Switch a running LLM run to another model preset; agents use it from their next turn."""
+    run = await manager.fetch(run_id)
+    if run.config.policy not in ("llm", "llm-guided"):
+        raise HTTPException(409, "model switching only applies to LLM runs")
+    new_config = run.config.model_copy(update={"model": body.model})
+    policy = manager.make_policy(new_config)  # raises 400/422 for unknown or unavailable presets
+    narrator = (
+        manager.make_narrator(new_config)
+        if manager.make_narrator is not None
+        else manager.narrator_model
+    )
+    run.swap_model(policy, narrator, body.model)
     return run.summary()
 
 

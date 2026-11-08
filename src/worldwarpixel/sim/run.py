@@ -9,7 +9,8 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field, field_validator
 
-from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
+from worldwarpixel.personas.roster import load_roster
+from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents, seed_roster
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
@@ -28,7 +29,7 @@ MAX_AGENTS = 10_000
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
 by one core for the random policy (~100 turns/s)."""
 
-LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown")
+LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown", "headline")
 
 
 class RunConfig(BaseModel):
@@ -78,6 +79,13 @@ class RunConfig(BaseModel):
         # Runs archived before model presets stored model=null.
         return "gpt-6-luna" if v is None else v
 
+    roster: Literal["world", "hackathon"] = Field(
+        default="world",
+        description=(
+            "Who plays: 'world' seats `agents` people per country by population; 'hackathon' "
+            "is one agent per attendee of the bundled hackathon roster (ignores `agents`)"
+        ),
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )
@@ -135,6 +143,12 @@ class Run:
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
+        if agents is None and config.roster != "world":
+            roster = load_roster(config.roster)
+            agents = seed_roster(
+                roster.people, roster.event, config.width, config.height, config.cooldown, self.rng
+            )
+            self.config = config = config.model_copy(update={"agents": len(agents)})
         self.agents = agents or seed_agents(
             config.agents,
             config.width,
@@ -258,6 +272,13 @@ class Run:
         self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
+
+    def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
+        """Switch the LLM preset mid-run; agents and the narrator pick it up on next use."""
+        self.policy = policy
+        self.narrator.set_model(narrator_model)
+        self.config = self.config.model_copy(update={"model": model})
+        self._record("god.model_changed", GOD_ID, {"model": model})
 
     def god_announce(self, title: str, body: str) -> dict[str, Any]:
         """Post a thread as the human; agents see it on the board like any other thread."""
@@ -667,6 +688,7 @@ class Run:
             {
                 **{k: getattr(a, k) for k in LIST_FIELDS},
                 "society": self.societies.of(a.id) if self.societies else None,
+                "affiliation": a.persona_card.get("affiliation", "") if a.headline else "",
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }

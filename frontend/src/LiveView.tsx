@@ -299,6 +299,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       (turnLatency ? ` · turn p50 ${turnLatency.p50.toFixed(2)}s / p95 ${turnLatency.p95.toFixed(2)}s` : "")
     : undefined;
   const live = connection === "live";
+  // Roster runs play real attendees as individuals; each agent's "country" is its own name.
+  const people = (run.config.roster ?? "world") !== "world";
 
   return (
     <div className="live">
@@ -310,6 +312,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <span className="slash">/</span>
           <span className="mono">{run.id}</span>
           <span className={`state state-${run.state}`}>{run.state}</span>
+          {people && <span className="roster-tag">{run.agents} attendees</span>}
         </span>
         <dl className="stats" title={llmTitle}>
           <Stat k="agents" v={run.agents} />
@@ -408,7 +411,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
                   setSelected(null);
                 }}
               >
-                {label}
+                {people && id === "agents" ? "People" : label}
               </button>
             ))}
           </nav>
@@ -430,6 +433,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             lastThought={lastThought}
             onSelect={setSelected}
             hidden={selectedAgent !== undefined || tab !== "agents"}
+            people={people}
           />
           <Territory
             store={store}
@@ -439,6 +443,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             highlight={country}
             onHighlight={setCountry}
             hidden={selectedAgent !== undefined || tab !== "territory"}
+            units={people ? "people" : "countries"}
           />
           <Alliances
             runId={initial.id}

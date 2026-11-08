@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type RunSummary } from "./api";
+import { useEffect, useState } from "react";
+import { api, type ModelInfo, type RunSummary } from "./api";
 
 export interface GodTool {
   mode: "paint" | "erase";
@@ -31,6 +31,16 @@ export default function GodBar({
   const [color, setColor] = useState(5);
   const [size, setSize] = useState(4);
   const [busy, setBusy] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelChoice, setModelChoice] = useState(run.config.model);
+
+  useEffect(() => {
+    if (run.config.policy === "random") return;
+    api
+      .listModels()
+      .then(setModels)
+      .catch(() => setModels([]));
+  }, [run.config.policy]);
 
   const act = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -206,6 +216,38 @@ export default function GodBar({
           onChange={(e) => pxInterval(+e.target.value)}
         />
       </label>
+      {run.config.policy !== "random" && (
+        <>
+          <label
+            className="small"
+            title="Switch the model every agent and the narrator use from their next turn"
+          >
+            model
+            <select value={modelChoice} onChange={(e) => setModelChoice(e.target.value)}>
+              {models.length === 0 && <option value={run.config.model}>{run.config.model}</option>}
+              {models.map((m) => (
+                <option key={m.id} value={m.id} disabled={!m.available}>
+                  {m.label}
+                  {m.available ? "" : " — unavailable"}
+                </option>
+              ))}
+              {models.length > 0 && !models.some((m) => m.id === modelChoice) && (
+                <option value={modelChoice}>{modelChoice}</option>
+              )}
+            </select>
+          </label>
+          <button
+            className="ghost"
+            disabled={busy !== null || modelChoice === run.config.model}
+            title="Agents and the narrator switch to this model on their next turn"
+            onClick={() =>
+              void act("model", () => api.godModel(runId, modelChoice).then(onRun))
+            }
+          >
+            Switch model
+          </button>
+        </>
+      )}
       <span className="sep" />
       <button
         className="danger"

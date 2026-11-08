@@ -167,11 +167,11 @@ SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
 READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 MAX_ROUNDS = 2
 PAINT_ROUNDS = 2
+"""Extra model calls in a turn while the agent keeps painting and has pixels left."""
 _XML_CALL_RE = re.compile(r"<tool_call>\s*([\w.-]+)(.*?)(?=</tool_call>|<tool_call>|$)", re.S)
 _XML_ARG_RE = re.compile(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>", re.S)
 RATE_LIMIT_BACKOFF = (3.0, 8.0)
 """Seconds (min, max) an agent waits after a 429 so a shared endpoint is not hammered."""
-"""Extra model calls in a turn while the agent keeps painting and has pixels left."""
 BOARD_THREADS = 8
 
 
@@ -195,11 +195,22 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
 
 def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
     """Opt-in scaffolding: r/place framing, examples, stencil tools and spot hints."""
+    event = agent.persona_card.get("event")
+    setting = (
+        f"You have joined an r/place-style game at {event}: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board shared with "
+        f"the other attendees. Everyone plays as themselves: there are no assigned teams, so any "
+        f"alliances or rivalries are up to you and the people you talk to. "
+        if event
+        else f"You have joined a global r/place-style event: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board, open to "
+        f"people from every country. "
+    )
+    concern = "you" if event else "your country"
     return (
         f"You are {agent.persona}\n\n"
-        f"You have joined a global r/place-style event: a {width}x{height} shared pixel canvas "
-        f"(x grows right, y grows down, 0-based) and a public message board, open to people from "
-        f"every country. Nobody is in charge and nothing is pre-planned. Each turn you may paint "
+        f"{setting}"
+        f"Nobody is in charge and nothing is pre-planned. Each turn you may paint "
         f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
         "In events like this people have done all sorts of things: drawn pixel-art mascots, "
@@ -227,8 +238,8 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "that says something about you. To show where you are from, draw what your place is known "
         "for (a landmark, food, animal, team or hero) rather than its flag.\n"
         "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
-        "territory changes and raids on this canvas. If one concerns your "
-        "country, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
+        "territory changes and raids on this canvas. If one concerns "
+        f"{concern}, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
         "- Only post when it matters to others: a claim with coordinates, a call for help, "
         "a threat, a deal, or an answer to someone. No greetings or status chatter. Prefer "
         "replying in an existing thread to starting a new one; address people by @Name. "

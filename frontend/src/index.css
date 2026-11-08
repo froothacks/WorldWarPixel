@@ -398,3 +398,15 @@ button.text:hover { background: none; color: var(--text); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.roster-tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); }
+.profile { padding: 0 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.drawer .profile p { padding: 0; }
+.profile-headline { font-size: 13px; font-weight: 500; }
+.profile-highlights { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); }
+.profile-links { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+.profile-links a { color: var(--accent); text-decoration: none; }
+.profile-links a:hover { text-decoration: underline; }
+.profile-styles { padding: 0; }
+.profile-traits { display: flex; flex-wrap: wrap; gap: 4px; }
+.profile-traits span { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); }

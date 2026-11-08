@@ -11,6 +11,8 @@ export interface RunConfig {
   seed: number | null;
   policy: "llm" | "llm-guided" | "random";
   model: string;
+  /** "world" seats `agents` people by population; a roster id plays one agent per real attendee. */
+  roster: "world" | "hackathon";
   narrator_interval: number;
   narrator_canvas_image: boolean;
   societies: number;
@@ -29,6 +31,7 @@ export const DEFAULT_CONFIG: RunConfig = {
   seed: null,
   policy: "llm",
   model: "gpt-6-luna",
+  roster: "world",
   narrator_interval: 60,
   narrator_canvas_image: true,
   societies: 3,
@@ -114,6 +117,10 @@ export interface Agent {
   home_x: number;
   home_y: number;
   cooldown: number;
+  /** One-line profile for roster runs; empty for world runs. */
+  headline?: string;
+  /** Roster runs: school or company, so the people list can filter by it. */
+  affiliation?: string;
   status: AgentStatus;
   last_thought: Thought | null;
   society?: number | null;
@@ -240,7 +247,15 @@ export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
+export interface RosterSummary {
+  id: Exclude<RunConfig["roster"], "world">;
+  title: string;
+  event: string;
+  size: number;
+}
+
 export const api = {
+  rosters: () => request<RosterSummary[]>("/rosters"),
   listRuns: () => request<RunSummary[]>("/runs"),
   listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
@@ -298,5 +313,10 @@ export const api = {
     request<RunSummary>(`/runs/${id}/god/pace`, {
       method: "POST",
       body: JSON.stringify(pace),
+    }),
+  godModel: (id: string, model: string) =>
+    request<RunSummary>(`/runs/${id}/god/model`, {
+      method: "POST",
+      body: JSON.stringify({ model }),
     }),
 };
