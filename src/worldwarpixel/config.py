@@ -45,8 +45,10 @@ class Settings(BaseSettings):
     tts_model: str = "gpt-4o-mini-tts"
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
+    transcribe_model: str = "gpt-4o-mini-transcribe"
+    """Hosted model for society-screen voice clips, used when TTS_API_KEY is an OpenAI key."""
     whisper_model: str = "base"
-    """faster-whisper model size used to transcribe society-screen voice clips."""
+    """faster-whisper model size: the local fallback when there is no hosted transcription."""
     murmur_condense: bool = False
     """Rephrase voice transcripts into a rumour with the server's chat model."""
     voice_dump_dir: str = ""

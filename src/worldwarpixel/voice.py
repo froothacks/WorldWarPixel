@@ -52,7 +52,8 @@ class WhisperTranscriber:
             raise TranscriptionUnavailable(
                 "faster-whisper is not installed (uv sync --extra voice)"
             ) from e
-        return WhisperModel(self._size, device="cpu", compute_type="int8")
+        # Few threads, so a clip can't starve the event loop and the live runs of CPU.
+        return WhisperModel(self._size, device="cpu", compute_type="int8", cpu_threads=2)
 
     def _run(self, pcm: bytes, rate: int) -> str:
         if self._model is None:
@@ -70,6 +71,29 @@ class WhisperTranscriber:
     async def __call__(self, pcm: bytes, rate: int) -> str:
         async with self._lock:  # one clip at a time; whisper on CPU is not re-entrant-friendly
             return await asyncio.to_thread(self._run, pcm, rate)
+
+
+class OpenAITranscriber:
+    """Hosted transcription (OpenAI /audio/transcriptions): no CPU work on this server."""
+
+    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 30.0) -> None:
+        self._client = client
+        self._model = model
+        self._timeout = timeout
+
+    async def __call__(self, pcm: bytes, rate: int) -> str:
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(pcm)
+        r = await self._client.audio.transcriptions.create(
+            model=self._model,
+            file=("clip.wav", buf.getvalue(), "audio/wav"),
+            timeout=self._timeout,
+        )
+        return r.text.strip()
 
 
 CONDENSE_PROMPT = (
