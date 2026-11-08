@@ -64,4 +64,6 @@ little-endian pixels.
 
 For guest Wi-Fi with client isolation, run `cloudflared tunnel --url http://localhost:8000` on the
 server host. Set `HOST` in the local `config.h` to `<name>.trycloudflare.com` and `SERVER_PORT` to
-`80`; the podium connects through the tunnel using plain HTTP.
+`80`; the podium connects through the tunnel using plain HTTP. The trycloudflare URL makes the
+whole API public: anyone with the URL can list, stop, or delete runs, and `GOD_TOKEN` does not
+cover those routes. Use it only while presenting, then stop `cloudflared`.
