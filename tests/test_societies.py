@@ -485,3 +485,28 @@ def test_manager_asks_the_namer_with_the_theme() -> None:
 def test_screen_name_is_ascii_with_a_placeholder() -> None:
     assert screen_name({"id": 0, "name": "Café 🐟 Owls"}) == "Cafe Owls"
     assert screen_name({"id": 1, "name": "海洋"}) == "Society 2"
+
+
+def test_openai_transcriber_sends_a_wav() -> None:
+    import io
+    import wave
+    from types import SimpleNamespace
+    from typing import Any
+
+    from worldwarpixel.voice import OpenAITranscriber
+
+    sent: dict[str, Any] = {}
+
+    async def create(**kw: Any) -> SimpleNamespace:
+        sent.update(kw)
+        return SimpleNamespace(text=" more blue \n")
+
+    client: Any = SimpleNamespace(
+        audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))
+    )
+    text = asyncio.run(
+        OpenAITranscriber(client, "gpt-4o-mini-transcribe")(b"\x01\x00" * 160, 16000)
+    )
+    assert text == "more blue" and sent["model"] == "gpt-4o-mini-transcribe"
+    with wave.open(io.BytesIO(sent["file"][1])) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getnframes()) == (16000, 1, 160)

@@ -35,7 +35,7 @@ from worldwarpixel.sim.run import Run, RunConfig
 from worldwarpixel.sim.societies import naming_messages, parse_names
 from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
-from worldwarpixel.voice import Murmurer, WhisperTranscriber
+from worldwarpixel.voice import Murmurer, OpenAITranscriber, Transcriber, WhisperTranscriber
 
 
 class Message(BaseModel):
@@ -190,7 +190,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return parse_names(raw, config.societies) or None
 
         app.state.interview_chat = interview_chat
-        app.state.transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber: Transcriber = WhisperTranscriber(settings.whisper_model)
+        if tts is not None and not settings.tts_base_url:
+            transcriber = OpenAITranscriber(
+                tts, settings.transcribe_model, settings.request_timeout
+            )
+        app.state.transcriber = transcriber
         app.state.murmurer = Murmurer(
             client if settings.murmur_condense else None,
             settings.openai_model,
