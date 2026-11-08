@@ -252,6 +252,19 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       .catch((e: Error) => alert(e.message));
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const exportVideo = async () => {
+    if (videoBusy) return;
+    setVideoBusy(true);
+    try {
+      await api.renderVideo(initial.id);
+      window.open(api.videoUrl(initial.id), "_blank");
+    } catch (e) {
+      window.alert(`Video render failed: ${(e as Error).message}`);
+    } finally {
+      setVideoBusy(false);
+    }
+  };
   const [tool, setTool] = useState<GodTool | null>(null);
   const paintRejected = useRef(false);
   const paint = useCallback(
@@ -319,6 +332,13 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           </button>
           <button onClick={() => setTimelapse(true)} title="Replay the canvas history so far">
             Timelapse
+          </button>
+          <button
+            onClick={exportVideo}
+            disabled={videoBusy}
+            title="Render an mp4 of the canvas + message board so far and download it"
+          >
+            {videoBusy ? "Rendering…" : "Video"}
           </button>
           {run.state === "running" && <button onClick={() => control("pause")}>Pause</button>}
           {run.state === "paused" && <button onClick={() => control("resume")}>Resume</button>}
