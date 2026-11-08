@@ -1,6 +1,5 @@
 # Container image for the Cloud Run deployment (deploy/cloudrun.sh). Mirrors deploy/modal_app.py:
-# the frontend is built in, Whisper weights are baked, and deploy/serve.py runs uvicorn with the
-# SQLite restore/backup loop.
+# the frontend is built in and deploy/serve.py runs uvicorn with the SQLite restore/backup loop.
 FROM node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -16,9 +15,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_NO_DEV=1
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --extra voice
-# Society screens' voice clips are transcribed in-process; bake the Whisper weights in.
-RUN /app/.venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
+RUN uv sync --frozen --no-install-project
 COPY src ./src
 COPY deploy/serve.py ./deploy/serve.py
 COPY --from=frontend /app/frontend/dist ./frontend/dist

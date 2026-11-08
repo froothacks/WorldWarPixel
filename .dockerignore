@@ -9,3 +9,5 @@ events.db*
 timelapses
 *.mp4
 /data
+firmware
+scripts

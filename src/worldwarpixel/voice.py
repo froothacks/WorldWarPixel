@@ -1,10 +1,11 @@
 """Turning a human's spoken words into a society murmur: transcribe, then condense."""
 
-import asyncio
 import io
 import logging
+import sys
 import wave
-from typing import Any, Protocol
+from array import array
+from typing import Protocol
 
 from openai import AsyncOpenAI
 
@@ -31,46 +32,23 @@ def wav_to_pcm(data: bytes) -> tuple[bytes, int]:
         frames, channels, rate = w.readframes(w.getnframes()), w.getnchannels(), w.getframerate()
     if channels == 1:
         return frames, rate
-    import numpy as np
+    samples = array("h", frames)
+    if sys.byteorder == "big":
+        samples.byteswap()
+    mono = array(
+        "h",
+        (int(sum(samples[i : i + channels]) / channels) for i in range(0, len(samples), channels)),
+    )
+    if sys.byteorder == "big":
+        mono.byteswap()
+    return mono.tobytes(), rate
 
-    samples = np.frombuffer(frames, dtype="<i2").reshape(-1, channels).mean(axis=1)
-    return samples.astype("<i2").tobytes(), rate
 
-
-class WhisperTranscriber:
-    """Local faster-whisper on the CPU; the model loads on first use."""
-
-    def __init__(self, model_size: str = "base") -> None:
-        self._size = model_size
-        self._model: Any = None
-        self._lock = asyncio.Lock()
-
-    def _load(self) -> Any:
-        try:
-            from faster_whisper import WhisperModel
-        except ImportError as e:
-            raise TranscriptionUnavailable(
-                "faster-whisper is not installed (uv sync --extra voice)"
-            ) from e
-        # Few threads, so a clip can't starve the event loop and the live runs of CPU.
-        return WhisperModel(self._size, device="cpu", compute_type="int8", cpu_threads=2)
-
-    def _run(self, pcm: bytes, rate: int) -> str:
-        if self._model is None:
-            self._model = self._load()
-        import numpy as np
-
-        audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
-        if rate != RATE and len(audio):
-            n = int(len(audio) * RATE / rate)
-            audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio)
-            audio = audio.astype(np.float32)
-        segments, _ = self._model.transcribe(audio, beam_size=1, vad_filter=True)
-        return " ".join(s.text.strip() for s in segments).strip()
+class NoTranscriber:
+    """Stands in when no hosted transcription is configured."""
 
     async def __call__(self, pcm: bytes, rate: int) -> str:
-        async with self._lock:  # one clip at a time; whisper on CPU is not re-entrant-friendly
-            return await asyncio.to_thread(self._run, pcm, rate)
+        raise TranscriptionUnavailable("voice clips need TTS_API_KEY (an OpenAI key)")
 
 
 class OpenAITranscriber:
