@@ -78,6 +78,9 @@ def fetch(source: str, workdir: Path) -> Path:
     if source.startswith("gs://") or source.startswith("gcs://"):
         bucket, prefix = gcs_parts(source)
         src_dir.mkdir(parents=True, exist_ok=True)
+        for stale in src_dir.glob("*"):
+            if stale.is_file():
+                stale.unlink()
         base = f"gs://{bucket}/{prefix}/" if prefix else f"gs://{bucket}/"
         for pattern in ("*.json", "*.mp4"):
             sh(["gcloud", "storage", "cp", f"{base}{pattern}", str(src_dir) + "/"])
