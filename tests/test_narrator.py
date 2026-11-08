@@ -60,6 +60,33 @@ def test_narrator_openai_reasoning_model_params() -> None:
     assert not request.get("extra_body")
 
 
+def test_narrator_complete_shares_the_preset_semaphore() -> None:
+    active = 0
+    peak = 0
+
+    class _SlowCompletions:
+        async def create(self, **kw: Any) -> Any:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
+    sem = asyncio.Semaphore(1)
+    narrators = [
+        OpenAINarratorModel(client, "m", semaphore=sem)  # type: ignore[arg-type]
+        for _ in range(2)
+    ]
+
+    async def main() -> None:
+        await asyncio.gather(*(n.complete([{"role": "user", "content": "hi"}]) for n in narrators))
+
+    asyncio.run(main())
+    assert peak == 1
+
+
 CONFIG = RunConfig(
     width=64, height=32, agents=5, cooldown=0.01, jitter=0, pixels_per_turn=4, seed=1
 )

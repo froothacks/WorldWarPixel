@@ -344,6 +344,36 @@ def test_max_concurrency_limits_in_flight_model_calls() -> None:
     assert peak == 1
 
 
+def test_shared_semaphore_caps_multiple_policies_on_one_endpoint() -> None:
+    active = 0
+    peak = 0
+
+    class Completions:
+        async def create(self, **kw: Any) -> Any:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return _response(None, [])
+
+    class Client:
+        chat = _Obj(completions=Completions())
+
+    agent, tools, obs, _events = _setup()
+    shared = asyncio.Semaphore(1)
+    policies = [
+        LLMPolicy(Client(), "m", vision=False, semaphore=shared)  # type: ignore[arg-type]
+        for _ in range(3)
+    ]
+
+    async def main() -> None:
+        await asyncio.gather(*(p.act(agent, tools, obs) for p in policies for _ in range(2)))
+
+    asyncio.run(main())
+    assert peak == 1
+
+
 def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
     canvas = Canvas(128, 64)
     for x in range(10):

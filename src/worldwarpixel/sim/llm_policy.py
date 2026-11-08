@@ -299,6 +299,7 @@ class LLMPolicy:
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
         max_concurrency: int | None = None,
+        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._client = client
         self._model = model
@@ -310,7 +311,8 @@ class LLMPolicy:
         self._reasoning_effort = reasoning_effort
         # Some shared endpoints 429 above a concurrency ceiling (e.g. DeepSeek ~16);
         # the preset carries it so a run never exceeds what the endpoint tolerates.
-        self._sem = asyncio.Semaphore(max_concurrency) if max_concurrency else None
+        # A shared semaphore (one per preset across all runs) wins over a per-run cap.
+        self._sem = semaphore or (asyncio.Semaphore(max_concurrency) if max_concurrency else None)
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -406,11 +408,12 @@ class LLMPolicy:
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                if self._sem is None:
-                    response = await self._complete(messages, obs)
-                else:
+                if self._sem is not None:
                     async with self._sem:
+                        call_t0 = time.monotonic()  # latency measures the call, not the queue wait
                         response = await self._complete(messages, obs)
+                else:
+                    response = await self._complete(messages, obs)
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
