@@ -152,7 +152,9 @@ export default function CanvasView({
 
   useEffect(() => {
     if (!store || size.w === 0 || size.h === 0) return;
-    if (fittedStoreRef.current !== store || !vpRef.current) {
+    // Refit only for a new canvas size; a reconnect's fresh store keeps the user's view.
+    const fitted = fittedStoreRef.current;
+    if (!vpRef.current || !fitted || fitted.width !== store.width || fitted.height !== store.height) {
       fittedStoreRef.current = store;
       fitView();
       return;
