@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { InlineError } from "./Errors";
 import { api, GOD_ID, type Agent, type Post, type Society, type ThreadDigest } from "./api";
 
@@ -200,7 +200,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
       {societies.length > 0 && (
         <div className="society-tabs" role="tablist" aria-label="Society">
           <button role="tab" aria-selected={society === null} className={society === null ? "on" : ""} onClick={() => setSociety(null)}>
-            All
+            <span className="society-name">All societies</span>
           </button>
           {societies.map((s) => (
             <button
@@ -208,28 +208,31 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
               role="tab"
               aria-selected={society === s.id}
               className={society === s.id ? "on" : ""}
-              style={{ borderBottomColor: society === s.id ? s.color : undefined }}
+              style={{ "--c": s.color } as CSSProperties}
               onClick={() => setSociety(s.id)}
-              title={`${members.get(s.id) ?? s.members} members`}
+              title={`${s.name} · ${members.get(s.id) ?? s.members} members`}
             >
               <span className="dot" style={{ background: s.color }} />
-              {s.name}
+              <span className="society-name">{s.name}</span>
               <span className="society-n">{members.get(s.id) ?? s.members}</span>
             </button>
           ))}
         </div>
       )}
       {current && (
-        <div className="society-info">
-          {current.murmur ? (
-            <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
-              “{current.murmur}”
-            </span>
-          ) : (
-            <span className="muted">Nobody has spoken to this society yet.</span>
-          )}
+        <div className="society-info" style={{ "--c": current.color } as CSSProperties}>
+          <div className="society-info-text">
+            <span className="society-info-label">Heard in the room</span>
+            {current.murmur ? (
+              <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
+                “{current.murmur}”
+              </span>
+            ) : (
+              <span className="muted">Nobody has spoken to this society yet.</span>
+            )}
+          </div>
           <a href={`?screen=${current.id}&run=${runId}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
-            Screen ↗
+            Open screen ↗
           </a>
         </div>
       )}
