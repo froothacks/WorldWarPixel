@@ -10,6 +10,7 @@ old and new containers, so up to 60 seconds of events from the old container can
     uv run --with modal==1.6.3 python deploy/modal_app.py retire  # retire legacy Sandbox once
 """
 
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -99,6 +100,8 @@ app = modal.App(APP_NAME)
 )
 @modal.concurrent(max_inputs=1000)
 class Web:
+    _tunnel: subprocess.Popen[bytes] | None = None
+
     @modal.enter()
     def start(self) -> None:
         sys.path.insert(0, "/app/deploy")
@@ -107,9 +110,15 @@ class Web:
         serve.restore()
         self._serve = serve
         self._stop = threading.Event()
+        self._tunnel = serve.start_tunnel()
+        if self._tunnel is not None:
+            print("cloudflared tunnel started", flush=True)
 
         def loop() -> None:
             while not self._stop.wait(serve.INTERVAL):
+                if self._tunnel is not None and self._tunnel.poll() is not None:
+                    print("cloudflared exited; restarting", flush=True)
+                    self._tunnel = serve.start_tunnel()
                 try:
                     serve.backup()
                 except Exception as exc:
@@ -128,6 +137,12 @@ class Web:
     def stop(self) -> None:
         self._stop.set()
         self._backups.join()  # never overlap the final backup with a periodic one
+        if self._tunnel is not None and self._tunnel.poll() is None:
+            self._tunnel.terminate()
+            try:
+                self._tunnel.wait(10)
+            except subprocess.TimeoutExpired:
+                self._tunnel.kill()
         self._serve.backup()
 
 
