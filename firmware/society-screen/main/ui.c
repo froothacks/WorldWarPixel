@@ -324,8 +324,8 @@ static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until
 }
 
 #define SP_Y    60
-#define SP_ROW  44
-#define SP_ROWS 7
+#define SP_ROW  36
+#define SP_ROWS (MAX_RUNS + 1)   /* row 0 = follow the newest session */
 
 static void draw_session_picker(const app_state_t *st)
 {
@@ -335,20 +335,27 @@ static void draw_session_picker(const app_state_t *st)
         draw_wrapped(24, 200, LCD_W - 48,
                      "Start a run with societies on the website; it shows up here.", 1, C_DIM, 3);
     }
-    for (int r = 0; r < st->n_runs && r < SP_ROWS; r++) {
+    if (st->n_runs > 0) {
+        bool cur = !st->run_pinned;
+        gfx_fill_rect(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
+        gfx_draw_rect_outline(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
+        gfx_draw_text(16, SP_Y + 4, "FOLLOW NEWEST", 2, C_TEXT);
+        gfx_draw_text(16, SP_Y + 22, "switches to new sessions as they start", 1, C_DIM);
+    }
+    for (int r = 0; r < st->n_runs && r + 1 < SP_ROWS; r++) {
         const run_info_t *ri = &st->runs[r];
-        int y = SP_Y + r * SP_ROW;
-        bool cur = st->run_active && !strcmp(ri->id, st->run_id);
+        int y = SP_Y + (r + 1) * SP_ROW;
+        bool cur = st->run_pinned && !strcmp(ri->id, st->run_id);
         gfx_fill_rect(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
         gfx_draw_rect_outline(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
         char l1[48];
         snprintf(l1, sizeof(l1), "%s  %d agents", ri->id, ri->agents);
         ellipsize(l1, LCD_W - 32, 2);
-        gfx_draw_text(16, y + 5, l1, 2, C_TEXT);
+        gfx_draw_text(16, y + 4, l1, 2, C_TEXT);
         char l2[96];
         snprintf(l2, sizeof(l2), "%s - %s", ri->model, ri->soc_names);
         ellipsize(l2, LCD_W - 32, 1);
-        gfx_draw_text(16, y + 26, l2, 1, C_DIM);
+        gfx_draw_text(16, y + 22, l2, 1, C_DIM);
     }
     gfx_fill_rect(BTN_X, BTN_Y, BTN_W, BTN_H, C_PANEL);
     gfx_draw_rect_outline(BTN_X, BTN_Y, BTN_W, BTN_H, C_LINE);
@@ -612,8 +619,11 @@ void ui_task(void *arg)
             int r = (ty - SP_Y) / SP_ROW;
             if (ty >= BTN_Y) {
                 picking = false;
-            } else if (r < st.n_runs && r < SP_ROWS) {
-                net_run_select(st.runs[r].id);
+            } else if (r == 0 && st.n_runs > 0) {
+                net_run_select(NULL);   /* follow the newest live session */
+                picking = false;
+            } else if (r >= 1 && r - 1 < st.n_runs && r < SP_ROWS) {
+                net_run_select(st.runs[r - 1].id);
                 picking = false;
             }
         }
