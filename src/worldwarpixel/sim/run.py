@@ -67,10 +67,9 @@ class RunConfig(BaseModel):
         default="llm",
         description="llm: free-for-all; llm-guided: adds event framing, examples and hints",
     )
-    model: str | None = Field(
-        default=None,
-        max_length=200,
-        description="Agent model id from GET /models (None = the server's default agent model)",
+    model: str = Field(
+        default="gpt-6-luna",
+        description="Model preset id from GET /models (qwen, deepseek, gpt-6-luna)",
     )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"

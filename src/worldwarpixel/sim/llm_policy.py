@@ -5,7 +5,7 @@ import logging
 import random
 import re
 import time
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import (
@@ -409,21 +409,20 @@ class LLMPolicy:
         timeout: float = 45.0,
         vision: bool = True,
         guided: bool = False,
-        reasoning_effort: str = "",
         max_tokens: int = 700,
+        token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
+        chat_template_kwargs: bool = True,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._client = client
-        # GLM ignores reasoning_effort and thinks until the token cap when enable_thinking is off.
-        self._extra_body: dict[str, Any] = (
-            {"reasoning_effort": reasoning_effort}
-            if reasoning_effort
-            else {"chat_template_kwargs": {"enable_thinking": False}}
-        )
         self._guided = guided
         self._model = model
         self._timeout = timeout
         self._vision = vision
         self._max_tokens = max_tokens
+        self._token_param = token_param
+        self._chat_template_kwargs = chat_template_kwargs
+        self._reasoning_effort = reasoning_effort
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -489,16 +488,39 @@ class LLMPolicy:
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                response = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,
-                    tools=self._tools_for(obs),
-                    tool_choice="auto",
-                    max_tokens=self._max_tokens,
-                    temperature=1.0,
-                    timeout=self._timeout,
-                    extra_body=self._extra_body,
+                # Endpoint quirks live in models.py: OpenAI reasoning models want
+                # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
+                # whenever tools are attached; the Modal vLLM endpoints want the reverse.
+                extra_body = (
+                    {"chat_template_kwargs": {"enable_thinking": False}}
+                    if self._chat_template_kwargs
+                    else None
                 )
+                reasoning = cast(Any, self._reasoning_effort)
+                if self._token_param == "max_completion_tokens":
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        tools=self._tools_for(obs),
+                        tool_choice="auto",
+                        max_completion_tokens=self._max_tokens,
+                        temperature=1.0,
+                        timeout=self._timeout,
+                        reasoning_effort=reasoning,
+                        extra_body=extra_body,
+                    )
+                else:
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        tools=self._tools_for(obs),
+                        tool_choice="auto",
+                        max_tokens=self._max_tokens,
+                        temperature=1.0,
+                        timeout=self._timeout,
+                        reasoning_effort=reasoning,
+                        extra_body=extra_body,
+                    )
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
@@ -561,8 +583,13 @@ class LLMPolicy:
         try:
             args: dict[str, Any] = json.loads(raw_args or "{}")
         except json.JSONDecodeError:
-            self.stats["tool_errors"] += 1
-            return "error: arguments were not valid JSON"
+            # Reasoning models sometimes hit the token cap mid-arguments; salvage the
+            # complete pixel objects instead of losing the whole turn.
+            salvaged = _salvage_place_pixels(name, raw_args)
+            if salvaged is None:
+                self.stats["tool_errors"] += 1
+                return "error: arguments were not valid JSON"
+            args = salvaged
         try:
             result = self._dispatch(agent, tools, name, args)
         except ToolError as e:
@@ -618,13 +645,31 @@ class LLMPolicy:
             case "place_pixels":
                 if "pixels" not in a and "x" in a and "y" in a:  # one bare pixel
                     a["pixels"] = [{k: a[k] for k in ("x", "y", "color") if k in a}]
-                if isinstance(a["pixels"], str):  # the model often double-encodes the list
-                    a["pixels"] = _parse_pixel_list(a["pixels"])
-                a["pixels"] = [
-                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
-                    for p in map(_pixel_fields, a["pixels"])
-                ]
-                return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
+                raw_pixels = a["pixels"]
+                if isinstance(raw_pixels, str):  # the model often double-encodes the list
+                    raw_pixels = _parse_pixel_list(raw_pixels)
+                # Skip malformed pixels instead of failing the whole turn: big models
+                # occasionally emit a pixel without y or with x as an object.
+                pixels: list[dict[str, int]] = []
+                skipped = 0
+                for raw in raw_pixels:
+                    try:
+                        fields = _pixel_fields(raw)
+                        xy = _pixel_coords(fields, w, h)
+                    except (KeyError, TypeError, ValueError):
+                        xy = None
+                    if xy is None:
+                        skipped += 1
+                        continue
+                    x, y = xy
+                    pixels.append({"x": x, "y": y, "color": colour(fields["color"])})
+                if not pixels:
+                    raise ToolError("place_pixels had no valid pixels")
+                a["pixels"] = pixels  # downstream summaries and tracking read the clean list
+                result = tools.place_pixels([(p["x"], p["y"], p["color"]) for p in pixels])
+                if skipped:
+                    result["skipped_invalid"] = skipped
+                return result
             case "post_thread":
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
@@ -678,6 +723,26 @@ def _text_tool_calls(content: str) -> tuple[str, list[ChatCompletionMessageFunct
             )
         )
     return content.split("<tool_call>", 1)[0], calls
+
+
+def _pixel_coords(fields: dict[str, Any], w: int, h: int) -> tuple[int, int] | None:
+    """Clamp a pixel's coordinates into the canvas, or None when they are not numbers."""
+    try:
+        x, y = int(fields["x"]), int(fields["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return min(max(x, 0), w - 1), min(max(y, 0), h - 1)
+
+
+def _salvage_place_pixels(name: str, raw: str) -> dict[str, Any] | None:
+    """Recover a truncated place_pixels payload from its complete pixel objects."""
+    if name != "place_pixels":
+        return None
+    try:
+        pixels = _parse_pixel_list(raw)
+    except ToolError:
+        return None
+    return {"pixels": pixels} if pixels else None
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:

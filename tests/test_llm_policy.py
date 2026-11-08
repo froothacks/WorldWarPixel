@@ -169,6 +169,26 @@ def test_agent_max_tokens_is_passed_to_the_model() -> None:
     assert client.chat.completions.requests[0]["max_tokens"] == 4000
 
 
+def test_openai_reasoning_model_params_are_passed_to_the_model() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([_response(None, [])])
+    policy = LLMPolicy(
+        client,  # type: ignore[arg-type]
+        "gpt-6-luna",
+        vision=False,
+        max_tokens=3000,
+        token_param="max_completion_tokens",
+        chat_template_kwargs=False,
+        reasoning_effort="none",
+    )
+    asyncio.run(policy.act(agent, tools, obs))
+    request = client.chat.completions.requests[0]
+    assert request["max_completion_tokens"] == 3000
+    assert "max_tokens" not in request
+    assert request["reasoning_effort"] == "none"
+    assert not request.get("extra_body")  # no chat_template_kwargs for api.openai.com
+
+
 def test_system_prompt_does_not_assign_a_usual_colour() -> None:
     agent, *_ = _setup()
     prompt = system_prompt(agent, 64, 40, 4, 1)
@@ -277,6 +297,36 @@ def test_truncated_pixel_string_is_salvaged() -> None:
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "placed 2 px" in thought and len(events) == 2 and policy.stats["tool_errors"] == 0
+
+
+def test_truncated_place_pixels_json_is_salvaged() -> None:
+    agent, tools, obs, events = _setup()
+    raw = (
+        '{"pixels": [{"x":0,"y":1,"color":2},{"x":1,"y":1,"color":2},'
+        '{"x":2,"y":1,"color":2},{"x":3,"y":1,"color'
+    )
+    call = _Obj(id="c0", type="function", function=_Obj(name="place_pixels", arguments=raw))
+    resp = _Obj(choices=[_Obj(message=_Obj(content="Line.", tool_calls=[call]))])
+    client = FakeClient([resp])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px" in thought and len(events) == 3 and policy.stats["tool_errors"] == 0
+
+
+def test_malformed_pixels_are_skipped_not_fatal() -> None:
+    agent, tools, obs, events = _setup()
+    pixels = [
+        {"x": 1, "y": 1, "color": 2},
+        {"x": 5, "color": 3},  # missing y
+        {"x": {"bad": 1}, "y": 2, "color": 3},  # x is an object
+        [6, 7, 4],  # shorthand
+        {"x": 8, "y": 8},  # missing colour -> agent colour
+    ]
+    client = FakeClient([_response("Mixed.", [("place_pixels", {"pixels": pixels})])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px" in thought and len(events) == 3
+    assert policy.stats["tool_errors"] == 0
 
 
 def test_incomplete_pixel_objects_are_skipped() -> None:
@@ -447,18 +497,6 @@ def test_turn_ends_when_agent_does_not_paint() -> None:
 def test_budget_line_says_pixels_do_not_carry_over() -> None:
     agent, _, obs, _ = _setup()
     assert "Unused pixels don't carry over" in user_prompt(agent, obs, vision=False)
-
-
-def test_reasoning_effort_is_sent_only_when_configured() -> None:
-    agent, tools, obs, _ = _setup()
-    client = FakeClient([_response("Hm.", []), _response("Hm.", [])])
-    asyncio.run(LLMPolicy(client, "m", vision=False).act(agent, tools, obs))  # type: ignore[arg-type]
-    policy = LLMPolicy(client, "m", vision=False, reasoning_effort="low")  # type: ignore[arg-type]
-    asyncio.run(policy.act(agent, tools, obs))
-    first, second = client.chat.completions.requests
-    assert "reasoning_effort" not in first["extra_body"]
-    assert second["extra_body"]["reasoning_effort"] == "low"
-    assert "chat_template_kwargs" not in second["extra_body"]
 
 
 def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:

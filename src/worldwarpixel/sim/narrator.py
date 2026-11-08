@@ -77,22 +77,51 @@ class NarratorModel(Protocol):
 
 class OpenAINarratorModel:
     def __init__(
-        self, client: AsyncOpenAI, model: str, timeout: float = 60.0, max_tokens: int = 700
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 60.0,
+        max_tokens: int = 700,
+        token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
+        chat_template_kwargs: bool = True,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._client = client
         self.model = model
         self._timeout = timeout
         self._max_tokens = max_tokens
+        self._token_param = token_param
+        self._chat_template_kwargs = chat_template_kwargs
+        self._reasoning_effort = reasoning_effort
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=self._max_tokens,
-            temperature=0.4,
-            timeout=self._timeout,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        # Same endpoint quirks as the agent policy; see models.py.
+        extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._chat_template_kwargs
+            else None
         )
+        reasoning = cast(Any, self._reasoning_effort)
+        if self._token_param == "max_completion_tokens":
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=self._max_tokens,
+                temperature=0.4,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
+        else:
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self._max_tokens,
+                temperature=0.4,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
         return response.choices[0].message.content or ""
 
 

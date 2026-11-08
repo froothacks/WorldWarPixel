@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Iterator, Sequence
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -58,22 +57,3 @@ def test_chat_batch(client: TestClient) -> None:
 
 def test_chat_rejects_empty(client: TestClient) -> None:
     assert client.post("/chat", json={"messages": []}).status_code == 422
-
-
-def test_runs_can_pick_an_extra_agent_model(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("AGENT_MODEL", "small")
-    monkeypatch.setenv("AGENT_ENDPOINTS", "larger=http://127.0.0.1:9/v1, small=http://x/v1")
-    monkeypatch.setenv("EVENT_LOG_PATH", f"{tmp_path}/events.db")
-    get_settings.cache_clear()
-    with TestClient(app) as c:
-        assert c.get("/models").json() == [
-            {"id": "small", "default": True},
-            {"id": "larger", "default": False},
-        ]
-        assert c.post("/runs", json={"agents": 1, "model": "nope"}).status_code == 422
-        run = c.post("/runs", json={"agents": 1, "model": "larger"}).json()
-        assert run["config"]["model"] == "larger"
-        c.post(f"/runs/{run['id']}/stop")
-    get_settings.cache_clear()

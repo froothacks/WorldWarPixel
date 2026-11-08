@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DEFAULT_CONFIG, type ModelOption, type RunConfig, type RunSummary } from "./api";
+import { api, DEFAULT_CONFIG, type ModelInfo, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
 
 interface Props {
@@ -43,11 +43,24 @@ export default function StartScreen({ onStarted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<RunSummary[]>([]);
-  const [models, setModels] = useState<ModelOption[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
-    api.models().then(setModels).catch(() => setModels([]));
+    api
+      .listModels()
+      .then((ms) => {
+        setModels(ms);
+        // Fall back to the first available preset when the current choice is unusable
+        // (e.g. a Modal-only server where the gpt-6-luna default has no OpenAI key).
+        setCfg((c) => {
+          if (c.policy === "random" || ms.length === 0) return c;
+          if (ms.some((m) => m.id === c.model && m.available)) return c;
+          const first = ms.find((m) => m.available);
+          return first ? { ...c, model: first.id } : c;
+        });
+      })
+      .catch(() => setModels([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
@@ -124,22 +137,21 @@ export default function StartScreen({ onStarted }: Props) {
             <span className="hint">{brain.hint}</span>
           </div>
 
-          {cfg.policy !== "random" && models.length > 1 && (
+          {cfg.policy !== "random" && models.length > 0 && (
             <div className="field">
               <span className="field-label">Model</span>
-              <div className="segmented">
+              <select value={cfg.model} onChange={(e) => set("model", e.target.value)}>
+                {cfg.model && !models.some((m) => m.id === cfg.model) && (
+                  <option value={cfg.model}>{cfg.model}</option>
+                )}
                 {models.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    className={(cfg.model ?? models.find((o) => o.default)?.id) === m.id ? "on" : ""}
-                    onClick={() => set("model", m.default ? null : m.id)}
-                  >
-                    {m.id}
-                  </button>
+                  <option key={m.id} value={m.id} disabled={!m.available}>
+                    {m.label}
+                    {m.available ? "" : " — unavailable"}
+                  </option>
                 ))}
-              </div>
-              <span className="hint">Which model endpoint the agents think with. The narrator keeps the default.</span>
+              </select>
+              <span className="hint">Every agent and the narrator use this model for the whole run.</span>
             </div>
           )}
 
