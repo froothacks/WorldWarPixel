@@ -14,9 +14,15 @@ from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
 
 
-def restore_run(log: EventStore, run_id: str, speech: SpeechSynth | None = None) -> Run | None:
-    """Replay a run's events into a stopped ``Run``; None if it is unknown or was deleted."""
-    events = iter_events(log, run_id)
+def restore_run(
+    log: EventStore,
+    run_id: str,
+    speech: SpeechSynth | None = None,
+    *,
+    source: EventStore | None = None,
+) -> Run | None:
+    """Replay a run's events into a stopped ``Run``; read from source if supplied."""
+    events = iter_events(source or log, run_id)
     first = next(iter(events), None)
     if first is None or first.kind != "run.created":
         return None
