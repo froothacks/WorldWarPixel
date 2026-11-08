@@ -254,9 +254,12 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
     return () => window.clearInterval(t);
   }, [playing, data, loaded, loading, fps]);
 
+  const exportComplete =
+    data !== null && !loading && data.frames.length === data.total;
+
   const exportVideo = () => {
     const el = canvasRef.current;
-    if (!el || !data || loading || recording || !exportType) return;
+    if (!el || !exportComplete || !data || recording || !exportType) return;
     const stream = el.captureStream(fps);
     let rec: MediaRecorder;
     try {
@@ -364,7 +367,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           </label>
           <button
             onClick={exportVideo}
-            disabled={!data || loading || recording || !exportType}
+            disabled={!exportComplete || recording || !exportType}
             title={
               exportType
                 ? "Plays from the start while recording, then downloads the video"
