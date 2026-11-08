@@ -81,6 +81,11 @@ fi
 yaml="$(mktemp)"
 trap 'rm -f "$yaml"' EXIT
 grep -v '^\s*\(#\|$\)' "$APP_ENV_FILE" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' > "$yaml"
+# With Cloud SQL, DATABASE_URL comes from Secret Manager; drop any literal copy from APP_ENV_FILE.
+if [ -n "$CLOUDSQL_INSTANCE" ]; then
+  grep -vi '^database_url:' "$yaml" > "$yaml.tmp" || true
+  mv "$yaml.tmp" "$yaml"
+fi
 args+=(--env-vars-file "$yaml")
 gcloud run deploy "$SERVICE" "${args[@]}" --quiet
 gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)'
