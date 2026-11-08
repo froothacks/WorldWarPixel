@@ -232,9 +232,15 @@ def context(run: Run, agent: AgentSpec) -> str:
     event = agent.persona_card.get("event")
     if event:
         parts.append(
-            f"The shared canvas and message board are part of {event}. Your canvas activity, "
-            "any project work, and any event role described here belong to this same event, "
-            "not separate worlds."
+            f"The shared canvas and message board are WorldWarPixel (World War Pixel), a project "
+            f"built at {event}. The canvas, hackathon projects, and event roles belong to this "
+            "same event, not separate worlds. Playing on this canvas does not mean you built "
+            "WorldWarPixel or were on its project team. When asked what you did at the hackathon "
+            "and who you worked with, use the project and teammate facts or event role in your "
+            "background. Project summaries describe the team's work, not your individual "
+            "implementation responsibilities. Do not invent teammates or duties when they are "
+            "not documented. Canvas contacts and alliances are not evidence of project "
+            "collaboration."
         )
     parts.append(
         f"You are one of {len(run.agents)} people sharing a {cfg.width}x{cfg.height} pixel "

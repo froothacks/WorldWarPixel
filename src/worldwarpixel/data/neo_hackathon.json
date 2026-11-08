@@ -16,8 +16,157 @@
     "personality.traits": "Short trait words backed by public evidence",
     "personality.evidence": "Public signals used for the personality read",
     "personality.personality_confidence": "How much public personality signal we had: high | medium | low",
+    "projects": "Devpost project teams: title, source URL, public member names, and any team_notes. Confirmed aliases use roster names; unconfirmed identities keep their public Devpost names. Project teams do not assign canvas alliances.",
     "sources_checked": "Public URLs actually consulted"
   },
+  "projects": [
+    {
+      "title": "Arcana",
+      "url": "https://devpost.com/software/arcana-mxe0y2",
+      "members": [
+        "khkim37382 Kim",
+        "Micah Bozic",
+        "Sofia Zaozerska",
+        "Ken Zhou"
+      ]
+    },
+    {
+      "title": "Autonomous Fulfillment Center",
+      "url": "https://devpost.com/software/autonomous-fulfillment-center",
+      "members": [
+        "Hunter Pruett"
+      ]
+    },
+    {
+      "title": "blood JEPA",
+      "url": "https://devpost.com/software/blood-jepa-07ws38",
+      "members": [
+        "Luke Sanborn",
+        "Param Thakkar",
+        "Rhea Malik",
+        "Vincent Dangelo"
+      ]
+    },
+    {
+      "title": "Cascade",
+      "url": "https://devpost.com/software/cascade-lam0nr",
+      "members": [
+        "Alessio Toniolo",
+        "Amani Bobo"
+      ]
+    },
+    {
+      "title": "djkit",
+      "url": "https://devpost.com/software/djkit",
+      "members": [
+        "Jackie Liu",
+        "Linda Xue"
+      ]
+    },
+    {
+      "title": "Dreaming Computer",
+      "url": "https://devpost.com/software/dreaming-computer",
+      "members": [
+        "Jason Cameron",
+        "Jeff Lu"
+      ]
+    },
+    {
+      "title": "Fetch",
+      "url": "https://devpost.com/software/fetch-5dhyfp",
+      "members": [
+        "Hayden Tedrake",
+        "Aleksander Garbuz"
+      ],
+      "team_notes": "Devpost also lists a private teammate whose identity is not public."
+    },
+    {
+      "title": "Flaid",
+      "url": "https://devpost.com/software/flaid",
+      "members": [
+        "Derrick Ha",
+        "Nick Del Aguila"
+      ]
+    },
+    {
+      "title": "Ghostwriter",
+      "url": "https://devpost.com/software/ghostwriter-vkfa4j",
+      "members": [
+        "Justine Mach"
+      ]
+    },
+    {
+      "title": "I Patched The Pixels Myself",
+      "url": "https://devpost.com/software/i-patched-the-pixels-myself",
+      "members": [
+        "Gino Chiaranaipanich",
+        "Tina Mai",
+        "Alexander (Hongyi) Huang"
+      ]
+    },
+    {
+      "title": "Megamind",
+      "url": "https://devpost.com/software/megamind-fs2cd3",
+      "members": [
+        "Kartik Ramachandrula",
+        "Debojoti Das Soumya",
+        "Tim Guan"
+      ]
+    },
+    {
+      "title": "tldr",
+      "url": "https://devpost.com/software/readme-html",
+      "members": [
+        "Davin Jeong",
+        "Emma Harris",
+        "Vihaan Gupta"
+      ]
+    },
+    {
+      "title": "Robots Building Robots",
+      "url": "https://devpost.com/software/robots-building-robots",
+      "members": [
+        "Soham Bafana",
+        "Nikita Mounier",
+        "Alessandro Maniscalco"
+      ]
+    },
+    {
+      "title": "Sword",
+      "url": "https://devpost.com/software/sword-sle9qv",
+      "members": [
+        "Mikael Haji",
+        "Abhay Ratti",
+        "Anush Mutyala"
+      ]
+    },
+    {
+      "title": "Unreasonably Complicated Carrier Pigeon",
+      "url": "https://devpost.com/software/unreasonably-complicated-carrier-pigeon",
+      "members": [
+        "Rohan Kalia",
+        "Divij Motwani"
+      ]
+    },
+    {
+      "title": "Warped",
+      "url": "https://devpost.com/software/warped",
+      "members": [
+        "Leah Vashevko",
+        "Adriano Hernandez"
+      ]
+    },
+    {
+      "title": "World War Pixel",
+      "url": "https://devpost.com/software/world-war-pixel",
+      "members": [
+        "Advait Maybhate",
+        "Leon Fattakhov",
+        "Megan Chun",
+        "Christoph Moser"
+      ]
+    }
+  ],
   "people": [
     {
       "name": "Abhay Ratti",
