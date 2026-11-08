@@ -18,6 +18,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
 
@@ -98,6 +99,9 @@ class RunConfig(BaseModel):
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
+    speak_narrator: bool = Field(
+        default=True, description="Read narrator updates aloud on the speech panel"
+    )
 
 
 GOD_ID = 65535
@@ -127,6 +131,7 @@ class Run:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
         agents: list[AgentSpec] | None = None,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -188,6 +193,9 @@ class Run:
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
+        self.speech = Speech(
+            self, speech, self._running, narrate=config.speak_narrator, clock=clock
+        )
         self.narrator = Narrator(
             self,
             narrator_model if config.policy != "random" else None,
@@ -196,6 +204,7 @@ class Run:
             include_image=config.narrator_canvas_image,
             clock=clock,
             sleep=sleep,
+            on_update=self.speech.narrate,
         )
 
     @property
@@ -427,6 +436,7 @@ class Run:
         self._running.set()
         self.hub.start()
         self._tasks = [asyncio.create_task(self._agent_loop(a)) for a in self.agents]
+        self._tasks.append(asyncio.create_task(self.speech.run()))
         self.narrator.start()
 
     def pause(self) -> None:

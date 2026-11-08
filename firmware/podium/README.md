@@ -1,0 +1,92 @@
+# WorldWarPixel speech panel firmware (LCDwiki ES3C35P)
+
+The board is a speech panel: it shows who is talking (name in their colour), captions the line,
+and speaks it through the on-board speaker. Lines come from the narrator's updates (read aloud
+automatically) and from `POST /runs/{RUN_ID}/speak`. Verified on the board: display, Wi-Fi,
+WebSocket, PCM audio fetch, and audible speaker output (boot melody).
+
+## Board
+
+LCDwiki **ES3C35P** "3.5inch ESP32-S3 Display" (`-NS` = no speaker). ESP32-S3 N16R8 (16 MB flash,
+8 MB OPI PSRAM), 320×480 ST77922 QSPI panel, ES8311 codec, speaker amp, capacitive touch.
+Official pin table: http://www.lcdwiki.com/3.5inch_ESP32-S3_Display
+
+| Function | GPIO |
+| --- | --- |
+| LCD QSPI (SPI2, 80 MHz) | CS 10, SCK 12, D0 11, D1 13, D2 14, D3 9; reset shared with EN |
+| Backlight | 41, active high (LEDC 5 kHz, 10-bit) |
+| I²C (codec 0x18, touch, header) | SDA 38, SCL 39 |
+| Touch | RST 48 (active low), INT 47 |
+| I²S to ES8311 | MCLK 17, BCLK 18, WS/LRCK 21, DOUT 15, DIN 16 (mic) |
+| Speaker amp enable | **1, active low** (drive LOW to turn the speaker on) |
+| SD card (SDIO) | CLK 5, CMD 4, D0–D3 6/7/2/3 |
+| RGB LED | 40 |
+| Free expansion | 45, 46 |
+
+## How the voice works
+
+1. **Server (`src/worldwarpixel/sim/speech.py`)**: `Speech.say(text, agent_id=None)` queues a
+   line; `Speech.narrate` does the same for each narrator update (headline + bullets, ≤ 280 chars,
+   off with `speak_narrator: false` in the run config). A worker synthesizes lines one at a time
+   with `OpenAISpeech` (`TTS_MODEL`, default `gpt-4o-mini-tts`) as raw 24 kHz signed 16-bit
+   little-endian mono PCM. Each agent gets a fixed OpenAI voice picked from its persona's sex; the
+   narrator uses `verse`. Without `TTS_API_KEY` lines are still sent, with `audio: false`.
+2. **Event**: the server publishes `speech.line` on the speech WebSocket with `id`, `speaker_id`
+   (0 = narrator), `name`, `color_hex`, `text`, `audio`, `sample_rate`, `duration`.
+3. **Board (`podium.ino`)**: `queueLine` queues every line, `playNextLine` draws the speaker
+   header and caption, then `playAudio` streams
+   `GET /runs/{RUN_ID}/speech/lines/{id}/audio?format=pcm` straight from the HTTP socket into
+   `i2s.write` in 2 KB chunks (no file, no decoder). Lines without audio just hold the caption for
+   `duration` seconds.
+4. **Codec path**: `es8311Init()` (`es8311.cpp`) configures the ES8311 as I²S slave, MCLK from
+   the pin at 256×fs, 16-bit I²S, DAC on, 0 dB volume. The ESP32 I²S is standard mode, 24 kHz,
+   16-bit, mono. GPIO 1 is driven LOW to enable the amp.
+
+At boot the board draws colour bars and plays a short melody (`playSelfTestTone`), which is the
+quickest check that display and speaker both work.
+
+## Screen
+
+Portrait layout: 50 px header (speaker name in their colour, "speaking"/"listening"), caption
+panel filling the rest of the screen.
+
+The ST77922 init table is in `st77922_init.h`. Parameterised commands must be sent with
+`WRITE_C8_BYTES` (QSPI command 0x02); `WRITE_BYTES` sends them as pixel data (0x32) and the panel
+stays black with only the backlight on.
+
+## Protocol
+
+- `WS /runs/{RUN_ID}/speech/ws`: first `speech.snapshot` (recent lines, `devices`, `enabled`),
+  then `speech.line` events (JSON text frames). Connected panels show up in
+  `GET /runs/{RUN_ID}/speech` as `devices`.
+- `GET /runs/{RUN_ID}/speech/lines/{id}/audio?format=pcm|wav`
+- `POST /runs/{RUN_ID}/speak` with `{"text": "...", "agent_id": 3}` (omit `agent_id` for the
+  narrator voice); needs `X-God-Token` when `GOD_TOKEN` is set.
+
+## Build and flash
+
+```sh
+arduino-cli core install esp32:esp32@3.3.12
+arduino-cli lib install "GFX Library for Arduino@1.6.9" "WebSockets@2.7.2" "ArduinoJson@7.4.3"
+cp firmware/podium/config.example.h firmware/podium/config.h   # Wi-Fi, HOST, SERVER_PORT, RUN_ID
+FQBN='esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M'
+arduino-cli compile --fqbn "$FQBN" firmware/podium
+arduino-cli upload --fqbn "$FQBN" --port /dev/cu.usbmodem3101 firmware/podium
+```
+
+The serial log prints display/codec setup, the codec chip ID, I²S status, Wi-Fi IP and
+`ws connected`. If the board stops responding, hold BOOT while pressing RESET to force download
+mode.
+
+## Gotchas
+
+- The board only does 2.4 GHz Wi-Fi.
+- Guest Wi-Fi with client isolation blocks board→laptop traffic. Workaround: run
+  `cloudflared tunnel --url http://localhost:8000` on the server host and set `HOST` to the
+  `<name>.trycloudflare.com` host and `SERVER_PORT` to `80`. That URL makes the whole API public:
+  anyone with it can list, stop, or delete runs, and `GOD_TOKEN` does not cover those routes. Use it
+  only while presenting, then stop `cloudflared`.
+- Opening the USB serial port with default DTR/RTS (e.g. pyserial) can reset the chip into download
+  mode ("waiting for download"). Reset it with `esptool --chip esp32s3 -p <port> --after hard-reset chip-id`.
+- GPIOs 2–7 belong to the SD card, and 48 is touch reset, so don't use them for audio.
+- `config.h` holds Wi-Fi credentials and is gitignored; never commit it.

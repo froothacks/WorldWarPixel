@@ -8,10 +8,12 @@ periodically and on exit. ``python serve.py`` remains the legacy server entrypoi
 """
 
 import os
+import shutil
 import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from types import FrameType
@@ -19,21 +21,61 @@ from types import FrameType
 LIVE = Path(os.environ.get("EVENT_LOG_PATH", "/root/state/events.db"))
 BACKUP = Path(os.environ.get("EVENT_LOG_BACKUP", "/data/events.db"))
 INTERVAL = float(os.environ.get("BACKUP_INTERVAL", "300"))
+GRACE = float(os.environ.get("SHUTDOWN_GRACE", "10"))
 PORT = os.environ.get("PORT", "8000")
 
 
-def copy_db(src: Path, dst: Path) -> None:
-    """Online SQLite backup (includes un-checkpointed WAL pages), swapped in atomically."""
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(f"{dst.name}.{os.getpid()}.tmp")
-    tmp.unlink(missing_ok=True)
-    source, target = sqlite3.connect(src), sqlite3.connect(tmp)
+def _is_local(path: Path) -> bool:
+    """True when ``path`` sits on local disk that SQLite can lock, not FUSE/network mounts."""
     try:
+        parent = str(path.parent.resolve())
+        mounts = []
+        with open("/proc/mounts") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) > 2:
+                    mounts.append((parts[1].replace("\\040", " "), parts[2]))
+        _, fstype = max(
+            ((m, t) for m, t in mounts if parent == m or parent.startswith(m + "/")),
+            key=lambda mt: len(mt[0]),
+            default=("/", ""),
+        )
+        return not fstype.startswith(("fuse", "nfs", "cifs", "9p"))
+    except OSError:
+        return True
+
+
+def copy_db(src: Path, dst: Path) -> None:
+    """Online SQLite backup (includes un-checkpointed WAL pages), swapped in atomically.
+
+    SQLite works on local disk only: ``dst`` may sit on a network mount (Modal Volume, Cloud
+    Storage FUSE) and ``src`` may too on restore, and neither supports the locking/random writes
+    SQLite needs. Copy the database to local disk first when it is not already there.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    workdir = Path(tempfile.gettempdir())
+    local_src = src
+    if src.parent != workdir and not _is_local(src):
+        staged = workdir / f"wwp-src-{os.getpid()}.db"
+        shutil.copyfile(src, staged)
+        local_src = staged
+    local = workdir / f"{src.name}.{os.getpid()}.backup"
+    tmp = dst.with_name(f"{dst.name}.{os.getpid()}.tmp")
+    local.unlink(missing_ok=True)
+    source, target = sqlite3.connect(local_src), sqlite3.connect(local)
+    try:
+        source.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         source.backup(target)
     finally:
         target.close()
         source.close()
-    os.replace(tmp, dst)
+    try:
+        shutil.copyfile(local, tmp)
+        os.replace(tmp, dst)
+    finally:
+        local.unlink(missing_ok=True)
+        if local_src is not src:
+            local_src.unlink(missing_ok=True)
 
 
 def backup() -> None:
@@ -76,12 +118,21 @@ def serve() -> int:
             except Exception as exc:
                 print(f"backup failed: {exc!r}", flush=True)
     if server.poll() is None:
+        # Snapshot first: Cloud Run / Modal give only seconds after SIGTERM, and the online backup
+        # is consistent while the server still runs. A second pass catches events from shutdown.
+        try:
+            backup()
+        except Exception as exc:
+            print(f"pre-shutdown backup failed: {exc!r}", flush=True)
         server.terminate()
         try:
-            server.wait(10)
+            server.wait(GRACE)
         except subprocess.TimeoutExpired:
             server.kill()
-    backup()
+    try:
+        backup()
+    except Exception as exc:
+        print(f"final backup failed: {exc!r}", flush=True)
     return server.returncode or 0
 
 
