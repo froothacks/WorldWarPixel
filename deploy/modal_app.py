@@ -1,19 +1,19 @@
-"""Deploy WorldWarPixel in one always-on, non-preemptible Modal web container.
+"""Deploy WorldWarPixel through an in-process ASGI app in one always-on Modal container.
 
-The container serves the app directly at a stable ``*.modal.run`` URL, with no 24-hour Sandbox
-lifetime cap. A single WebSocket connection is limited to 24 hours. SQLite is stored on local disk
-and backed up to the ``worldwarpixel-data`` Volume every 60 seconds and on exit. Live runs are held
-in memory, so a deploy replaces the container and live runs reopen as stopped runs. Deploys may
-briefly overlap old and new containers, so up to 60 seconds of events from the old container can
-be lost.
+The FastAPI app serves directly at a stable ``*.modal.run`` URL, with no 24-hour Sandbox lifetime
+cap. A single WebSocket connection is limited to 24 hours. SQLite is restored from and backed up
+to the ``worldwarpixel-data`` Volume every 60 seconds and on exit. Live runs are held in memory, so
+a deploy replaces the container and live runs reopen as stopped runs. Deploys may briefly overlap
+old and new containers, so up to 60 seconds of events from the old container can be lost.
 
     uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
     uv run --with modal==1.6.3 python deploy/modal_app.py retire  # retire legacy Sandbox once
 """
 
-import subprocess
 import sys
+import threading
 from pathlib import Path
+from typing import Any
 
 import modal
 
@@ -87,26 +87,36 @@ app = modal.App(APP_NAME)
 )
 @modal.concurrent(max_inputs=1000)
 class Web:
-    _server: subprocess.Popen[bytes] | None = None
-
     @modal.enter()
     def start(self) -> None:
-        self._server = subprocess.Popen(["python", "/app/deploy/serve.py"], cwd="/app")
+        sys.path.insert(0, "/app/deploy")
+        import serve
 
-    @modal.web_server(PORT, startup_timeout=180, label="worldwarpixel-home")
-    def serve(self) -> None:
-        pass
+        serve.restore()
+        self._serve = serve
+        self._stop = threading.Event()
+
+        def loop() -> None:
+            while not self._stop.wait(serve.INTERVAL):
+                try:
+                    serve.backup()
+                except Exception as exc:
+                    print(f"backup failed: {exc!r}", flush=True)
+
+        self._backups = threading.Thread(target=loop, daemon=True)
+        self._backups.start()
+
+    @modal.asgi_app(label="worldwarpixel-home")
+    def web(self) -> Any:
+        from worldwarpixel.app import app as web_app
+
+        return web_app
 
     @modal.exit()
     def stop(self) -> None:
-        if self._server is None or self._server.poll() is not None:
-            return
-        self._server.terminate()
-        try:
-            self._server.wait(timeout=25)
-        except subprocess.TimeoutExpired:
-            self._server.kill()
-            self._server.wait()
+        self._stop.set()
+        self._backups.join(timeout=5)
+        self._serve.backup()
 
 
 def main(cmd: str) -> None:
