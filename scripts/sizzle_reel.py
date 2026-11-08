@@ -710,6 +710,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--upload", default="", help="optional gs://bucket/prefix to upload reel+manifest"
     )
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--exclude", nargs="*", default=[], help="run ids to leave out of the reel")
     return p
 
 
@@ -723,6 +724,9 @@ async def _amain(args: argparse.Namespace) -> int:
     print(f"fetching {args.source} -> {workdir / 'src'}")
     src_dir = fetch(args.source, workdir)
     runs = load_runs(src_dir)
+    if args.exclude:
+        excluded = {str(x) for x in args.exclude}
+        runs = [r for r in runs if r.run_id not in excluded]
     if not runs:
         print("no rendered timelapses found", file=sys.stderr)
         return 1
