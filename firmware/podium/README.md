@@ -5,10 +5,6 @@ and speaks it through the on-board speaker. Lines come from the narrator's updat
 automatically) and from `POST /runs/{RUN_ID}/speak`. Verified on the board: display, Wi-Fi,
 WebSocket, PCM audio fetch, and audible speaker output (boot melody).
 
-One ESP32-S3 board acts as one debate "podium": it shows the contested canvas region, captions the
-debater's line, and speaks it through the on-board speaker. Verified on the board: display, Wi-Fi,
-Stage WebSocket, frame fetch, PCM audio fetch, and audible speaker output (boot melody).
-
 ## Board
 
 LCDwiki **ES3C35P** "3.5inch ESP32-S3 Display" (`-NS` = no speaker). ESP32-S3 N16R8 (16 MB flash,

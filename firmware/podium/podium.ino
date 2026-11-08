@@ -320,7 +320,7 @@ void drawSelfTest() {
   display->setTextSize(2);
   display->setTextColor(COLOR_WHITE);
   display->setCursor(24, SCREEN_HEIGHT / 2 - 8);
-  display->print("WorldWarPixel podium");
+  display->print("WorldWarPixel speech panel");
 }
 
 void playSelfTestTone() {
