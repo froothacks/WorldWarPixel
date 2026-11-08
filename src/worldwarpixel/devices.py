@@ -459,6 +459,12 @@ async def device_socket(websocket: WebSocket) -> None:
                     if not replied:
                         await send_reply("...", True)
                     await send_audio(value)
+                elif kind == "spoken":
+                    if not heard and held:
+                        await send_heard("...")
+                        await send_reply("...", True)
+                        await send_audio(held)
+                        held = b""
                 elif kind == "text":
                     if not heard:
                         await send_heard("...")

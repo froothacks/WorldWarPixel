@@ -164,8 +164,9 @@ def test_interview_over_websocket(client: TestClient) -> None:
 class FakeRealtime:
     """Stands in for ``AsyncOpenAI`` with just enough of ``client.realtime.connect``."""
 
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, late: bool = False) -> None:
         self.fail = fail
+        self.late = late
         self.sessions: list[dict[str, Any]] = []
         self.realtime = self
 
@@ -191,16 +192,20 @@ class FakeRealtime:
 
     async def __aiter__(self) -> AsyncIterator[Any]:
         audio = base64.b64encode(b"\1\0" * 2400).decode()  # 0.1 s at 24 kHz
-        yield SimpleNamespace(type="response.output_audio.delta", delta=audio)
-        yield SimpleNamespace(
+        heard = SimpleNamespace(
             type="conversation.item.input_audio_transcription.completed",
             transcript="What are you painting?",
         )
+        yield SimpleNamespace(type="response.output_audio.delta", delta=audio)
+        if not self.late:
+            yield heard
         yield SimpleNamespace(type="response.output_audio.delta", delta=audio)
         yield SimpleNamespace(
             type="response.output_audio_transcript.done", transcript="Blue waves, mostly."
         )
         yield SimpleNamespace(type="response.done", response=SimpleNamespace(status="completed"))
+        if self.late:
+            yield heard
 
 
 def test_realtime_interview_streams_in_screen_order(client: TestClient) -> None:
@@ -252,3 +257,26 @@ def test_realtime_interview_streams_in_screen_order(client: TestClient) -> None:
         state.realtime = None
     assert "visitor" in rt.sessions[0]["instructions"]
     assert any("Blue waves" in t["thought"] for t in run.thoughts[agent.id])
+
+
+def test_realtime_releases_held_audio_when_answer_ends_before_transcript(
+    client: TestClient,
+) -> None:
+    state: Any = client.app.state  # type: ignore[attr-defined]
+    state.realtime = FakeRealtime(late=True)
+    small = {"width": 32, "height": 16, "agents": 4, "cooldown": 60, "seed": 7}
+    client.post("/runs", json={**small, "policy": "random", "societies": 2})
+    agent = state.runs.active()[0].agents[1]
+    try:
+        with client.websocket_connect("/devices/ws?token=tok-a") as ws:
+            ws.send_json(
+                {"type": "voice.start", "rate": 16000, "purpose": "interview", "agent": agent.id}
+            )
+            ws.send_json({"type": "voice.end"})
+            assert _until(ws, "interview.heard")["text"] == "..."
+            assert _until(ws, "interview.reply")["audio"]
+            msg = ws.receive()
+            assert len(msg["bytes"]) == 2 * 3200
+            _until(ws, "interview.audio_end")
+    finally:
+        state.realtime = None

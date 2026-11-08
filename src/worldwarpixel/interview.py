@@ -240,6 +240,8 @@ async def live(
 
     Yields ``("heard", question)`` once the clip is transcribed, ``("audio", pcm16k)`` as the
     answer is spoken, and finally ``("text", reply)`` with the transcript of what the agent said.
+    ``("spoken", None)`` means the answer is fully spoken while the question's transcript is
+    still pending.
     The exchange then lands in history and the agent's memory like a typed interview.
     """
     question = reply = ""
@@ -293,6 +295,11 @@ async def live(
                     if event.response.status == "failed":
                         raise InterviewError(f"{agent.name} could not answer")
                     answered = True
+                    if not heard:
+                        yield (
+                            "spoken",
+                            None,
+                        )  # done talking; don't sit on audio for the transcript
                 elif event.type == "error":
                     raise InterviewError(f"{agent.name} could not answer ({event.error.message})")
                 if answered and heard:
