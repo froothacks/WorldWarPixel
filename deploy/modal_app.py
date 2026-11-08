@@ -115,7 +115,7 @@ class Web:
     @modal.exit()
     def stop(self) -> None:
         self._stop.set()
-        self._backups.join(timeout=5)
+        self._backups.join()  # never overlap the final backup with a periodic one
         self._serve.backup()
 
 
