@@ -5,7 +5,8 @@ container's local disk (WAL needs real file locking, which a network Volume
 does not promise). The Modal ASGI container calls ``restore()`` before app startup and backs up
 periodically and on exit. ``python serve.py`` remains the legacy server entrypoint, and
 ``python serve.py backup`` is used to retire its Sandbox. Backups are committed with ``sync``
-(Volumes v2).
+(Volumes v2). When ``DATABASE_URL`` is set, the event log is in Postgres and this module skips
+SQLite restore and backup.
 """
 
 import os
@@ -21,11 +22,10 @@ from types import FrameType
 
 LIVE = Path(os.environ.get("EVENT_LOG_PATH", "/root/state/events.db"))
 BACKUP = Path(os.environ.get("EVENT_LOG_BACKUP", "/data/events.db"))
+POSTGRES = bool(os.environ.get("DATABASE_URL"))
 INTERVAL = float(os.environ.get("BACKUP_INTERVAL", "300"))
 GRACE = float(os.environ.get("SHUTDOWN_GRACE", "10"))
 PORT = os.environ.get("PORT", "8000")
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-SQLITE_EVENT_LOG = not DATABASE_URL
 
 
 def _is_local(path: Path) -> bool:
@@ -82,7 +82,9 @@ def copy_db(src: Path, dst: Path) -> None:
 
 
 def backup() -> None:
-    if not SQLITE_EVENT_LOG or not LIVE.exists():
+    if POSTGRES:
+        return
+    if not LIVE.exists():
         return
     started = time.monotonic()
     copy_db(LIVE, BACKUP)
@@ -92,7 +94,11 @@ def backup() -> None:
 
 
 def restore() -> None:
-    if not SQLITE_EVENT_LOG:
+    if POSTGRES:
+        print(
+            "DATABASE_URL set: event log is in Postgres, skipping SQLite restore and backups",
+            flush=True,
+        )
         return
     if BACKUP.exists() and not LIVE.exists():
         copy_db(BACKUP, LIVE)
@@ -113,10 +119,10 @@ def serve() -> int:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    next_backup = time.monotonic() + INTERVAL
+    next_backup = None if POSTGRES else time.monotonic() + INTERVAL
     while not stopping and server.poll() is None:
         time.sleep(1)
-        if time.monotonic() >= next_backup:
+        if next_backup is not None and time.monotonic() >= next_backup:
             next_backup += INTERVAL
             try:
                 backup()
@@ -138,7 +144,7 @@ def serve() -> int:
         backup()
     except Exception as exc:
         print(f"final backup failed: {exc!r}", flush=True)
-        if server.returncode == 0:
+        if server.returncode == 0 and not POSTGRES:
             return 1
     return server.returncode or 0
 

@@ -5,6 +5,7 @@
 #include "mic.h"
 #include "net.h"
 #include "state.h"
+#include "secrets.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -37,6 +38,9 @@ static const char *TAG = "ui";
 #define TAB2_X (LCD_W - TAB_W - 4)
 
 #define IV_SESSION_Y 92
+#define IV_REFRESH_X 230
+#define IV_REFRESH_Y 28
+#define IV_REFRESH_H 28
 #define LIST_Y       112
 #define ROW_H        26
 #define LIST_ROWS    9
@@ -99,7 +103,7 @@ static void draw_status(const app_state_t *st)
     uint16_t col = C_DIM;
     switch (st->conn) {
     case CONN_OFFLINE:    txt = "offline - retrying";        col = C_RED; break;
-    case CONN_WIFI:       txt = "wifi ok - server down";     col = C_YELLOW; break;
+    case CONN_WIFI:       txt = "not connected";             col = C_YELLOW; break;
     case CONN_WS:         txt = "connected";                 col = C_GREEN; break;
     case CONN_NOT_PAIRED: txt = "NOT PAIRED";                col = C_RED; break;
     }
@@ -158,9 +162,16 @@ static void draw_society_strip(const app_state_t *st)
     gfx_draw_line(0, 122, LCD_W, 122, C_LINE);
 }
 
+#define SESS_BTN_W 84
+
 static void draw_session(const app_state_t *st, int y)
 {
     char buf[96];
+    if (st->conn == CONN_WS) {   /* leave this session and pick another */
+        gfx_fill_rect(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_PANEL);
+        gfx_draw_rect_outline(LCD_W - 4 - SESS_BTN_W, y - 4, SESS_BTN_W, 16, C_YELLOW);
+        gfx_draw_text_centered(LCD_W - 4 - SESS_BTN_W / 2, y, "< SESSIONS", 1, C_YELLOW);
+    }
     if (st->run_active && st->run_id[0]) {
         if (st->run_pinned) {
             const run_info_t *ri = NULL;
@@ -174,10 +185,10 @@ static void draw_session(const app_state_t *st, int y)
         } else {
             snprintf(buf, sizeof(buf), "SESSION latest (%s)", st->run_id);
         }
-        ellipsize(buf, LCD_W - 16, 1);
+        ellipsize(buf, LCD_W - 24 - SESS_BTN_W, 1);
         gfx_draw_text(8, y, buf, 1, C_TEXT);
     } else if (st->run_pinned) {
-        gfx_draw_text(8, y, "SESSION ENDED - tap row to pick", 1, C_RED);
+        gfx_draw_text(8, y, "SESSION ENDED", 1, C_RED);
     } else if (st->conn == CONN_WS) {
         gfx_draw_text(8, y, "no live session", 1, C_DIM);
     }
@@ -212,8 +223,12 @@ static void draw_threads(const app_state_t *st)
 static void draw_canvas(const app_state_t *st)
 {
     /* thumbnail at (8, 286), max 160x100 shown as 2x2 decimation of 240x160 src */
-    if (!st->canvas_idx || st->canvas_w <= 0 || st->n_palette == 0)
+    gfx_draw_text(8, 274, "CANVAS - tap to refresh", 1, C_DIM);
+    if (!st->canvas_idx || st->canvas_w <= 0 || st->n_palette == 0) {
+        gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
+        gfx_draw_text_centered(88, 330, "TAP TO LOAD", 1, C_YELLOW);
         return;
+    }
     int dw = 160, dh = 100;
     int sx_step = st->canvas_w / dw;   if (sx_step < 1) sx_step = 1;
     int sy_step = st->canvas_h / dh;   if (sy_step < 1) sy_step = 1;
@@ -229,13 +244,11 @@ static void draw_canvas(const app_state_t *st)
         }
     }
     gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
-    gfx_draw_text(8, 274, "CANVAS", 1, C_DIM);
 }
 
 static void draw_murmur(const app_state_t *st)
 {
     int x = 176, w = LCD_W - 176 - 8;
-    if (!st->canvas_idx) { x = 8; w = LCD_W - 16; }
     gfx_draw_text(x, 274, "MURMUR", 1, C_DIM);
     if (st->has_murmur) {
         char buf[192];
@@ -293,29 +306,77 @@ static void draw_toast(const app_state_t *st, int64_t now)
     gfx_draw_text(x + 8, 376, msg, 1, C_TEXT);
 }
 
-static void draw_retry(const app_state_t *st, int64_t now, int64_t flash_until)
+#define CONN_BOX_Y 180
+#define CONN_BOX_H 100
+#define CONN_BOX_W 260
+
+/* shown whenever the socket is down: connecting only ever happens on this tap */
+static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until)
 {
-    /* shown when wifi is up but the server ws is down */
-    if (st->conn != CONN_WIFI)
+    if (st->conn == CONN_OFFLINE) {
+        gfx_draw_text_centered(LCD_W / 2, 220, "NO WIFI", 3, C_RED);
+        gfx_draw_text_centered(LCD_W / 2, 256, "joining the network...", 1, C_DIM);
         return;
+    }
     int phase, attempt;
     net_ws_phase(&phase, &attempt);
-    bool pressed = now < flash_until;
-    int w = 160, x = (LCD_W - w) / 2, y = 336, h = 34;
-    gfx_fill_rect(x, y, w, h, pressed ? C_YELLOW : C_PANEL);
-    gfx_draw_rect_outline(x, y, w, h, C_YELLOW);
-    const char *lbl = "TAP TO RETRY";
-    uint16_t lc = pressed ? C_BG : C_YELLOW;
-    char sub[48];
-    if (phase == 2)
-        snprintf(sub, sizeof(sub), "connecting... #%d", attempt);
-    else if (phase == 1)
-        snprintf(sub, sizeof(sub), "auto-retry #%d", attempt);
-    else
-        sub[0] = 0;
-    gfx_draw_text_centered(LCD_W / 2, y + 4, lbl, 1, lc);
-    if (sub[0])
-        gfx_draw_text_centered(LCD_W / 2, y + 18, sub, 1, pressed ? C_BG : C_DIM);
+    bool lit = now < flash_until || phase == 2;
+    int x = (LCD_W - CONN_BOX_W) / 2;
+    gfx_fill_rect(x, CONN_BOX_Y, CONN_BOX_W, CONN_BOX_H, lit ? C_YELLOW : C_PANEL);
+    gfx_draw_rect_outline(x, CONN_BOX_Y, CONN_BOX_W, CONN_BOX_H, C_YELLOW);
+    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 30, phase == 2 ? "CONNECTING..." : "CONNECT",
+                           3, lit ? C_BG : C_YELLOW);
+    const char *host = SERVER_URL;
+    if (!strncmp(host, "https://", 8)) host += 8;
+    else if (!strncmp(host, "http://", 7)) host += 7;
+    gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + 70, host, 1, lit ? C_BG : C_DIM);
+    if (phase == 3)
+        gfx_draw_text_centered(LCD_W / 2, CONN_BOX_Y + CONN_BOX_H + 14,
+                               "could not reach the server - tap to retry", 1, C_RED);
+}
+
+#define SP_Y    60
+#define SP_ROW  36
+#define SP_ROWS (MAX_RUNS + 1)   /* row 0 = follow the newest session */
+
+static void draw_session_picker(const app_state_t *st, bool flash)
+{
+    gfx_draw_text(8, 30, "PICK A SESSION", 2, C_TEXT);
+    int w = LCD_W - 4 - IV_REFRESH_X;
+    gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
+    gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+    gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
+                           flash ? C_BG : C_YELLOW);
+    if (st->n_runs == 0) {
+        gfx_draw_text_centered(LCD_W / 2, 170, "NO LIVE SESSIONS", 2, C_YELLOW);
+        draw_wrapped(24, 200, LCD_W - 48,
+                     "Start a run with societies on the website; it shows up here.", 1, C_DIM, 3);
+    }
+    if (st->n_runs > 0) {
+        bool cur = !st->run_pinned;
+        gfx_fill_rect(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
+        gfx_draw_rect_outline(8, SP_Y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
+        gfx_draw_text(16, SP_Y + 4, "FOLLOW NEWEST", 2, C_TEXT);
+        gfx_draw_text(16, SP_Y + 22, "switches to new sessions as they start", 1, C_DIM);
+    }
+    for (int r = 0; r < st->n_runs && r + 1 < SP_ROWS; r++) {
+        const run_info_t *ri = &st->runs[r];
+        int y = SP_Y + (r + 1) * SP_ROW;
+        bool cur = st->run_pinned && !strcmp(ri->id, st->run_id);
+        gfx_fill_rect(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_PANEL : C_BG);
+        gfx_draw_rect_outline(8, y, LCD_W - 16, SP_ROW - 4, cur ? C_TEXT : C_LINE);
+        char l1[48];
+        snprintf(l1, sizeof(l1), "%s  %d agents", ri->id, ri->agents);
+        ellipsize(l1, LCD_W - 32, 2);
+        gfx_draw_text(16, y + 4, l1, 2, C_TEXT);
+        char l2[96];
+        snprintf(l2, sizeof(l2), "%s - %s", ri->model, ri->soc_names);
+        ellipsize(l2, LCD_W - 32, 1);
+        gfx_draw_text(16, y + 22, l2, 1, C_DIM);
+    }
+    gfx_fill_rect(BTN_X, BTN_Y, BTN_W, BTN_H, C_PANEL);
+    gfx_draw_rect_outline(BTN_X, BTN_Y, BTN_W, BTN_H, C_LINE);
+    gfx_draw_text_centered(LCD_W / 2, BTN_Y + 30, "BACK", 2, C_DIM);
 }
 
 /* ---------------- interview mode ---------------- */
@@ -325,9 +386,14 @@ static int page_count(const app_state_t *st)
     return st->n_agents ? (st->n_agents + LIST_ROWS - 1) / LIST_ROWS : 1;
 }
 
-static void draw_iv_header(const app_state_t *st)
+static void draw_iv_header(const app_state_t *st, bool flash)
 {
     if (st->iv_agent.id < 0) {
+        int w = LCD_W - 4 - IV_REFRESH_X;
+        gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
+        gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+        gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
+                               flash ? C_BG : C_YELLOW);
         gfx_draw_text(8, 34, "PICK SOMEONE", 3, C_TEXT);
         gfx_draw_text(8, 64, "tap a name, or hold the button and say it", 1, C_DIM);
         return;
@@ -354,8 +420,9 @@ static void draw_iv_header(const app_state_t *st)
 static void draw_picker(const app_state_t *st, int page)
 {
     if (st->n_agents == 0) {
-        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "loading people..." : "no live session",
-                      2, C_DIM);
+        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "no people loaded" : "no live session", 2,
+                      C_DIM);
+        gfx_draw_text(8, LIST_Y + 34, "tap REFRESH to load the list", 1, C_DIM);
         return;
     }
     for (int r = 0; r < LIST_ROWS; r++) {
@@ -466,6 +533,7 @@ static void draw_not_paired(const app_state_t *st)
     gfx_draw_text_centered(LCD_W / 2, 160, "NOT PAIRED", 3, C_RED);
     gfx_draw_text_centered(LCD_W / 2, 200, "give the operator this MAC:", 1, C_DIM);
     gfx_draw_text_centered(LCD_W / 2, 218, st->mac, 2, C_TEXT);
+    gfx_draw_text_centered(LCD_W / 2, 260, "tap to try again", 1, C_DIM);
 }
 
 void ui_task(void *arg)
@@ -474,20 +542,24 @@ void ui_task(void *arg)
     bool held = false, prev_touched = false;
     int64_t held_since = 0;
     int64_t voice_done_at = 0;
-    int run_cursor = -1;                 /* -1 = latest, else index into runs[] */
-    char synced_run[12] = "";
     int64_t retry_flash_until = 0;
+    bool picking = false;                /* session list on screen */
+    conn_state_t prev_conn = CONN_OFFLINE;
     int page = 0;
-    int64_t agents_asked = 0, thinking_since = 0;
+    int64_t thinking_since = 0, refresh_flash = 0;
 
     while (1) {
         STATE_LOCK();
         st = g_state;                  /* shallow copy incl. pointers */
         STATE_UNLOCK();
+        if (st.conn == CONN_WS && prev_conn != CONN_WS)
+            picking = true;            /* every new connection starts at the session list */
+        prev_conn = st.conn;
+        bool live = st.conn == CONN_WS && !picking;
 
         int tx, ty;
         bool touched = hw_touch_poll(&tx, &ty);
-        bool in_btn = touched && tx >= BTN_X && tx < BTN_X + BTN_W &&
+        bool in_btn = live && touched && tx >= BTN_X && tx < BTN_X + BTN_W &&
                       ty >= BTN_Y && ty < BTN_Y + BTN_H;
 
         if (in_btn && !held) {
@@ -510,16 +582,17 @@ void ui_task(void *arg)
                 net_set_mode(mode);
                 spk_stop();
                 page = 0;
+                if (mode == MODE_INTERVIEW && st.conn == CONN_WS)
+                    net_agents_list();
             }
         }
 
-        if (interview) {
-            /* keep the list of people for the current world */
-            if (st.conn == CONN_WS && st.run_active &&
-                (strcmp(st.agents_run, st.run_id) || st.n_agents == 0) &&
-                now_us - agents_asked > 4000000) {
+        if (interview && live) {
+            /* people list: only on a tap of REFRESH (never polled) */
+            if (tap && st.iv_agent.id < 0 && tx >= IV_REFRESH_X && ty >= IV_REFRESH_Y &&
+                ty < IV_REFRESH_Y + IV_REFRESH_H) {
                 net_agents_list();
-                agents_asked = now_us;
+                refresh_flash = now_us + 400000;
             }
             /* never get stuck on THINKING if the server drops the reply */
             if (st.iv_status != IV_THINKING)
@@ -555,35 +628,52 @@ void ui_task(void *arg)
             }
         }
 
+        /* canvas thumbnail: fetched only when tapped */
+        if (!interview && live && tap && tx < 172 && ty >= 272 && ty < 390)
+            net_canvas_refresh();
+
         /* society picker strip (y 96..122): tap a segment to switch view */
-        if (!interview && tap && ty >= 96 && ty <= 122) {
+        if (!interview && live && tap && ty >= 96 && ty <= 122) {
             int seg = tx / (LCD_W / MAX_SOCIETIES);
             if (seg >= 0 && seg < st.n_societies)
                 net_society_select(st.societies[seg].id);
         }
 
-        /* session row (y 124..138): cycle latest -> run0 -> run1 ... */
-        if (st.run_pinned && st.run_id[0] && strcmp(st.run_id, synced_run)) {
-            int idx = -1;
-            for (int i = 0; i < st.n_runs; i++)
-                if (!strcmp(st.runs[i].id, st.run_id)) idx = i;
-            run_cursor = idx;
-            snprintf(synced_run, sizeof(synced_run), "%s", st.run_id);
-        } else if (!st.run_pinned) {
-            run_cursor = -1;
-            synced_run[0] = 0;
-        }
+        /* session row: open the session list */
         int session_y = interview ? IV_SESSION_Y : 124;
-        if (tap && ty >= session_y && ty <= session_y + 14 && st.n_runs >= 1) {
-            run_cursor = (run_cursor + 2) % (st.n_runs + 1) - 1;
-            net_run_select(run_cursor < 0 ? NULL : st.runs[run_cursor].id);
+        if (live && tap && ty > session_y - 2 && ty <= session_y + 16)   /* strip ends at 122 */
+            picking = true;
+        else if (picking && st.conn == CONN_WS && tap && tx >= IV_REFRESH_X &&
+                 ty >= IV_REFRESH_Y && ty < IV_REFRESH_Y + IV_REFRESH_H) {
+            net_runs_refresh();
+            refresh_flash = now_us + 400000;
+        } else if (picking && st.conn == CONN_WS && tap && ty >= SP_Y) {
+            int r = (ty - SP_Y) / SP_ROW;
+            if (ty >= BTN_Y) {
+                picking = false;
+            } else if (r == 0 && st.n_runs > 0) {
+                net_run_select(NULL);   /* follow the newest live session */
+                picking = false;
+                if (interview)
+                    net_agents_list();
+            } else if (r >= 1 && r - 1 < st.n_runs && r < SP_ROWS) {
+                net_run_select(st.runs[r - 1].id);
+                picking = false;
+                if (interview)
+                    net_agents_list();
+            }
         }
 
-        /* retry button (y 336..370, centered 160 wide) */
-        if (touched && !prev_touched && st.conn == CONN_WIFI &&
-            ty >= 336 && ty <= 370 && tx >= (LCD_W - 160) / 2 && tx <= (LCD_W + 160) / 2) {
+        /* CONNECT (the only way a connection is ever opened) */
+        if (tap && st.conn == CONN_WIFI && ty >= CONN_BOX_Y && ty < CONN_BOX_Y + CONN_BOX_H &&
+            tx >= (LCD_W - CONN_BOX_W) / 2 && tx < (LCD_W + CONN_BOX_W) / 2) {
             net_ws_retry_now();
-            retry_flash_until = esp_timer_get_time() + 400000;
+            retry_flash_until = now_us + 400000;
+        }
+        if (tap && st.conn == CONN_NOT_PAIRED) {
+            STATE_LOCK();
+            g_state.conn = CONN_WIFI;
+            STATE_UNLOCK();
         }
         prev_touched = touched;
 
@@ -607,27 +697,32 @@ void ui_task(void *arg)
 
             draw_status(&st);
             draw_tabs(&st);
-            if (interview) {
-                draw_iv_header(&st);
-                draw_session(&st, IV_SESSION_Y + 2);
-                if (st.iv_agent.id < 0)
-                    draw_picker(&st, page);
-                else
-                    draw_convo(&st);
+            if (st.conn != CONN_WS) {
+                draw_connect(&st, esp_timer_get_time(), retry_flash_until);
+            } else if (picking) {
+                draw_session_picker(&st, esp_timer_get_time() < refresh_flash);
             } else {
-                draw_header(&st);
-                draw_society_strip(&st);
-                draw_session(&st, 126);
-                draw_threads(&st);
-                draw_canvas(&st);
-                draw_murmur(&st);
+                if (interview) {
+                    draw_iv_header(&st, esp_timer_get_time() < refresh_flash);
+                    draw_session(&st, IV_SESSION_Y + 2);
+                    if (st.iv_agent.id < 0)
+                        draw_picker(&st, page);
+                    else
+                        draw_convo(&st);
+                } else {
+                    draw_header(&st);
+                    draw_society_strip(&st);
+                    draw_session(&st, 126);
+                    draw_threads(&st);
+                    draw_canvas(&st);
+                    draw_murmur(&st);
+                }
+                if (interview)
+                    draw_iv_button(&st, held, held ? esp_timer_get_time() - held_since : 0);
+                else
+                    draw_button(&st, held, held ? esp_timer_get_time() - held_since : 0);
             }
-            draw_retry(&st, esp_timer_get_time(), retry_flash_until);
             draw_toast(&st, esp_timer_get_time());
-            if (interview)
-                draw_iv_button(&st, held, held ? esp_timer_get_time() - held_since : 0);
-            else
-                draw_button(&st, held, held ? esp_timer_get_time() - held_since : 0);
         }
 
         hw_present(gfx_fb());
