@@ -91,6 +91,8 @@ def load_timeline(log: EventLog, run_id: str) -> Timeline | None:
             tl.board_clears.append(e.ts)
         elif e.kind == "narrator.update" and p.get("kind") != "answer" and p.get("headline"):
             tl.headlines.append((e.ts, str(p["headline"])))
+            if tl.t0 is not None:
+                tl.t1 = max(tl.t1 or e.ts, e.ts)
         elif e.kind == "run.deleted":
             return None
     return tl
