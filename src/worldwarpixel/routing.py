@@ -108,8 +108,8 @@ class EndpointPool:
         self,
         endpoints: Sequence[tuple[Endpoint, Any]],
         cooldown: float = 15.0,
-        auth_cooldown: float = 300.0,
         clock: Callable[[], float] = time.monotonic,
+        auth_cooldown: float = 300.0,
     ) -> None:
         if not endpoints:
             raise ValueError("an endpoint pool needs at least one endpoint")
