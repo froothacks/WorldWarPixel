@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
-from worldwarpixel.api import RunManager, random_policy
+from worldwarpixel.api import RunManager, random_policy, rosters_router
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.llm import ChatService
@@ -99,7 +99,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     timeout=settings.request_timeout,
                     # Modal presets authenticate with their own headers, scoped to Modal
                     # hosts so an overridden preset URL never receives the credentials.
-                    default_headers=settings.modal_headers_for(spec.base_url) or None,
+                    default_headers=settings.modal_headers_for(spec.base_url, spec.auth_workspace)
+                    or None,
                 )
             else:
                 client = AsyncOpenAI(
@@ -188,6 +189,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
 app.include_router(runs_router)
+app.include_router(rosters_router)
 
 
 def get_chat_service(request: Request) -> ChatService:

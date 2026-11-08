@@ -13,7 +13,7 @@ The start screen picks one per run. The quirks are load-bearing:
 from dataclasses import dataclass
 from typing import Literal
 
-from worldwarpixel.config import Settings
+from worldwarpixel.config import Settings, is_modal_url
 
 TokenParam = Literal["max_tokens", "max_completion_tokens"]
 
@@ -31,6 +31,8 @@ class ModelSpec:
     base_url: str | None
     auth: Literal["modal", "bearer"]
     """modal: Modal-Key/Modal-Secret headers; bearer: OPENAI_API_KEY as the bearer token."""
+    auth_workspace: str | None = None
+    """Modal workspace whose proxy-auth pair to use; None uses MODAL_KEY/MODAL_SECRET."""
     token_param: TokenParam = "max_tokens"
     chat_template_kwargs: bool = True
     """Send extra_body chat_template_kwargs.enable_thinking=False (vLLM/Qwen only)."""
@@ -73,6 +75,37 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),
+        ModelSpec(
+            id="glm",
+            label="GLM 5.3 Flash NVFP4 (advait-m)",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url=settings.glm_base_url,
+            auth="modal",
+            # Reasons (reasoning_content) before the tool call, so it needs the large budget.
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
+        ),
+        # chryztoph workspace endpoints: proxy auth comes from CHRYZTOPH_MODAL_KEY/_SECRET.
+        ModelSpec(
+            id="qwen-c",
+            label="Qwen (chryztoph)",
+            model="qwen",
+            base_url="https://chryztoph--ep-qwen-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="chryztoph",
+        ),
+        ModelSpec(
+            id="glm-5.3-flash",
+            label="GLM 5.3 Flash NVFP4 (chryztoph)",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url="https://chryztoph--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="chryztoph",
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
+        ),
     ]
 
 
@@ -83,7 +116,8 @@ def find_model(settings: Settings, model_id: str) -> ModelSpec | None:
 def model_available(settings: Settings, spec: ModelSpec) -> bool:
     """Whether this server holds the credentials the model's auth style needs."""
     if spec.auth == "modal":
-        return bool(
-            settings.modal_key.get_secret_value() and settings.modal_secret.get_secret_value()
-        )
+        if spec.base_url is not None and not is_modal_url(spec.base_url):
+            # Overridden to a non-Modal endpoint: no proxy auth is needed (or wanted).
+            return True
+        return bool(settings.modal_headers_for(spec.base_url, spec.auth_workspace))
     return bool(settings.openai_api_key.get_secret_value())

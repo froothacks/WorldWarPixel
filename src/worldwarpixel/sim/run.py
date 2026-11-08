@@ -8,7 +8,8 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
-from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
+from worldwarpixel.personas.roster import load_roster
+from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents, seed_roster
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
@@ -28,7 +29,7 @@ MAX_AGENTS = 10_000
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
 by one core for the random policy (~100 turns/s)."""
 
-LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown")
+LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown", "headline")
 
 
 class RunConfig(BaseModel):
@@ -66,6 +67,13 @@ class RunConfig(BaseModel):
     model: str = Field(
         default="gpt-6-luna",
         description="Model preset id from GET /models (qwen, deepseek, gpt-6-luna)",
+    )
+    roster: Literal["world", "hackathon"] = Field(
+        default="world",
+        description=(
+            "Who plays: 'world' seats `agents` people per country by population; 'hackathon' "
+            "is one agent per attendee of the bundled hackathon roster (ignores `agents`)"
+        ),
     )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
@@ -123,6 +131,12 @@ class Run:
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
+        if agents is None and config.roster != "world":
+            roster = load_roster(config.roster)
+            agents = seed_roster(
+                roster.people, roster.event, config.width, config.height, config.cooldown, self.rng
+            )
+            self.config = config = config.model_copy(update={"agents": len(agents)})
         self.agents = agents or seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
@@ -565,6 +579,7 @@ class Run:
         return [
             {
                 **{k: getattr(a, k) for k in LIST_FIELDS},
+                "affiliation": a.persona_card.get("affiliation", "") if a.headline else "",
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }

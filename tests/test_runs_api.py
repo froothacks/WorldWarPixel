@@ -68,7 +68,14 @@ def test_run_lifecycle(client: TestClient) -> None:
 
 def test_models_endpoint_lists_presets(client: TestClient) -> None:
     models = client.get("/models").json()
-    assert {m["id"] for m in models} == {"gpt-6-luna", "qwen", "deepseek"}
+    assert {m["id"] for m in models} == {
+        "gpt-6-luna",
+        "qwen",
+        "deepseek",
+        "glm",
+        "qwen-c",
+        "glm-5.3-flash",
+    }
     assert all(set(m) == {"id", "label", "model", "available"} for m in models)
 
 
@@ -186,3 +193,8 @@ def test_spa_fallback_does_not_swallow_api_404s(
     with pytest.raises(HTTPException) as exc:
         asyncio.run(app_module.frontend("runs/nope/unknown"))
     assert exc.value.status_code == 404
+
+
+def test_rosters_endpoint_lists_the_hackathon(client: TestClient) -> None:
+    rosters = client.get("/rosters").json()
+    assert {"id": "hackathon", "size": 86}.items() <= rosters[0].items()
