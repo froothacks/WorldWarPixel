@@ -2,12 +2,14 @@
 
 Layout (little-endian): u16 frames, u16 width, u16 height, then per frame
 f64 ts, u32 n, n x (u32 pixel_index, u8 colour). Frames are evenly spaced in time between the
-first and last pixel event; each frame holds only the pixels that changed since the previous one,
-so the client accumulates them into a buffer while scrubbing.
+first and last pixel event; by default, there is one frame per second of history. Each frame holds
+only the pixels that changed since the previous one, so the client accumulates them into a buffer
+while scrubbing.
 """
 
 from __future__ import annotations
 
+import math
 import struct
 from collections.abc import Iterable
 from itertools import takewhile
@@ -15,7 +17,7 @@ from itertools import takewhile
 from worldwarpixel.sim.events import Event, EventStore
 from worldwarpixel.sim.migrations import CANVAS_KINDS
 
-MAX_FRAMES = 600
+MAX_FRAMES = 0xFFFF
 PAGE = 10_000
 
 
@@ -45,14 +47,18 @@ def _time_span(log: EventStore, run_id: str) -> tuple[float, float, int] | None:
     return None if t0 is None or t1 is None else (t0, t1, last_id)
 
 
-def build_timelapse(log: EventStore, run_id: str, width: int, height: int, frames: int) -> bytes:
-    """Two passes over the log (span, then deltas) so memory stays O(canvas), not O(events)."""
-    frames = max(1, min(frames, MAX_FRAMES))
+def build_timelapse(
+    log: EventStore, run_id: str, width: int, height: int, frames: int | None = None
+) -> bytes:
+    """Build deltas in two passes; by default, emit one frame per second of history."""
     out = bytearray(struct.pack("<HHH", 0, width, height))
     span = _time_span(log, run_id)
     if span is None:
         return bytes(out)
     t0, t1, last_id = span
+    if frames is None:
+        frames = math.ceil(t1 - t0)
+    frames = max(1, min(frames, MAX_FRAMES))
     step = (t1 - t0) / frames if t1 > t0 else 0.0
     state = bytearray(width * height)
     pending: dict[int, int] = {}
