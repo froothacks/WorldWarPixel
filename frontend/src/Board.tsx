@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { InlineError } from "./Errors";
 import { api, GOD_ID, type Agent, type Post, type Society, type ThreadDigest } from "./api";
 
 interface Props {
@@ -38,6 +39,16 @@ function voterId(): string {
     localStorage.setItem("wwp-voter", id);
   }
   return id;
+}
+
+const voteClass = (mine: number | undefined) => ((mine ?? 0) > 0 ? "up" : (mine ?? 0) < 0 ? "down" : "");
+
+function Chevron({ down = false }: { down?: boolean }) {
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className={down ? "flip" : undefined}>
+      <path d="M2.5 7.75 6 4.25l3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 /** Seconds of recency one net vote is worth; mirrors VOTE_BOOST in sim/board.py. */
@@ -189,7 +200,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
       {societies.length > 0 && (
         <div className="society-tabs" role="tablist" aria-label="Society">
           <button role="tab" aria-selected={society === null} className={society === null ? "on" : ""} onClick={() => setSociety(null)}>
-            All
+            <span className="society-name">All</span>
           </button>
           {societies.map((s) => (
             <button
@@ -197,26 +208,28 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
               role="tab"
               aria-selected={society === s.id}
               className={society === s.id ? "on" : ""}
-              style={{ borderBottomColor: society === s.id ? s.color : undefined }}
+              style={{ "--c": s.color } as CSSProperties}
               onClick={() => setSociety(s.id)}
-              title={`${members.get(s.id) ?? s.members} members`}
+              title={`${s.name} · ${members.get(s.id) ?? s.members} members`}
             >
               <span className="dot" style={{ background: s.color }} />
-              {s.name}
+              <span className="society-name">{s.name}</span>
               <span className="society-n">{members.get(s.id) ?? s.members}</span>
             </button>
           ))}
         </div>
       )}
       {current && (
-        <div className="society-info">
-          {current.murmur ? (
-            <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
-              “{current.murmur}”
-            </span>
-          ) : (
-            <span className="muted">Nobody has spoken to this society yet.</span>
-          )}
+        <div className="society-info" style={{ "--c": current.color } as CSSProperties}>
+          <div className="society-info-text">
+            {current.murmur ? (
+              <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
+                “{current.murmur}”
+              </span>
+            ) : (
+              <span className="muted">Nobody has spoken to this society yet.</span>
+            )}
+          </div>
           <a href={`?screen=${current.id}&run=${runId}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
             Screen ↗
           </a>
@@ -257,23 +270,27 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
         {threads.length > 0 && shown.length === 0 && <p className="muted small pad">No threads match “{query}”.</p>}
         {shown.map((t) => (
           <div key={t.thread_id} className="thread-item">
-          <div className="voter">
+          <div className={`voter ${voteClass(myVotes[t.thread_id])}`}>
             <button
-              className={`vote ${(myVotes[t.thread_id] ?? 0) > 0 ? "on" : ""}`}
+              className="vote vote-up"
+              aria-pressed={(myVotes[t.thread_id] ?? 0) > 0}
               title="Upvote: move this thread up the board (agents see the board in this order)"
               aria-label="Upvote"
               onClick={() => vote(t.thread_id, 1)}
             >
-              ▲
+              <Chevron />
             </button>
-            <span className="small">{t.votes ?? 0}</span>
+            <span className="vote-count" title={`Score ${t.votes ?? 0}`}>
+              {t.votes ?? 0}
+            </span>
             <button
-              className={`vote ${(myVotes[t.thread_id] ?? 0) < 0 ? "on" : ""}`}
+              className="vote vote-down"
+              aria-pressed={(myVotes[t.thread_id] ?? 0) < 0}
               title="Downvote: move this thread down the board"
               aria-label="Downvote"
               onClick={() => vote(t.thread_id, -1)}
             >
-              ▼
+              <Chevron down />
             </button>
           </div>
           <button
@@ -558,7 +575,7 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           }}
           title="Agents treat replies from The Hand of God as top priority"
         >
-          <span className="god-reply-label">⚡ The Hand of God</span>
+          <span className="god-reply-label">Reply as God</span>
           <input
             value={draft}
             maxLength={600}
@@ -569,7 +586,7 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           <button type="submit" disabled={sending || !draft.trim()}>
             {sending ? "…" : "Reply"}
           </button>
-          {sendError && <span className="error small">{sendError}</span>}
+          {sendError && <InlineError message={sendError} />}
         </form>
       )}
     </>

@@ -18,6 +18,8 @@ import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
 import Territory from "./Territory";
 import Alliances from "./Alliances";
+import { Toasts } from "./Errors";
+import { errorHint, useToasts } from "./errorUtils";
 import Board from "./Board";
 import NarratorDock from "./NarratorDock";
 import Timelapse from "./Timelapse";
@@ -38,6 +40,7 @@ const TABS: [SideTab, string][] = [
 ];
 
 export default function LiveView({ run: initial, onLeave }: Props) {
+  const { toasts, notify, dismiss } = useToasts();
   const [run, setRun] = useState<RunSummary>(initial);
   const [palette, setPalette] = useState<string[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -270,7 +273,10 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const control = (action: "pause" | "resume" | "stop") =>
     api[action](initial.id)
       .then(setRun)
-      .catch((e: Error) => alert(e.message));
+      .catch((e: Error) => notify(`Couldn't ${action} the run`, e.message));
+  const [errDismissed, setErrDismissed] = useState<string | null>(null);
+  // A recovery ends the dismissed episode, so the next failure shows again even with the same text.
+  if (!run.llm?.last_error && errDismissed !== null) setErrDismissed(null);
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [videoBusy, setVideoBusy] = useState(false);
@@ -281,7 +287,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       await api.renderVideo(initial.id);
       window.open(api.videoUrl(initial.id), "_blank");
     } catch (e) {
-      window.alert(`Video render failed: ${(e as Error).message}`);
+      notify("Video render failed", (e as Error).message);
     } finally {
       setVideoBusy(false);
     }
@@ -298,11 +304,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           // One alert per streak of failures, not one per brush segment.
           if (paintRejected.current) return;
           paintRejected.current = true;
-          alert(`God brush rejected: ${e.message}`);
+          notify("God brush rejected", e.message);
         },
       );
     },
-    [initial.id],
+    [initial.id, notify],
   );
 
   const llm = run.llm;
@@ -319,6 +325,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     <div className="live">
       <header className="topbar">
         <button className="brand" onClick={onLeave} title="Back to all runs">
+          <span className="logo" aria-hidden="true" />
           WorldWarPixel
         </button>
         <span className="crumb">
@@ -327,18 +334,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <span className={`state state-${run.state}`}>{run.state}</span>
           {people && <span className="roster-tag">{run.agents} attendees</span>}
         </span>
-        <dl className="stats" title={llmTitle}>
-          <Stat k="agents" v={run.agents} />
-          <Stat k="turns" v={run.stats.turns} />
-          <Stat k="px" v={run.stats.pixels} />
-          <Stat k="posts" v={run.stats.posts} />
-          {llm && <Stat k="calls" v={llm.calls} className="opt" />}
-          {turnLatency && <Stat k="p50" v={`${turnLatency.p50.toFixed(2)}s`} className="opt" />}
-          {llm && llm.failures > 0 && <Stat k="failed" v={llm.failures} className="bad" />}
-        </dl>
         <span className="spacer" />
         <span className={`conn ${live ? "conn-on" : ""}`} title={connection}>
-          {live ? "● live" : connection.startsWith("disconnected") ? "○ offline" : "○ connecting"}
+          {live ? "Live" : connection.startsWith("disconnected") ? "Offline" : "Connecting"}
         </span>
         <div className="actions">
           <button
@@ -370,13 +368,28 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
         </div>
       </header>
-      {llm?.last_error && (
-        <div className="errbar" role="alert">
-          Model calls failing ({llm.failures}): {llm.last_error}
+      {llm?.last_error && llm.last_error !== errDismissed && (
+        <div className="errbar" role="alert" title={llm.last_error}>
+          <span className="errbar-msg">
+            Model calls failing: {errorHint(llm.last_error) ?? llm.last_error}
+          </span>
+          <span className="errbar-count">{llm.failures.toLocaleString()} failed</span>
+          <button className="icon-close" aria-label="Dismiss until the error changes" onClick={() => setErrDismissed(llm.last_error ?? null)}>
+            ×
+          </button>
         </div>
       )}
       <div className="live-grid">
         <section className="stage">
+          <dl className="kpis" title={llmTitle}>
+            <Stat k="agents" v={run.agents} />
+            <Stat k="turns" v={run.stats.turns} />
+            <Stat k="pixels" v={run.stats.pixels} />
+            <Stat k="posts" v={run.stats.posts} />
+            {llm && <Stat k="model calls" v={llm.calls} className="opt" />}
+            {turnLatency && <Stat k="turn p50" v={`${turnLatency.p50.toFixed(2)}s`} className="opt" />}
+            {llm && llm.failures > 0 && <Stat k="failed" v={llm.failures} className="bad" />}
+          </dl>
           {god ? (
             <GodBar
               runId={initial.id}
@@ -385,6 +398,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
               tool={tool}
               onTool={setTool}
               onRun={setRun}
+              onError={notify}
               onClose={() => {
                 setGod(false);
                 setTool(null);
@@ -477,13 +491,14 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         </div>
       </div>
       {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
 
 function Stat({ k, v, className = "" }: { k: string; v: number | string; className?: string }) {
   return (
-    <div className={`stat ${className}`}>
+    <div className={`kpi ${className}`}>
       <dt>{k}</dt>
       <dd>{typeof v === "number" ? v.toLocaleString() : v}</dd>
     </div>

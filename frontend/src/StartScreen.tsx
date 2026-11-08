@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, DEFAULT_CONFIG, type ModelInfo, type RosterSummary, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
+import { InlineError } from "./Errors";
 
 interface Props {
   onStarted: (run: RunSummary) => void;
@@ -182,12 +183,7 @@ export default function StartScreen({ onStarted }: Props) {
 
           {!roster && (
           <label className="field">
-            <span className="field-label agent-label">
-              Agents
-              <strong className="agent-n">
-                {cfg.agents.toLocaleString()} <span>agent{cfg.agents === 1 ? "" : "s"}</span>
-              </strong>
-            </span>
+            <span className="field-label">Agents</span>
             <div className="agent-count">
               <input
                 type="range"
@@ -309,7 +305,7 @@ export default function StartScreen({ onStarted }: Props) {
             </button>
           </div>
           {warning && <p className="warn">{warning}</p>}
-          {error && <p className="error">{error}</p>}
+          {error && <InlineError message={error} block />}
         </section>
 
         <section className="recent">
