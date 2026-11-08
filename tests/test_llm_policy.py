@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import random
 from typing import Any, Literal
@@ -12,6 +13,7 @@ from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.llm_policy import (
+    SOCIETY_TOOLS,
     LLMPolicy,
     _canonical_tool,
     _parse_pixel_list,
@@ -143,9 +145,8 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     assert asyncio.run(policy.act(agent, tools, obs)) == "Just thinking."
     assert policy.stats["no_tools"] == 1
-    assert "4 pixels" in system_prompt(agent, 64, 40, 4, 1) and "Priya Raman, 34" in system_prompt(
-        agent, 64, 40, 4, 1
-    )
+    assert "4 pixels" in user_prompt(agent, obs)
+    assert "Priya Raman, 34" in system_prompt(agent, 64, 40, 4, 1)
 
 
 def test_default_prompt_is_neutral_and_offers_only_basic_tools() -> None:
@@ -402,7 +403,7 @@ def test_pixel_shorthand_and_missing_colour() -> None:
     assert policy.stats["tool_errors"] == 0
 
 
-def test_max_concurrency_limits_in_flight_model_calls() -> None:
+def test_shared_endpoint_pool_limits_multiple_policies() -> None:
     active = 0
     peak = 0
 
@@ -418,44 +419,25 @@ def test_max_concurrency_limits_in_flight_model_calls() -> None:
     class Client:
         chat = _Obj(completions=Completions())
 
+    endpoint = Endpoint(
+        "only",
+        "https://only/v1",
+        "m",
+        "bearer",
+        (),
+        max_in_flight=1,
+        initial_in_flight=1,
+    )
+    pool = EndpointPool([(endpoint, Client())])
     agent, tools, obs, _events = _setup()
-    policy = LLMPolicy(Client(), "m", vision=False, max_concurrency=1)  # type: ignore[arg-type]
-
-    async def main() -> None:
-        await asyncio.gather(*(policy.act(agent, tools, obs) for _ in range(4)))
-
-    asyncio.run(main())
-    assert peak == 1
-
-
-def test_shared_semaphore_caps_multiple_policies_on_one_endpoint() -> None:
-    active = 0
-    peak = 0
-
-    class Completions:
-        async def create(self, **kw: Any) -> Any:
-            nonlocal active, peak
-            active += 1
-            peak = max(peak, active)
-            await asyncio.sleep(0.01)
-            active -= 1
-            return _response(None, [])
-
-    class Client:
-        chat = _Obj(completions=Completions())
-
-    agent, tools, obs, _events = _setup()
-    shared = asyncio.Semaphore(1)
-    policies = [
-        LLMPolicy(Client(), "m", vision=False, semaphore=shared)  # type: ignore[arg-type]
-        for _ in range(3)
-    ]
+    policies = [LLMPolicy(pool, "m", vision=False) for _ in range(3)]
 
     async def main() -> None:
         await asyncio.gather(*(p.act(agent, tools, obs) for p in policies for _ in range(2)))
 
     asyncio.run(main())
     assert peak == 1
+    assert pool.public_stats()["only"]["in_flight"] == 0
 
 
 def test_regions_report_busiest_tiles_with_dominant_colour() -> None:
@@ -501,7 +483,7 @@ def test_pick_threads_keeps_tagged_entries_before_recent_and_random_threads() ->
     assert [entry["thread_id"] for entry in picked[3:5]] == [1, 3]
 
 
-def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
+def test_prompt_marks_world_news_and_keeps_post_tools_without_budget() -> None:
     agent, _, obs, _ = _setup()
     obs.board = [
         {
@@ -522,7 +504,94 @@ def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
     assert "Hand of God" not in system_prompt(agent, 64, 40, 4, 1)
     policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
     names = [tool["function"]["name"] for tool in policy._tools_for(obs)]
-    assert "post_thread" not in names and "reply" not in names
+    assert "post_thread" in names and "reply" in names
+
+
+@pytest.mark.parametrize("guided", (False, True))
+def test_request_prefix_and_tools_stay_stable(guided: bool) -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([])
+    policy = LLMPolicy(client, "m", vision=False, guided=guided)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    first = copy.deepcopy(client.chat.completions.requests[-1])
+    obs.budget.posts = 0
+    obs.budget.pixels = 2
+    agent.home_x, agent.home_y = 12, 14
+    obs.memory = ["1 s ago: I painted."]
+    obs.society = {"id": 1, "name": "Group", "members": 1}
+    obs.board = [
+        {"thread_id": i, "title": "Topic", "author": "B", "replies": 0, "latest": None}
+        for i in range(8)
+    ]
+    for _ in range(10):
+        asyncio.run(policy.act(agent, tools, obs))
+        request = client.chat.completions.requests[-1]
+        assert json.dumps(first["messages"][0]) == json.dumps(request["messages"][0])
+        assert json.dumps(first["tools"]) == json.dumps(request["tools"])
+    text = request["messages"][1]["content"][0]["text"]
+    assert "(12, 14)" in text and "no posts this turn" in text
+
+
+@pytest.mark.parametrize("guided", (False, True))
+def test_shared_rules_precede_persona(guided: bool) -> None:
+    agent, _, _, _ = _setup()
+    other = copy.deepcopy(agent)
+    other.persona = "Someone else."
+    other.home_x = 20
+    policy = LLMPolicy(FakeClient([]), "m", guided=guided)  # type: ignore[arg-type]
+    first = policy.describe(agent, 64, 40, 4, 1)
+    second = policy.describe(other, 64, 40, 2, 0)
+    assert first.split("You are ")[0] == second.split("You are ")[0]
+    assert len(first.split("You are ")[0]) > 400
+
+
+@pytest.mark.parametrize("event", (None, "An event"))
+def test_guided_world_news_concern(event: str | None) -> None:
+    agent, _, _, _ = _setup()
+    if event:
+        agent.persona_card["event"] = event
+    policy = LLMPolicy(FakeClient([]), "m", guided=True)  # type: ignore[arg-type]
+    concern = "you" if event else "your country"
+    assert f"If one concerns {concern}, react" in policy.describe(agent, 64, 40, 4, 1)
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "error"),
+    [
+        ("post_thread", {"title": "Topic", "body": "Hello"}, "budget exceeded"),
+        ("reply", {"thread_id": 1, "body": "Hello"}, "budget exceeded"),
+        ("join_society", {"society_id": 1}, "there are no societies"),
+    ],
+)
+def test_unavailable_tools_return_error_results(
+    name: str, args: dict[str, Any], error: str
+) -> None:
+    agent, tools, obs, _ = _setup()
+    obs.budget.posts = 0
+    client = FakeClient([_response("Trying", [(name, args)])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    messages = client.chat.completions.requests[0]["messages"]
+    results = [m["content"] for m in messages if m["role"] == "tool"]
+    assert results and results[0].startswith("error:") and error in results[0]
+    assert policy.stats["tool_errors"] == 1
+
+
+@pytest.mark.parametrize("name", [t["function"]["name"] for t in SOCIETY_TOOLS])
+@pytest.mark.parametrize("has_society", (False, True))
+def test_guided_society_tools_are_rejected(name: str, has_society: bool) -> None:
+    agent, tools, obs, _ = _setup()
+    if has_society:
+        obs.society = {"id": 1, "name": "Group", "members": 1}
+    client = FakeClient([_response("Trying", [(name, {})])])
+    policy = LLMPolicy(client, "m", vision=False, guided=True)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    request = client.chat.completions.requests[0]
+    text = request["messages"][1]["content"][0]["text"]
+    assert "Society tools are unavailable in this mode." in text
+    results = [m["content"] for m in request["messages"] if m["role"] == "tool"]
+    assert results == ["error: society tools are not available in this mode"]
+    assert policy.stats["tool_errors"] == 1
 
 
 def test_invented_tool_names_map_onto_real_tools() -> None:

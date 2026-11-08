@@ -7,22 +7,32 @@ the exchange lands in the agent's memory like any other thought.
 """
 
 import array
+import asyncio
+import base64
 import difflib
+import math
 import re
 import unicodedata
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Literal
 
 from worldwarpixel.sim.agents import AgentSpec
+from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PALETTE
-from worldwarpixel.sim.run import Run
+from worldwarpixel.sim.run import MENTION, Run
 from worldwarpixel.sim.speech import voice_for
+
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
 
 RATE = 16_000
 """Screens play what they record: 16 kHz signed 16-bit little-endian mono."""
-MAX_TURNS = 6
+MAX_TURNS = 20
 MAX_REPLY = 400
 MAX_AGENTS = 120
+REALTIME_RATE: Literal[24000] = 24_000
+REALTIME_VOICES = ("alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin")
+REALTIME_TIMEOUT = 30.0
 
 Chat = Callable[[Run, list[dict[str, str]]], Awaitable[str]]
 """Ask the run's model for one completion (the app wires the real client; tests fake it)."""
@@ -123,24 +133,140 @@ def resample(pcm: bytes, src: int, dst: int = RATE) -> bytes:
     return out.tobytes()
 
 
+VOICE = (
+    "Right now a human visitor is standing at a screen and is "
+    "talking to you out loud. This is a real conversation, not a service call: you are not an "
+    "assistant and you don't owe them politeness. Talk the way you actually talk, with your own "
+    "opinions, moods, grudges, soft spots, gossip and jokes. Name names: say what you really "
+    "think of the people you have dealt with and what happened between you. Be blunt, "
+    "sarcastic, petty, excited or fed up when that is how you feel, and push back on the "
+    "visitor when they deserve it. The facts about your background are who you are, not "
+    "talking points; don't recite them. Keep it spoken and short, usually one to three "
+    "sentences, no lists, no markdown, no emoji, and don't end with a question or an offer to "
+    "help just to be nice. Reply in the language the visitor uses."
+)
+DELIVERY = (
+    "How you sound: casual and expressive, at a natural quick pace, with real feeling in your "
+    "voice. Laugh, sigh, hesitate or cut yourself off when it fits."
+)
+CONTEXT_CHARS = 40_000
+"""Rough cap on the thread transcripts in an interview prompt (about 10k tokens)."""
+MEMORY_KEPT = 50
+THOUGHT_CHARS = 600
+THREAD_TAIL = 10
+
+
+def persona_lines(agent: AgentSpec) -> list[str]:
+    lines = [f"You are {agent.persona}" if agent.persona else f"You are {agent.name}."]
+    traits = agent.persona_card.get("personality") or {}
+    if traits.get("traits"):
+        lines.append("People would describe you as " + ", ".join(traits["traits"]) + ".")
+    if traits.get("leadership_notes"):
+        lines.append(str(traits["leadership_notes"]))
+    return lines
+
+
+def _about(run: Run, agent: AgentSpec, post: Post) -> bool:
+    """The agent wrote the post or is @mentioned in its title or body."""
+    if post.author_id == agent.id:
+        return True
+    text = f"{post.title or ''} {post.body}"
+    return any(run.find_agent(w) == agent.id for w in MENTION.findall(text))
+
+
+def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> list[str]:
+    """Every thread the agent wrote in or was @mentioned in, most recently active for it first,
+    with who said what. Long threads keep the opening post, the posts by or about the agent (own
+    replies with the post they answered), and the latest replies."""
+    mine: list[tuple[float, list[Post]]] = []
+    for root in run.board.threads():
+        posts = run.board.thread(root.id)
+        touched = [p.created_at for p in posts if _about(run, agent, p)]
+        if touched:
+            mine.append((max(touched), posts))
+    mine.sort(key=lambda t: t[0], reverse=True)
+
+    def who(post: Post) -> str:
+        return "You" if post.author_id == agent.id else run.agent_name(post.author_id)
+
+    out: list[str] = []
+    used = 0
+    for i, (_, posts) in enumerate(mine):
+        keep = {0, *range(max(1, len(posts) - THREAD_TAIL), len(posts))}
+        index = {p.id: j for j, p in enumerate(posts)}
+        for j, p in enumerate(posts):
+            if not _about(run, agent, p):
+                continue
+            keep.add(j)
+            if p.author_id == agent.id and j:
+                keep.add(index.get(p.parent_id, j - 1) if p.parent_id else j - 1)
+        root = posts[0]
+        block = [f'Thread "{root.title}", started by {who(root)}:']
+        last = -1
+        for j in sorted(keep):
+            if j > last + 1:
+                block.append(f"  ({j - last - 1} more posts)")
+            block.append(f"  {who(posts[j])}: {posts[j].body}")
+            last = j
+        text = "\n".join(block)
+        if used + len(text) > budget:
+            out.append(f"(and {len(mine) - i} older threads you took part in)")
+            break
+        out.append(text)
+        used += len(text)
+    return out
+
+
+def people_lines(run: Run, agent: AgentSpec) -> list[str]:
+    seen = run.contacts.get(agent.id, {})
+    if not seen:
+        return []
+    names = [run.agent_name(c) for c in sorted(seen, key=seen.__getitem__, reverse=True)]
+    return ["People you have talked with lately, most recent first: " + ", ".join(names) + "."]
+
+
+def context(run: Run, agent: AgentSpec) -> str:
+    """The interviewee's system prompt: who they are, their world, people and history."""
+    cfg = run.config
+    parts = ["\n".join(persona_lines(agent))]
+    event = agent.persona_card.get("event")
+    if event:
+        parts.append(
+            f"The shared canvas and message board are WorldWarPixel (World War Pixel), a project "
+            f"built at {event}. The canvas, hackathon projects, and event roles belong to this "
+            "same event, not separate worlds. Playing on this canvas does not mean you built "
+            "WorldWarPixel or were on its project team. When asked what you did at the hackathon "
+            "and who you worked with, use the project and teammate facts or event role in your "
+            "background. Project summaries describe the team's work, not your individual "
+            "implementation responsibilities. Do not invent teammates or duties when they are "
+            "not documented. Canvas contacts and alliances are not evidence of project "
+            "collaboration."
+        )
+    parts.append(
+        f"You are one of {len(run.agents)} people sharing a {cfg.width}x{cfg.height} pixel "
+        "canvas everyone paints on, and a message board where they talk in threads."
+    )
+    parts += people_lines(run, agent)
+    recent = run.recall(agent.id, MEMORY_KEPT, THOUGHT_CHARS)
+    if recent:
+        parts.append(
+            "What you have been doing and thinking, oldest first:\n"
+            + "\n".join(f"- {r}" for r in recent)
+        )
+    threads = thread_lines(run, agent)
+    if threads:
+        parts.append(
+            "Board threads you took part in or were mentioned in (You = you):\n"
+            + "\n\n".join(threads)
+        )
+    parts.append(VOICE)
+    return "\n\n".join(parts)
+
+
 def messages(
     run: Run, agent: AgentSpec, history: list[tuple[str, str]], question: str
 ) -> list[dict[str, str]]:
-    context = [
-        agent.persona or f"You are {agent.name} from {agent.country}.",
-        "",
-        "Right now a human visitor is standing at a screen next to the world you live in and "
-        "is talking to you out loud. Answer as yourself, in the first person, the way you would "
-        "actually speak: one to three short sentences, plain words, no lists, no markdown, no "
-        "emoji. Reply in the language the visitor uses.",
-    ]
-    if run.societies is not None:
-        society = run.societies.get(run.societies.of(agent.id))
-        context.append(f"You currently belong to the society called {society.name}.")
-    recent = run.recall(agent.id, 5)
-    if recent:
-        context += ["", "What you have been doing lately:", *(f"- {r}" for r in recent)]
-    out = [{"role": "system", "content": "\n".join(context)}]
+    out = [{"role": "system", "content": context(run, agent)}]
     for asked, said in history[-MAX_TURNS:]:
         out += [{"role": "user", "content": asked}, {"role": "assistant", "content": said}]
     out.append({"role": "user", "content": question})
@@ -177,14 +303,135 @@ async def answer(
     return reply
 
 
-async def voice(run: Run, agent: AgentSpec, text: str) -> bytes | None:
-    """The reply as 16 kHz PCM in the agent's speech-panel voice, or None without a synthesizer."""
+async def voice(run: Run, agent: AgentSpec, text: str) -> AsyncGenerator[bytes, None]:
+    """The reply as 16 kHz PCM in the agent's speech-panel voice, streamed as it is synthesized
+    when the synthesizer can stream; yields nothing without a synthesizer."""
     synth = run.speech.synth
     if synth is None:
-        return None
-    pcm = await synth.synth(
-        text,
-        voice_for(agent),
-        f"You are {agent.name} from {agent.country}, talking to a visitor. Speak naturally.",
+        return
+    voice = voice_for(agent)
+    instructions = (
+        f"You are {agent.name} from {agent.country}, talking to a visitor. Speak naturally."
     )
-    return resample(pcm, synth.sample_rate)
+    stream = getattr(synth, "stream", None)
+    if stream is None:
+        yield resample(await synth.synth(text, voice, instructions), synth.sample_rate)
+        return
+    # Resample whole src:dst sample blocks so chunk edges land on output samples.
+    block = 2 * (synth.sample_rate // math.gcd(synth.sample_rate, RATE))
+    block *= max(1, 2400 // block)  # resample() passes clips under 2 samples through as-is
+    pending = b""
+    async for chunk in stream(text, voice, instructions):
+        pending += chunk
+        cut = len(pending) - len(pending) % block
+        if cut:
+            yield resample(pending[:cut], synth.sample_rate)
+            pending = pending[cut:]
+    if len(pending) >= 2:
+        yield resample(pending, synth.sample_rate)
+
+
+def realtime_voice(agent: AgentSpec) -> str:
+    v = voice_for(agent)
+    return v if v in REALTIME_VOICES else REALTIME_VOICES[agent.id % len(REALTIME_VOICES)]
+
+
+def realtime_instructions(run: Run, agent: AgentSpec, history: list[tuple[str, str]]) -> str:
+    text = messages(run, agent, [], "")[0]["content"]
+    if history:
+        turns = "\n".join(f'Visitor: "{q}"\nYou: "{a}"' for q, a in history[-MAX_TURNS:])
+        text += f"\n\nEarlier in this conversation:\n{turns}"
+    return text + "\n\n" + DELIVERY
+
+
+async def live(
+    client: "AsyncOpenAI",
+    model: str,
+    run: Run,
+    agent: AgentSpec,
+    history: list[tuple[str, str]],
+    pcm: bytes,
+    rate: int,
+) -> AsyncGenerator[tuple[str, Any], None]:
+    """Answer the visitor's clip speech-to-speech with a Realtime model.
+
+    Yields ``("heard", question)`` once the clip is transcribed, ``("audio", pcm16k)`` as the
+    answer is spoken, and finally ``("text", reply)`` with the transcript of what the agent said.
+    ``("spoken", None)`` means the answer is fully spoken while the question's transcript is
+    still pending.
+    The exchange then lands in history and the agent's memory like a typed interview.
+    """
+    question = reply = ""
+    try:
+        async with asyncio.timeout(REALTIME_TIMEOUT), client.realtime.connect(model=model) as conn:
+            await conn.session.update(
+                session={
+                    "type": "realtime",
+                    "instructions": realtime_instructions(run, agent, history),
+                    "output_modalities": ["audio"],
+                    "max_output_tokens": 600,
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcm", "rate": REALTIME_RATE},
+                            "transcription": {"model": "gpt-4o-mini-transcribe"},
+                            "turn_detection": None,
+                        },
+                        "output": {
+                            "format": {"type": "audio/pcm", "rate": REALTIME_RATE},
+                            "voice": realtime_voice(agent),
+                        },
+                    },
+                }
+            )
+            clip = resample(pcm, rate, REALTIME_RATE)
+            for i in range(0, len(clip), 480_000):
+                await conn.input_audio_buffer.append(
+                    audio=base64.b64encode(clip[i : i + 480_000]).decode()
+                )
+            await conn.input_audio_buffer.commit()
+            await conn.response.create()
+            heard = answered = False
+            pending = b""
+            async for event in conn:
+                if event.type == "conversation.item.input_audio_transcription.completed":
+                    question = " ".join(event.transcript.split())
+                    heard = True
+                    yield ("heard", question)
+                elif event.type == "conversation.item.input_audio_transcription.failed":
+                    heard = True
+                    yield ("heard", "")
+                elif event.type == "response.output_audio.delta":
+                    pending += base64.b64decode(event.delta)
+                    cut = len(pending) - len(pending) % 2400  # whole 3:2 sample blocks
+                    if cut:
+                        yield ("audio", resample(pending[:cut], REALTIME_RATE))
+                        pending = pending[cut:]
+                elif event.type == "response.output_audio_transcript.done":
+                    reply = event.transcript
+                elif event.type == "response.done":
+                    if event.response.status == "failed":
+                        raise InterviewError(f"{agent.name} could not answer")
+                    answered = True
+                    if not heard:
+                        yield (
+                            "spoken",
+                            None,
+                        )  # done talking; don't sit on audio for the transcript
+                elif event.type == "error":
+                    raise InterviewError(f"{agent.name} could not answer ({event.error.message})")
+                if answered and heard:
+                    break
+            if len(pending) >= 2:
+                yield ("audio", resample(pending, REALTIME_RATE))
+    except InterviewError:
+        raise
+    except Exception as e:
+        raise InterviewError(f"{agent.name} could not answer ({type(e).__name__})") from e
+    reply = clean_reply(reply)
+    yield ("text", reply)
+    if reply:
+        history.append((question or "(inaudible)", reply))
+        del history[:-MAX_TURNS]
+        run.note_thought(
+            agent.id, f'A visitor at a screen asked me: "{question}" I answered: "{reply}"'
+        )

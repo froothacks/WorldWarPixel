@@ -97,6 +97,16 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
                     """,
                     (run_ids,),
                 )
+                target.execute(
+                    """
+                    UPDATE runs SET last_ts = (
+                        SELECT ts FROM events
+                        WHERE events.run_id = runs.id
+                        ORDER BY id DESC LIMIT 1
+                    ) WHERE id = ANY(%s)
+                    """,
+                    (run_ids,),
+                )
                 target.execute("DELETE FROM posts WHERE run_id = ANY(%s)", (run_ids,))
                 target.execute("DELETE FROM thread_votes WHERE run_id = ANY(%s)", (run_ids,))
                 target.execute(postgres_posts_backfill_sql(filter_run_ids=True), (run_ids, run_ids))

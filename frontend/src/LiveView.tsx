@@ -326,7 +326,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       <header className="topbar">
         <button className="brand" onClick={onLeave} title="Back to all runs">
           <span className="logo" aria-hidden="true" />
-          WorldWarPixel
+          World War Pixel
         </button>
         <span className="crumb">
           <span className="slash">/</span>

@@ -6,6 +6,7 @@ highlights, how confident the profile match is, a short playstyle and a ``person
 (work style, leadership, conflict and canvas approach) inferred from public signals.
 ``persona_text`` turns that into the "You are ..." line the LLM policy uses; ``persona_card`` is
 what the drawer shows.
+Public hackathon project teams are background relationships, not assigned canvas alliances.
 """
 
 from __future__ import annotations
@@ -22,6 +23,14 @@ ROSTER_FILES: dict[str, str] = {"hackathon": "neo_hackathon.json"}
 
 
 @dataclass(frozen=True, slots=True)
+class HackathonProject:
+    title: str
+    url: str
+    members: tuple[str, ...]
+    team_notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class Person:
     name: str
     affiliation: str
@@ -33,6 +42,7 @@ class Person:
     playstyle: str = ""
     personality: dict[str, Any] = field(default_factory=dict)
     avatar: str | None = None
+    projects: tuple[HackathonProject, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +52,7 @@ class Roster:
     event: str
     note: str
     people: tuple[Person, ...]
+    projects: tuple[HackathonProject, ...] = ()
 
 
 def data_path(roster: str) -> Path:
@@ -51,6 +62,15 @@ def data_path(roster: str) -> Path:
 @lru_cache(maxsize=len(ROSTER_FILES))
 def load_roster(roster: str) -> Roster:
     raw = json.loads(data_path(roster).read_text(encoding="utf-8"))
+    projects = tuple(
+        HackathonProject(
+            title=p["title"],
+            url=p["url"],
+            members=tuple(p["members"]),
+            team_notes=p.get("team_notes", ""),
+        )
+        for p in raw.get("projects", ())
+    )
     people = tuple(
         Person(
             name=p["name"],
@@ -63,10 +83,11 @@ def load_roster(roster: str) -> Roster:
             confidence=p.get("confidence", "low"),
             playstyle=p.get("playstyle", ""),
             personality=dict(p.get("personality") or {}),
+            projects=tuple(project for project in projects if p["name"] in project.members),
         )
         for p in raw["people"]
     )
-    return Roster(raw["id"], raw["title"], raw["event"], raw.get("note", ""), people)
+    return Roster(raw["id"], raw["title"], raw["event"], raw.get("note", ""), people, projects)
 
 
 def roster_summaries() -> list[dict[str, Any]]:
@@ -91,6 +112,15 @@ def persona_text(person: Person, event: str) -> str:
     if person.highlights:
         text += " Known for: " + "; ".join(person.highlights) + "."
     text += f" You are at {event}, playing as yourself."
+    for project in person.projects:
+        teammates = [name for name in project.members if name != person.name]
+        text += f" Your hackathon project: {project.title}."
+        if teammates:
+            text += " Publicly listed project teammates: " + ", ".join(teammates) + "."
+        else:
+            text += " No other project teammates are publicly listed."
+        if project.team_notes:
+            text += f" {project.team_notes}"
     if person.playstyle:
         text += f" {person.playstyle}"
     traits = person.personality
@@ -121,5 +151,15 @@ def persona_card(person: Person, event: str) -> dict[str, Any]:
         "confidence": person.confidence,
         "playstyle": person.playstyle or None,
         "personality": person.personality or None,
+        "hackathon_projects": [
+            {
+                "title": project.title,
+                "url": project.url,
+                "teammates": [name for name in project.members if name != person.name],
+                "team_notes": project.team_notes,
+            }
+            for project in person.projects
+        ]
+        or None,
     }
     return {k: v for k, v in card.items() if v is not None}

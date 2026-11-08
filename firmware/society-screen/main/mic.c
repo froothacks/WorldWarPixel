@@ -163,7 +163,7 @@ bool mic_init(void)
         return false;
     }
     esp_codec_dev_set_in_gain(s_dev, 30.0);
-    esp_codec_dev_set_out_vol(s_dev, 80);
+    esp_codec_dev_set_out_vol(s_dev, 100);   /* 0 dB: the default curve maps 80 to -10 dB */
 
     ESP_LOGI(TAG, "ES8311 mic + speaker ready @16kHz");
     s_have_mic = true;

@@ -2,7 +2,7 @@
   "id": "neo-hackathon",
   "title": "Neo hackathon",
   "event": "the Neo Scholars hackathon",
-  "note": "Enriched from public web sources (personal sites, GitHub, LinkedIn search snippets, interviews, company pages, Devpost). The `confidence` field is about identity and whether the links belong to this person, not about personality. `personality_confidence` is how much public signal we had for work style and leadership. Personality fields are inferences from public professional presence for a canvas simulation, not psychological assessments. Low-confidence identity matches may be wrong. Dating apps were not used.",
+  "note": "Enriched from public web sources (personal sites, GitHub, LinkedIn search snippets, interviews, company pages, Devpost). The `confidence` field is about identity and whether the links belong to this person, not about personality. `personality_confidence` is how much public signal we had for work style and leadership. Personality fields are inferences from public professional presence for a canvas simulation, not psychological assessments. Low-confidence identity matches may be wrong. Dating apps were not used. Neo Hackathon 2026 project highlights summarize team submissions, not individual responsibilities, using the event's public Devpost gallery. A missing project highlight means no confirmed public attribution, not that the person did not participate.",
   "schema": {
     "confidence": "Identity and link-match confidence: high | medium | low",
     "playstyle": "One-line canvas behaviour for the simulation",
@@ -16,9 +16,158 @@
     "personality.traits": "Short trait words backed by public evidence",
     "personality.evidence": "Public signals used for the personality read",
     "personality.personality_confidence": "How much public personality signal we had: high | medium | low",
+    "projects": "Devpost project teams: title, source URL, public member names, and any team_notes. Confirmed aliases use roster names; unconfirmed identities keep their public Devpost names. Project teams do not assign canvas alliances.",
     "sources_checked": "Public URLs actually consulted",
     "avatar": "Optional public profile photo URL (GitHub avatar); shown in roster runs"
   },
+  "projects": [
+    {
+      "title": "Arcana",
+      "url": "https://devpost.com/software/arcana-mxe0y2",
+      "members": [
+        "khkim37382 Kim",
+        "Micah Bozic",
+        "Sofia Zaozerska",
+        "Ken Zhou"
+      ]
+    },
+    {
+      "title": "Autonomous Fulfillment Center",
+      "url": "https://devpost.com/software/autonomous-fulfillment-center",
+      "members": [
+        "Hunter Pruett"
+      ]
+    },
+    {
+      "title": "blood JEPA",
+      "url": "https://devpost.com/software/blood-jepa-07ws38",
+      "members": [
+        "Luke Sanborn",
+        "Param Thakkar",
+        "Rhea Malik",
+        "Vincent Dangelo"
+      ]
+    },
+    {
+      "title": "Cascade",
+      "url": "https://devpost.com/software/cascade-lam0nr",
+      "members": [
+        "Alessio Toniolo",
+        "Amani Bobo"
+      ]
+    },
+    {
+      "title": "djkit",
+      "url": "https://devpost.com/software/djkit",
+      "members": [
+        "Jackie Liu",
+        "Linda Xue"
+      ]
+    },
+    {
+      "title": "Dreaming Computer",
+      "url": "https://devpost.com/software/dreaming-computer",
+      "members": [
+        "Jason Cameron",
+        "Jeff Lu"
+      ]
+    },
+    {
+      "title": "Fetch",
+      "url": "https://devpost.com/software/fetch-5dhyfp",
+      "members": [
+        "Hayden Tedrake",
+        "Aleksander Garbuz"
+      ],
+      "team_notes": "Devpost also lists a private teammate whose identity is not public."
+    },
+    {
+      "title": "Flaid",
+      "url": "https://devpost.com/software/flaid",
+      "members": [
+        "Derrick Ha",
+        "Nick Del Aguila"
+      ]
+    },
+    {
+      "title": "Ghostwriter",
+      "url": "https://devpost.com/software/ghostwriter-vkfa4j",
+      "members": [
+        "Justine Mach"
+      ]
+    },
+    {
+      "title": "I Patched The Pixels Myself",
+      "url": "https://devpost.com/software/i-patched-the-pixels-myself",
+      "members": [
+        "Gino Chiaranaipanich",
+        "Tina Mai",
+        "Alexander (Hongyi) Huang"
+      ]
+    },
+    {
+      "title": "Megamind",
+      "url": "https://devpost.com/software/megamind-fs2cd3",
+      "members": [
+        "Kartik Ramachandrula",
+        "Debojoti Das Soumya",
+        "Tim Guan"
+      ]
+    },
+    {
+      "title": "tldr",
+      "url": "https://devpost.com/software/readme-html",
+      "members": [
+        "Davin Jeong",
+        "Emma Harris",
+        "Vihaan Gupta"
+      ]
+    },
+    {
+      "title": "Robots Building Robots",
+      "url": "https://devpost.com/software/robots-building-robots",
+      "members": [
+        "Soham Bafana",
+        "Nikita Mounier",
+        "Alessandro Maniscalco"
+      ]
+    },
+    {
+      "title": "Sword",
+      "url": "https://devpost.com/software/sword-sle9qv",
+      "members": [
+        "Mikael Haji",
+        "Abhay Ratti",
+        "Anush Mutyala"
+      ]
+    },
+    {
+      "title": "Unreasonably Complicated Carrier Pigeon",
+      "url": "https://devpost.com/software/unreasonably-complicated-carrier-pigeon",
+      "members": [
+        "Rohan Kalia",
+        "Divij Motwani"
+      ]
+    },
+    {
+      "title": "Warped",
+      "url": "https://devpost.com/software/warped",
+      "members": [
+        "Leah Vashevko",
+        "Adriano Hernandez"
+      ]
+    },
+    {
+      "title": "World War Pixel",
+      "url": "https://devpost.com/software/world-war-pixel",
+      "members": [
+        "Advait Maybhate",
+        "Leon Fattakhov",
+        "Megan Chun",
+        "Christoph Moser"
+      ]
+    }
+  ],
   "people": [
     {
       "name": "Abhay Ratti",
@@ -26,9 +175,11 @@
       "headline": "Mechatronics engineering at Waterloo; ex mechanical intern at mimic; Contrary venture partner",
       "linkedin": "https://www.linkedin.com/in/abhayratti",
       "links": [
-        "https://contrary.com/blog/class-of-2026"
+        "https://contrary.com/blog/class-of-2026",
+        "https://devpost.com/software/sword-sle9qv"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Sword: A sword-fighting robot that uses a Quest headset camera to track sword poses and control an xArm in real time.",
         "Built hardware for Mimic's M1.0 industrial robot hand",
         "University venture partner at Contrary",
         "Team lead at Waterloo Hacker Fab",
@@ -61,7 +212,8 @@
       },
       "sources_checked": [
         "https://www.linkedin.com/in/abhayratti",
-        "https://contrary.com/blog/class-of-2026"
+        "https://contrary.com/blog/class-of-2026",
+        "https://devpost.com/software/sword-sle9qv"
       ]
     },
     {
@@ -111,9 +263,11 @@
       "linkedin": null,
       "links": [
         "https://devpost.com/18AdrianoH",
-        "https://medium.com/@18AdrianoH"
+        "https://medium.com/@18AdrianoH",
+        "https://devpost.com/software/warped"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Warped: A multiplayer first-person shooter with non-Euclidean geometry, built from scratch in Rust without a game engine.",
         "Built \"Fluffy\", a tiny remote-controlled robot ghost"
       ],
       "confidence": "low",
@@ -137,22 +291,25 @@
         "personality_confidence": "low"
       },
       "sources_checked": [
-        "https://devpost.com/18AdrianoH"
+        "https://devpost.com/18AdrianoH",
+        "https://devpost.com/software/warped"
       ]
     },
     {
       "name": "Advait Maybhate",
-      "avatar": "https://github.com/Advait-M.png?size=96",
       "affiliation": "Warp",
       "headline": "Software engineer (Agents) at Warp",
+      "avatar": "https://github.com/Advait-M.png?size=96",
       "linkedin": "https://www.linkedin.com/in/advait-m",
       "links": [
         "https://advai.tm",
         "https://github.com/Advait-M",
         "https://devpost.com/AdvaitM",
-        "https://x.com/advait_m"
+        "https://x.com/advait_m",
+        "https://devpost.com/software/world-war-pixel"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — World War Pixel: An r/place-style shared pixel canvas populated by swarms of AI agents.",
         "UWaterloo CS, Georgia Tech MCS",
         "Ex Ramp and Google",
         "Schulich Leader",
@@ -183,14 +340,15 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://advai.tm"
+        "https://advai.tm",
+        "https://devpost.com/software/world-war-pixel"
       ]
     },
     {
       "name": "Aengus McGuinness",
-      "avatar": "https://github.com/AengusMcGuinness.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard CS senior building low-latency C++/Rust systems",
+      "avatar": "https://github.com/AengusMcGuinness.png?size=96",
       "linkedin": "https://www.linkedin.com/in/aengus-mcguinness",
       "links": [
         "https://aengusmcguinness.com",
@@ -226,15 +384,17 @@
     },
     {
       "name": "Aleksander Garbuz",
-      "avatar": "https://github.com/atg218.png?size=96",
       "affiliation": "MIT",
       "headline": "Aerospace engineer; MIT Satellite Team; lunar autonomy",
+      "avatar": "https://github.com/atg218.png?size=96",
       "linkedin": "https://www.linkedin.com/in/aleksander-garbuz",
       "links": [
         "https://www.aleksandergarbuz.com",
-        "https://github.com/atg218"
+        "https://github.com/atg218",
+        "https://devpost.com/software/fetch-5dhyfp"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Fetch: An EMG wristband and camera-guided robot arms that fetch objects using air-written words and hand gestures.",
         "Second place with the MAPLE space-robotics team",
         "Science fair winner"
       ],
@@ -258,21 +418,24 @@
         "personality_confidence": "low"
       },
       "sources_checked": [
-        "https://www.aleksandergarbuz.com"
+        "https://www.aleksandergarbuz.com",
+        "https://devpost.com/software/fetch-5dhyfp"
       ]
     },
     {
       "name": "Alessandro Maniscalco",
-      "avatar": "https://github.com/Alessandro-Maniscalco.png?size=96",
       "affiliation": "Penn",
       "headline": "Penn M&T junior (ME + finance); robotics deployment",
+      "avatar": "https://github.com/Alessandro-Maniscalco.png?size=96",
       "linkedin": "https://www.linkedin.com/in/alessandro-maniscalco-a4aa86257",
       "links": [
         "https://alessandromaniscalco.com",
         "https://github.com/Alessandro-Maniscalco",
-        "https://x.com/alessandr0manis"
+        "https://x.com/alessandr0manis",
+        "https://devpost.com/software/robots-building-robots"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Robots Building Robots: Prototypes of robot arms assembling robot components, using reinforcement learning in simulation and camera-guided physical control.",
         "Robotics competitor",
         "Rhoda AI engineering intern (Summer 2026)",
         "Built Robotics field engineering intern"
@@ -299,21 +462,24 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://alessandromaniscalco.com"
+        "https://alessandromaniscalco.com",
+        "https://devpost.com/software/robots-building-robots"
       ]
     },
     {
       "name": "Alessio Toniolo",
-      "avatar": "https://github.com/atoniolo76.png?size=96",
       "affiliation": "CMU / Modal",
       "headline": "CS at Carnegie Mellon; ex Modal MTS intern",
+      "avatar": "https://github.com/atoniolo76.png?size=96",
       "linkedin": "https://www.linkedin.com/in/atoniolo76",
       "links": [
         "https://atoniolo76.github.io/",
         "https://github.com/atoniolo76",
-        "https://www.foundation-industries.com/"
+        "https://www.foundation-industries.com/",
+        "https://devpost.com/software/cascade-lam0nr"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Cascade: Replaying a real LLM workload trace across simulated GPU configurations to compare predicted performance.",
         "Co-founder and COO of Foundation Industries",
         "CUDA and GPU enthusiast (NVIDIA GTC)",
         "Mentions co-founding SAVA Robotics (YC X25)",
@@ -343,7 +509,8 @@
       },
       "sources_checked": [
         "https://atoniolo76.github.io/",
-        "https://github.com/atoniolo76"
+        "https://github.com/atoniolo76",
+        "https://devpost.com/software/cascade-lam0nr"
       ]
     },
     {
@@ -412,6 +579,7 @@
         "https://neo.com"
       ],
       "highlights": [
+        "Neo Hackathon 2026 supporter: As Neo's founder, made the event possible and encouraged and supported hackers throughout.",
         "Co-founder of Code.org and Sway",
         "Founded LinkExchange (acquired by Microsoft)",
         "Climber, snowboarder, guitarist",
@@ -442,7 +610,8 @@
       "sources_checked": [
         "https://www.partovi.org",
         "https://neo.com"
-      ]
+      ],
+      "research_notes": "Neo Hackathon 2026 support and encouragement of hackers confirmed by Leon Fattakhov (requester)."
     },
     {
       "name": "Allison Kiang",
@@ -485,17 +654,19 @@
     },
     {
       "name": "Amani Bobo",
-      "avatar": "https://github.com/amanibobo.png?size=96",
       "affiliation": "Atlanta",
       "headline": "CS student at Georgia State; AI systems & spatial computing",
+      "avatar": "https://github.com/amanibobo.png?size=96",
       "linkedin": "https://www.linkedin.com/in/amanibobo",
       "links": [
         "https://amanibobo.dev",
         "https://github.com/amanibobo",
         "https://x.com/amnibobo",
-        "https://www.youtube.com/@amanibobo"
+        "https://www.youtube.com/@amanibobo",
+        "https://devpost.com/software/cascade-lam0nr"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Cascade: Replaying a real LLM workload trace across simulated GPU configurations to compare predicted performance.",
         "Prev GTRI",
         "ML, computer vision and spatial computing",
         "Innovation intern at Southern Company",
@@ -525,14 +696,15 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://amanibobo.dev"
+        "https://amanibobo.dev",
+        "https://devpost.com/software/cascade-lam0nr"
       ]
     },
     {
       "name": "Andrew Hinh",
-      "avatar": "https://github.com/andrewhinh.png?size=96",
       "affiliation": "Modal",
       "headline": "Developer relations engineer at Modal",
+      "avatar": "https://github.com/andrewhinh.png?size=96",
       "linkedin": "https://www.linkedin.com/in/andrew-hinh",
       "links": [
         "https://www.ajhinh.com/",
@@ -572,16 +744,18 @@
     },
     {
       "name": "Anush Mutyala",
-      "avatar": "https://github.com/anushmutyala.png?size=96",
       "affiliation": "UBC",
       "headline": "Hardware engineer at Until Labs; ECE at UBC",
+      "avatar": "https://github.com/anushmutyala.png?size=96",
       "linkedin": "https://www.linkedin.com/in/anushmutyala",
       "links": [
         "https://www.anushmutyala.xyz",
         "https://x.com/anushmutyala",
-        "https://github.com/anushmutyala"
+        "https://github.com/anushmutyala",
+        "https://devpost.com/software/sword-sle9qv"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Sword: A sword-fighting robot that uses a Quest headset camera to track sword poses and control an xArm in real time.",
         "Schulich Leader 2024",
         "Biotech moonshots from a hardware lens",
         "Robotics research"
@@ -607,14 +781,15 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://www.anushmutyala.xyz"
+        "https://www.anushmutyala.xyz",
+        "https://devpost.com/software/sword-sle9qv"
       ]
     },
     {
       "name": "Aryan Mahajan",
-      "avatar": "https://github.com/aryanma.png?size=96",
       "affiliation": "Columbia",
       "headline": "Founding engineer at Dedalus Labs (YC S25); CS at Columbia",
+      "avatar": "https://github.com/aryanma.png?size=96",
       "linkedin": "https://www.linkedin.com/in/aryanma",
       "links": [
         "https://aryanma.github.io/",
@@ -716,9 +891,9 @@
     },
     {
       "name": "Bhavye Mathur",
-      "avatar": "https://github.com/BhavyeMathur.png?size=96",
       "affiliation": "UMich",
       "headline": "Honors Math + CS at UMich",
+      "avatar": "https://github.com/BhavyeMathur.png?size=96",
       "linkedin": "https://www.linkedin.com/in/bhavye-mathur",
       "links": [
         "https://github.com/BhavyeMathur",
@@ -760,9 +935,11 @@
       "headline": "Founding engineer at Dryft",
       "linkedin": "https://www.linkedin.com/in/moserc",
       "links": [
-        "https://dryft.ai/team/chris"
+        "https://dryft.ai/team/chris",
+        "https://devpost.com/software/world-war-pixel"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — World War Pixel: An r/place-style shared pixel canvas populated by swarms of AI agents.",
         "Builds Dryft's stack end to end",
         "Fulbright scholar at UC Berkeley; TUM MSc EE",
         "ICYS gold medal"
@@ -789,14 +966,16 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://dryft.ai/team/chris"
+        "https://dryft.ai/team/chris",
+        "https://devpost.com/software/world-war-pixel",
+        "https://devpost.com/chryztoph"
       ]
     },
     {
       "name": "Claire Guo",
-      "avatar": "https://github.com/claireg0.png?size=96",
       "affiliation": "Waterloo",
       "headline": "Software engineering student at Waterloo; SWE intern at Rox",
+      "avatar": "https://github.com/claireg0.png?size=96",
       "linkedin": "https://www.linkedin.com/in/claire-jl-guo",
       "links": [
         "https://github.com/claireg0"
@@ -831,6 +1010,7 @@
       "linkedin": "https://www.linkedin.com/in/clara-bae-",
       "links": [],
       "highlights": [
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics.",
         "Keeps Neo events running"
       ],
       "confidence": "high",
@@ -851,7 +1031,8 @@
         ],
         "personality_confidence": "low"
       },
-      "sources_checked": []
+      "sources_checked": [],
+      "research_notes": "Neo Hackathon 2026 organizer role and event/food responsibilities confirmed by Leon Fattakhov (requester)."
     },
     {
       "name": "Connor Ling",
@@ -892,9 +1073,9 @@
     },
     {
       "name": "Dandi Desta",
-      "avatar": "https://github.com/dantdani.png?size=96",
       "affiliation": "Harvard",
       "headline": "Electrical engineering at Harvard",
+      "avatar": "https://github.com/dantdani.png?size=96",
       "linkedin": "https://www.linkedin.com/in/dandidesta",
       "links": [
         "https://dandidesta.com",
@@ -935,9 +1116,11 @@
       "headline": "Engineer at Netic (leave from Harvard, returned junior year)",
       "linkedin": "https://www.linkedin.com/in/davin-jeong",
       "links": [
-        "https://www.davinjeong.com/"
+        "https://www.davinjeong.com/",
+        "https://devpost.com/software/readme-html"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — tldr: A compact web-page representation for browser agents that removes irrelevant content while preserving actionable controls.",
         "Builds social-impact technology"
       ],
       "confidence": "high",
@@ -962,7 +1145,8 @@
       },
       "sources_checked": [
         "https://www.davinjeong.com/",
-        "https://www.netic.ai/gapyear"
+        "https://www.netic.ai/gapyear",
+        "https://devpost.com/software/readme-html"
       ]
     },
     {
@@ -971,9 +1155,11 @@
       "headline": "MIT student, IOI gold medallist",
       "linkedin": "https://www.linkedin.com/in/debojoti-das-soumya",
       "links": [
-        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271"
+        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271",
+        "https://devpost.com/software/megamind-fs2cd3"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Megamind: A Quest headset memory assistant that remembers sights and sounds, then answers questions about what the wearer experienced.",
         "IOI Gold Medal for Bangladesh",
         "Algorithms and optimisation"
       ],
@@ -999,14 +1185,15 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271"
+        "https://www.tbsnews.net/features/pursuit/meet-soumya-first-ever-bangladeshi-gold-medallist-informatics-olympiad-938271",
+        "https://devpost.com/software/megamind-fs2cd3"
       ]
     },
     {
       "name": "Dev Seth",
-      "avatar": "https://github.com/dvsth.png?size=96",
       "affiliation": "UCC",
       "headline": "Builder at UCC; CS & Philosophy (Duke/Oxford)",
+      "avatar": "https://github.com/dvsth.png?size=96",
       "linkedin": "https://www.linkedin.com/in/dvsth",
       "links": [
         "https://github.com/dvsth",
@@ -1046,9 +1233,11 @@
       "linkedin": "https://www.linkedin.com/in/divijmotwani",
       "links": [
         "https://www.divijmotwani.com/",
-        "https://www.alphaxiv.org/@divij-motwani"
+        "https://www.alphaxiv.org/@divij-motwani",
+        "https://devpost.com/software/unreasonably-complicated-carrier-pigeon"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Unreasonably Complicated Carrier Pigeon: An experimental weather balloon intended to steer by releasing helium and capture aerial photos.",
         "Researcher at Blockchain at Berkeley",
         "Optiver Cipher Challenge at NeurIPS",
         "Co-founded OralAI",
@@ -1075,7 +1264,8 @@
         "personality_confidence": "low"
       },
       "sources_checked": [
-        "https://www.divijmotwani.com/"
+        "https://www.divijmotwani.com/",
+        "https://devpost.com/software/unreasonably-complicated-carrier-pigeon"
       ]
     },
     {
@@ -1083,8 +1273,12 @@
       "affiliation": "Unknown",
       "headline": "Hackathon attendee",
       "linkedin": null,
-      "links": [],
-      "highlights": [],
+      "links": [
+        "https://devpost.com/software/readme-html"
+      ],
+      "highlights": [
+        "Neo Hackathon 2026 — tldr: A compact web-page representation for browser agents that removes irrelevant content while preserving actionable controls."
+      ],
       "confidence": "low",
       "playstyle": "Little is public about you, so improvise as a friendly attendee who joins a team and helps defend it.",
       "personality": {
@@ -1103,7 +1297,9 @@
         ],
         "personality_confidence": "low"
       },
-      "sources_checked": []
+      "sources_checked": [
+        "https://devpost.com/software/readme-html"
+      ]
     },
     {
       "name": "Gino Chiaranaipanich",
@@ -1112,9 +1308,11 @@
       "linkedin": "https://www.linkedin.com/in/ginojc",
       "links": [
         "https://www.ginojc.com",
-        "https://cs.stanford.edu/group/acm/teams.html"
+        "https://cs.stanford.edu/group/acm/teams.html",
+        "https://devpost.com/software/i-patched-the-pixels-myself"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — I Patched The Pixels Myself: Adaptive image tokenization for diffusion models, learning to group pixels instead of using fixed-size patches.",
         "Thai National Debate Team at the 2024 World Schools Debating Championship",
         "Stanford Aquila ICPC: 8th at North American Championship"
       ],
@@ -1142,7 +1340,9 @@
       },
       "sources_checked": [
         "https://www.ginojc.com",
-        "https://cs.stanford.edu/group/acm/teams.html"
+        "https://cs.stanford.edu/group/acm/teams.html",
+        "https://devpost.com/software/i-patched-the-pixels-myself",
+        "https://devpost.com/spycoderyt"
       ]
     },
     {
@@ -1152,9 +1352,11 @@
       "linkedin": "https://www.linkedin.com/in/hayden-tedrake-5330ba236",
       "links": [
         "https://esp.mit.edu/teach/teachers/hayden17/bio.html",
-        "https://sites.mit.edu/mitpbh/aboutus/"
+        "https://sites.mit.edu/mitpbh/aboutus/",
+        "https://devpost.com/software/fetch-5dhyfp"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Fetch: An EMG wristband and camera-guided robot arms that fetch objects using air-written words and hand gestures.",
         "MIT ESP teacher",
         "MIT Primordial Black Hole Group researcher"
       ],
@@ -1180,7 +1382,8 @@
       },
       "sources_checked": [
         "https://esp.mit.edu/teach/teachers/hayden17/bio.html",
-        "https://sites.mit.edu/mitpbh/aboutus/"
+        "https://sites.mit.edu/mitpbh/aboutus/",
+        "https://devpost.com/software/fetch-5dhyfp"
       ]
     },
     {
@@ -1263,9 +1466,11 @@
       "headline": "Applied AI SWE at Ramp; Neo Scholar; Berkeley EECS",
       "linkedin": "https://www.linkedin.com/in/hunter-pruett",
       "links": [
-        "https://www.hunterpruett.com"
+        "https://www.hunterpruett.com",
+        "https://devpost.com/software/autonomous-fulfillment-center"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Autonomous Fulfillment Center: Phone-based ordering linked to a robotic arm that fulfills orders and calls when they are ready.",
         "Built spreadsheet agents at Ramp",
         "Aviation enthusiast",
         "Neo Scholar"
@@ -1291,7 +1496,8 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://www.hunterpruett.com"
+        "https://www.hunterpruett.com",
+        "https://devpost.com/software/autonomous-fulfillment-center"
       ]
     },
     {
@@ -1299,8 +1505,12 @@
       "affiliation": "Unknown",
       "headline": "Hackathon attendee",
       "linkedin": null,
-      "links": [],
-      "highlights": [],
+      "links": [
+        "https://devpost.com/software/djkit"
+      ],
+      "highlights": [
+        "Neo Hackathon 2026 — djkit: A Python-based DJ and mixing project for full sets."
+      ],
       "confidence": "low",
       "playstyle": "Little is public about you, so improvise as a thoughtful attendee who paints something small and defends it.",
       "personality": {
@@ -1319,7 +1529,9 @@
         ],
         "personality_confidence": "low"
       },
-      "sources_checked": []
+      "sources_checked": [
+        "https://devpost.com/software/djkit"
+      ]
     },
     {
       "name": "Jason Brooks",
@@ -1352,16 +1564,18 @@
     },
     {
       "name": "Jason Cameron",
-      "avatar": "https://github.com/JasonLovesDoggo.png?size=96",
       "affiliation": "Startups",
       "headline": "Founding engineer at Flint",
+      "avatar": "https://github.com/JasonLovesDoggo.png?size=96",
       "linkedin": "https://www.linkedin.com/in/jsoncameron",
       "links": [
         "https://jasoncameron.dev",
         "https://github.com/JasonLovesDoggo",
-        "https://x.com/tomlparser"
+        "https://x.com/tomlparser",
+        "https://devpost.com/software/dreaming-computer"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Dreaming Computer: A neural world model that predicts interactive computer screens from mouse and keyboard input, including a Doom demo.",
         "Open-source software used by the UN, the Linux Foundation and Arch Linux",
         "Built a distributed MapReduce in Go",
         "Anubis anti-bot proof-of-work project",
@@ -1388,7 +1602,8 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://jasoncameron.dev"
+        "https://jasoncameron.dev",
+        "https://devpost.com/software/dreaming-computer"
       ]
     },
     {
@@ -1428,15 +1643,17 @@
     },
     {
       "name": "Jeff Lu",
-      "avatar": "https://github.com/Jeff15321.png?size=96",
       "affiliation": "UofT",
       "headline": "CS at the University of Toronto; SWE at Shopify",
+      "avatar": "https://github.com/Jeff15321.png?size=96",
       "linkedin": "https://www.linkedin.com/in/jeff-lu-8b3121281",
       "links": [
         "https://github.com/Jeff15321",
-        "https://devpost.com/jeff-lu234"
+        "https://devpost.com/jeff-lu234",
+        "https://devpost.com/software/dreaming-computer"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Dreaming Computer: A neural world model that predicts interactive computer screens from mouse and keyboard input, including a Doom demo.",
         "6x hackathon winner",
         "1st place Hack the North (Stu3dio)"
       ],
@@ -1461,7 +1678,8 @@
         "personality_confidence": "medium"
       },
       "sources_checked": [
-        "https://devpost.com/jeff-lu234"
+        "https://devpost.com/jeff-lu234",
+        "https://devpost.com/software/dreaming-computer"
       ]
     },
     {
@@ -1546,9 +1764,11 @@
       "links": [
         "https://www.justinemach.com",
         "https://lunchlisten.com/speakers/justine-mach",
-        "https://justinemach.com/history"
+        "https://justinemach.com/history",
+        "https://devpost.com/software/ghostwriter-vkfa4j"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Ghostwriter: AI agents that turn technical research and company documents into editable short launch films.",
         "GTM engineer intern at Forus"
       ],
       "confidence": "high",
@@ -1572,7 +1792,8 @@
         "personality_confidence": "low"
       },
       "sources_checked": [
-        "https://lunchlisten.com/speakers/justine-mach"
+        "https://lunchlisten.com/speakers/justine-mach",
+        "https://devpost.com/software/ghostwriter-vkfa4j"
       ]
     },
     {
@@ -1581,9 +1802,11 @@
       "headline": "Physics/EECS at MIT",
       "linkedin": "https://www.linkedin.com/in/kartik-r-b94884347",
       "links": [
-        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula"
+        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula",
+        "https://devpost.com/software/megamind-fs2cd3"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Megamind: A Quest headset memory assistant that remembers sights and sounds, then answers questions about what the wearer experienced.",
         "Elmbrook class of 2025 salutatorian",
         "Image generation, interpretability, AI for science",
         "Regeneron Science Scholar",
@@ -1609,7 +1832,8 @@
         "personality_confidence": "low"
       },
       "sources_checked": [
-        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula"
+        "https://www.elmbrookschools.org/news-details/~board/district-news/post/the-elmbrook-promise-kartik-ramachandrula",
+        "https://devpost.com/software/megamind-fs2cd3"
       ]
     },
     {
@@ -1620,9 +1844,11 @@
       "links": [
         "https://www.kenzhou.dev",
         "https://devpost.com/kendotzhou",
-        "https://kenzhou.link"
+        "https://kenzhou.link",
+        "https://devpost.com/software/arcana-mxe0y2"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Arcana: Mixed-reality wizard duels using Meta Quest headsets and an EMG wristband for gesture-controlled spells.",
         "Incoming SWE intern at TikTok; prev Loop (AI for logistics)",
         "4x hackathon winner incl. 1st Healthcare at HackMIT 2025 and Best AI & Data Science at HooHacks 2026 (WallHax AR)",
         "Built Arcadecord, Discord games bot used in 2,000+ communities (Top.gg Staff Pick)",
@@ -1656,7 +1882,8 @@
         "WebSearch: Ken Zhou Georgia Tech computer engineering hackathon devpost",
         "https://www.kenzhou.dev/",
         "https://devpost.com/kendotzhou",
-        "https://linkedin.com/in/ken-zhou-8013bb242"
+        "https://linkedin.com/in/ken-zhou-8013bb242",
+        "https://devpost.com/software/arcana-mxe0y2"
       ]
     },
     {
@@ -1703,15 +1930,17 @@
     },
     {
       "name": "Leah Vashevko",
-      "avatar": "https://github.com/theaquarium.png?size=96",
       "affiliation": "UChicago",
       "headline": "Computational & Applied Math and Philosophy at UChicago; FPGA engineer, UChicago Space Program",
+      "avatar": "https://github.com/theaquarium.png?size=96",
       "linkedin": "https://www.linkedin.com/in/leahvashevko",
       "links": [
         "https://leahvashevko.com",
-        "https://github.com/theaquarium"
+        "https://github.com/theaquarium",
+        "https://devpost.com/software/warped"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Warped: A multiplayer first-person shooter with non-Euclidean geometry, built from scratch in Rust without a game engine.",
         "UChicago Space Program software developer",
         "FPGA engineer on PULSE-A laser-comms CubeSat optical ground station",
         "UChicago Math REU: paper on quasirandom graph sequences",
@@ -1748,7 +1977,8 @@
         "https://github.com/theaquarium",
         "https://ugradresearchsymposium2025.omeka.net/items/show/87",
         "https://linkedin.com/in/leahvashevko",
-        "https://www.getprog.ai/profile/leah_vashevko"
+        "https://www.getprog.ai/profile/leah_vashevko",
+        "https://devpost.com/software/warped"
       ]
     },
     {
@@ -1759,9 +1989,11 @@
       "links": [
         "https://devpost.com/coolcom200",
         "https://leonfattakhov.github.io",
-        "https://www.hackladder.com/h/coolcom200"
+        "https://www.hackladder.com/h/coolcom200",
+        "https://devpost.com/software/world-war-pixel"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — World War Pixel: An r/place-style shared pixel canvas populated by swarms of AI agents.",
         "Prev Amazon, Cockroach Labs, Shopify",
         "Hack the North organiser (backend dev → infrastructure team lead → platform advisor)",
         "JAMHacks co-founder (ran 12h and 24h high-school hackathons)",
@@ -1798,21 +2030,24 @@
         "https://devpost.com/coolcom200",
         "https://linkedin.com/in/leon-fattakhov",
         "https://www.hackladder.com/h/coolcom200",
-        "https://www.getprog.ai/profile/leon_fattakhov"
+        "https://www.getprog.ai/profile/leon_fattakhov",
+        "https://devpost.com/software/world-war-pixel"
       ]
     },
     {
       "name": "Linda Xue",
-      "avatar": "https://github.com/lexue28.png?size=96",
       "affiliation": "MIT",
       "headline": "CS + Math at MIT; SPAR fellow (model forensics)",
+      "avatar": "https://github.com/lexue28.png?size=96",
       "linkedin": "https://www.linkedin.com/in/linda-xue-24b6a1265",
       "links": [
         "https://github.com/lexue28",
         "https://devpost.com/lexue28",
-        "https://arxiv.org/abs/2509.05838"
+        "https://arxiv.org/abs/2509.05838",
+        "https://devpost.com/software/djkit"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — djkit: A Python-based DJ and mixing project for full sets.",
         "Design, neuroscience and human connection",
         "Organizer at MIT AI Alignment; taught AISF cohort",
         "Involved with HackMIT, MIT Capital Partners, MIT Blueprint",
@@ -1846,7 +2081,8 @@
         "https://linkedin.com/in/linda-xue-24b6a1265",
         "https://github.com/lexue28",
         "https://devpost.com/lexue28",
-        "https://arxiv.org/html/2509.05838"
+        "https://arxiv.org/html/2509.05838",
+        "https://devpost.com/software/djkit"
       ]
     },
     {
@@ -1855,9 +2091,11 @@
       "headline": "Princeton CS '28; SWE at Superhuman (via GPTZero acquisition)",
       "linkedin": "https://www.linkedin.com/in/luke-sanborn",
       "links": [
-        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/"
+        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — blood JEPA: Machine-learning models that rank candidate gene perturbations from cell states to help guide CRISPR experiments.",
         "Founding engineer at GPTZero (joined July 2023)",
         "Launched GPTZero AI Vision",
         "Joined Superhuman (formerly Grammarly) after June 2026 acquisition"
@@ -1887,7 +2125,8 @@
       "sources_checked": [
         "WebSearch: Luke Sanborn Princeton GPTZero Superhuman",
         "https://linkedin.com/in/luke-sanborn",
-        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/"
+        "https://techcrunch.com/2026/06/23/superhuman-acquires-ai-detection-startup-gptzero/",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ]
     },
     {
@@ -1941,6 +2180,7 @@
       "linkedin": "https://www.linkedin.com/in/maddiebernheim",
       "links": [],
       "highlights": [
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics.",
         "Ran Neo's Residency boot camp in Oregon",
         "Joined Neo March 2026; helped launch Neo Residency",
         "Hosted Neo Scholar finalists weekend",
@@ -1971,7 +2211,8 @@
         "WebSearch: Maddie Bernheim Neo events residency",
         "https://www.linkedin.com/posts/maddiebernheim_just-finished-neos-two-week-long-residency-activity-7489030247200210944-C3QX",
         "https://www.linkedin.com/posts/maddiebernheim_i-had-the-most-incredible-time-meeting-the-activity-7490840366229852160-tEox"
-      ]
+      ],
+      "research_notes": "Neo Hackathon 2026 organizer role and event/food responsibilities confirmed by Leon Fattakhov (requester)."
     },
     {
       "name": "Maria Izzi",
@@ -2019,9 +2260,9 @@
     },
     {
       "name": "Mason Wang",
-      "avatar": "https://github.com/masonwang025.png?size=96",
       "affiliation": "Stanford",
       "headline": "ML engineer at Neuralink; Stanford CS; ex co-founder/CTO of Tilde Research",
+      "avatar": "https://github.com/masonwang025.png?size=96",
       "linkedin": "https://www.linkedin.com/in/mason-wang",
       "links": [
         "https://masonjwang.com",
@@ -2150,9 +2391,11 @@
       "headline": "Co-Director of Hack the North; Computer Engineering at Waterloo",
       "linkedin": "https://www.linkedin.com/in/meganchun",
       "links": [
-        "https://uwaterloo.ca/news/engineering/students-are-building-waterloo-ambition-and-energy"
+        "https://uwaterloo.ca/news/engineering/students-are-building-waterloo-ambition-and-energy",
+        "https://devpost.com/software/world-war-pixel"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — World War Pixel: An r/place-style shared pixel canvas populated by swarms of AI agents.",
         "Runs Canada's biggest hackathon",
         "Hack the North 2026: 1,000+ hackers, 353 projects",
         "Promoted Waterloo Tech Week events"
@@ -2182,7 +2425,8 @@
       "sources_checked": [
         "WebSearch: Megan Chun Hack the North co-director Waterloo computer engineering",
         "https://uwaterloo.ca/news/engineering/students-are-building-waterloo-ambition-and-energy",
-        "https://linkedin.com/in/meganchun"
+        "https://linkedin.com/in/meganchun",
+        "https://devpost.com/software/world-war-pixel"
       ]
     },
     {
@@ -2191,9 +2435,11 @@
       "headline": "Robotics/mechatronics prototyper (Harvey Mudd); co-founder at Hedgehawk Industries",
       "linkedin": "https://www.linkedin.com/in/micahabozic",
       "links": [
-        "https://dronekitchen.org/nasa-hunch/"
+        "https://dronekitchen.org/nasa-hunch/",
+        "https://devpost.com/software/arcana-mxe0y2"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Arcana: Mixed-reality wizard duels using Meta Quest headsets and an EMG wristband for gesture-controlled spells.",
         "NASA HUNCH semi-finalist (2021–22, solo team: magnetic boots for Starship)",
         "NASA HUNCH national finalist 2022–23 as team captain; presented at Johnson Space Center",
         "Co-founder & engineer, Hedgehawk Industries with Kyuhyun Kim"
@@ -2223,14 +2469,15 @@
       "sources_checked": [
         "WebSearch: Micah Bozic robotics Claremont NASA HUNCH",
         "https://dronekitchen.org/nasa-hunch/",
-        "https://linkedin.com/in/micahabozic"
+        "https://linkedin.com/in/micahabozic",
+        "https://devpost.com/software/arcana-mxe0y2"
       ]
     },
     {
       "name": "Michal Kurek",
-      "avatar": "https://github.com/MKJM2.png?size=96",
       "affiliation": "Harvard",
       "headline": "SWE at Bloomberg (C++); Harvard CS A.B./S.M.",
+      "avatar": "https://github.com/MKJM2.png?size=96",
       "linkedin": "https://www.linkedin.com/in/michalkurek25a0",
       "links": [
         "https://michalkurek.com",
@@ -2306,15 +2553,17 @@
     },
     {
       "name": "Mikael Haji",
-      "avatar": "https://github.com/mikaelhaji.png?size=96",
       "affiliation": "Waterloo",
       "headline": "Chip hardware at NVIDIA; ECE at Waterloo",
+      "avatar": "https://github.com/mikaelhaji.png?size=96",
       "linkedin": "https://www.linkedin.com/in/mikael-haji",
       "links": [
         "https://github.com/mikaelhaji",
-        "https://fusbook.substack.com"
+        "https://fusbook.substack.com",
+        "https://devpost.com/software/sword-sle9qv"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Sword: A sword-fighting robot that uses a Quest headset camera to track sword poses and control an xArm in real time.",
         "Ex Groq and Prophetic",
         "Brain-computer interfaces since teens (15+ BCI projects)",
         "Neuralink N1 compression challenge repo",
@@ -2344,14 +2593,15 @@
       "sources_checked": [
         "WebSearch: Mikael Haji Waterloo NVIDIA Groq brain-computer interface",
         "https://fusbook.substack.com/about",
-        "https://github.com/mikaelhaji"
+        "https://github.com/mikaelhaji",
+        "https://devpost.com/software/sword-sle9qv"
       ]
     },
     {
       "name": "Mira Yu",
-      "avatar": "https://github.com/mirabor.png?size=96",
       "affiliation": "Harvard",
       "headline": "CS & Government at Harvard",
+      "avatar": "https://github.com/mirabor.png?size=96",
       "linkedin": "https://www.linkedin.com/in/miraayu",
       "links": [
         "https://mirayu.com",
@@ -2475,9 +2725,11 @@
       "linkedin": "https://www.linkedin.com/in/nickdelaguila",
       "links": [
         "https://nickdelaguila.com",
-        "https://nickdelaguila.com/work"
+        "https://nickdelaguila.com/work",
+        "https://devpost.com/software/flaid"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Flaid: Detecting automated website abuse from typing, scrolling, and click behavior rather than CAPTCHAs.",
         "Startup engineer",
         "Circleback SF (from May 2026)",
         "Building 'actually written', a trusted mark for human authorship",
@@ -2506,19 +2758,22 @@
       "sources_checked": [
         "WebSearch: Nick Del Aguila Circleback software engineer",
         "https://nickdelaguila.com/",
-        "https://linkedin.com/in/nickdelaguila"
+        "https://linkedin.com/in/nickdelaguila",
+        "https://devpost.com/software/flaid"
       ]
     },
     {
       "name": "Nikita Mounier",
-      "avatar": "https://github.com/nikitamounier.png?size=96",
       "affiliation": "Penn",
       "headline": "Penn M&T; Neo Scholar",
+      "avatar": "https://github.com/nikitamounier.png?size=96",
       "linkedin": "https://www.linkedin.com/in/nikita-mounier",
       "links": [
-        "https://github.com/nikitamounier"
+        "https://github.com/nikitamounier",
+        "https://devpost.com/software/robots-building-robots"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Robots Building Robots: Prototypes of robot arms assembling robot components, using reinforcement learning in simulation and camera-guided physical control.",
         "Neo Scholar",
         "Thrive Holdings, Rox, Ramp",
         "GitHub charity-site repository describes him as head of Computer Science for a tutoring charity"
@@ -2545,14 +2800,15 @@
       },
       "sources_checked": [
         "https://linkedin.com/in/nikita-mounier",
-        "https://github.com/nikitamounier"
+        "https://github.com/nikitamounier",
+        "https://devpost.com/software/robots-building-robots"
       ]
     },
     {
       "name": "Nirvik Baruah",
-      "avatar": "https://github.com/nirvikbaruah.png?size=96",
       "affiliation": "Sail Research",
       "headline": "Member of Technical Staff at Sail Research; Stanford CS BS/MS; ex-Jane Street",
+      "avatar": "https://github.com/nirvikbaruah.png?size=96",
       "linkedin": "https://www.linkedin.com/in/nirvik-baruah",
       "links": [
         "https://github.com/nirvikbaruah",
@@ -2606,9 +2862,11 @@
       "links": [
         "https://www.param.me",
         "https://versine.com",
-        "https://www.founderland.ai/founder/param"
+        "https://www.founderland.ai/founder/param",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — blood JEPA: Machine-learning models that rank candidate gene perturbations from cell states to help guide CRISPR experiments.",
         "Started building as a high-schooler",
         "Prev Databricks (vector search), Quora (ML ads), Glean (deep research evals)",
         "Co-founded Versine with Harshith Latchupatula and Vishnudev Poil",
@@ -2643,7 +2901,8 @@
         "https://www.param.me/",
         "https://linkedin.com/in/paramt",
         "https://linkedin.com/company/versinehq",
-        "https://www.founderland.ai/founder/param"
+        "https://www.founderland.ai/founder/param",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ]
     },
     {
@@ -2657,6 +2916,7 @@
         "https://people.equilar.com/bio/person/pavla-bobosikova-neo/43308508"
       ],
       "highlights": [
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics.",
         "Launched Neo Residency",
         "Mentored Neo Accelerator teams (primary mentor 2023-2024)",
         "Co-founder/CEO of WFHomie (acq. by GoCo, now Intuit)",
@@ -2694,7 +2954,8 @@
         "https://substack.com/@pavlabobosikova",
         "https://people.equilar.com/bio/person/pavla-bobosikova-neo/43308508",
         "https://www.allvoices.co/blog/q-a-with-pavla-bobosikova-founder-ceo-wfhomie"
-      ]
+      ],
+      "research_notes": "Neo Hackathon 2026 organizer role and event/food responsibilities confirmed by Leon Fattakhov (requester)."
     },
     {
       "name": "Purab Seth",
@@ -2750,9 +3011,11 @@
       "linkedin": "https://www.linkedin.com/in/rhea-malik",
       "links": [
         "https://rhea24.github.io",
-        "https://rhea24.github.io/writing/low-latency-and-model-training-at-modal/"
+        "https://rhea24.github.io/writing/low-latency-and-model-training-at-modal/",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — blood JEPA: Machine-learning models that rank candidate gene perturbations from cell states to help guide CRISPR experiments.",
         "Prev Modal, Numeric, Matter",
         "Modal MTS intern: low-latency environment budgets + agent-driven RL on Training Gym",
         "ML researcher at Penn Efficient AI Lab (LLM inference energy profiling)",
@@ -2787,14 +3050,15 @@
         "https://rhea24.github.io/",
         "https://rhea24.github.io/writing/low-latency-and-model-training-at-modal/",
         "https://linkedin.com/in/rhea-malik",
-        "https://rhea24.github.io/writing/"
+        "https://rhea24.github.io/writing/",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ]
     },
     {
       "name": "Rick Panchal",
-      "avatar": "https://github.com/ppanchal97.png?size=96",
       "affiliation": "OpenAI",
       "headline": "Applied AI at OpenAI",
+      "avatar": "https://github.com/ppanchal97.png?size=96",
       "linkedin": "https://www.linkedin.com/in/parik-panchal",
       "links": [
         "https://github.com/ppanchal97",
@@ -2885,8 +3149,12 @@
       "affiliation": "Unknown",
       "headline": "Hackathon attendee",
       "linkedin": null,
-      "links": [],
-      "highlights": [],
+      "links": [
+        "https://devpost.com/software/unreasonably-complicated-carrier-pigeon"
+      ],
+      "highlights": [
+        "Neo Hackathon 2026 — Unreasonably Complicated Carrier Pigeon: An experimental weather balloon intended to steer by releasing helium and capture aerial photos."
+      ],
       "confidence": "low",
       "playstyle": "A cheerful builder who paints a small useful device and helps neighbours.",
       "personality": {
@@ -2909,7 +3177,8 @@
       },
       "sources_checked": [
         "https://spectrum.ieee.org/ieee-presidents-scholarship-2023",
-        "https://www.nmoe.org/individual/rohan-kalia"
+        "https://www.nmoe.org/individual/rohan-kalia",
+        "https://devpost.com/software/unreasonably-complicated-carrier-pigeon"
       ],
       "possible_matches": [
         "https://spectrum.ieee.org/ieee-presidents-scholarship-2023 (Rohan Kalia, EyePal, Wheeler HS GA '25, reportedly Caltech — UNCONFIRMED)"
@@ -3056,9 +3325,11 @@
       "linkedin": "https://www.linkedin.com/in/sofiia-zaozerska-sgfx",
       "links": [
         "https://devpost.com/szaozerska",
-        "https://gitlab.cern.ch/szaozers/athena"
+        "https://gitlab.cern.ch/szaozers/athena",
+        "https://devpost.com/software/arcana-mxe0y2"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Arcana: Mixed-reality wizard duels using Meta Quest headsets and an EMG wristband for gesture-controlled spells.",
         "Neo Scholar finalist",
         "Ex CERN summer student",
         "Devpost lists qpilot, theo, Kentro, and Haven; theo and Kentro have winner badges",
@@ -3091,22 +3362,25 @@
         "https://devpost.com/szaozerska",
         "https://www.linkedin.com/in/sofiia-zaozerska-sgfx",
         "https://linkedin.com/in/sofiia-zaozerska-sgfx",
-        "https://gitlab.cern.ch/szaozers/athena"
+        "https://gitlab.cern.ch/szaozers/athena",
+        "https://devpost.com/software/arcana-mxe0y2"
       ],
       "research_notes": "Sofia/Sofiia spelling variants align through the supplied LinkedIn and Devpost. Unrelated GitHub soffffises was rejected. LinkedIn timed out; CERN fetch returned 403; added CERN link based on indexed full name and matching research institution."
     },
     {
       "name": "Soham Bafana",
-      "avatar": "https://github.com/snbafana.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard student building AI and robotics projects",
+      "avatar": "https://github.com/snbafana.png?size=96",
       "linkedin": "https://www.linkedin.com/in/snbafana",
       "links": [
         "https://www.snbafana.com/",
         "https://github.com/snbafana",
-        "https://devpost.com/snbafana"
+        "https://devpost.com/snbafana",
+        "https://devpost.com/software/robots-building-robots"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Robots Building Robots: Prototypes of robot arms assembling robot components, using reinforcement learning in simulation and camera-guided physical control.",
         "GitHub hosts GasAI, a graph-based asynchronous task-delegation system",
         "Devpost includes a chess-playing robot arm, Bubble, and a Minecraft mod"
       ],
@@ -3138,7 +3412,8 @@
         "https://linkedin.com/in/snbafana",
         "https://www.snbafana.com/",
         "https://github.com/snbafana",
-        "https://devpost.com/snbafana"
+        "https://devpost.com/snbafana",
+        "https://devpost.com/software/robots-building-robots"
       ],
       "research_notes": "Identity resolved by matching full name, shared handle, reciprocal site link, and Harvard affiliation. LinkedIn fetch timed out."
     },
@@ -3194,9 +3469,11 @@
       "headline": "Artist and former Pinterest product lead who describes enjoying hard problems and team-building",
       "linkedin": "https://www.linkedin.com/in/timothyguan",
       "links": [
-        "https://timguan.art"
+        "https://timguan.art",
+        "https://devpost.com/software/megamind-fs2cd3"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — Megamind: A Quest headset memory assistant that remembers sights and sounds, then answers questions about what the wearer experienced.",
         "Building teams",
         "Supplied LinkedIn profile identifies an artist and former Pinterest product leader",
         "Former president of UC Berkeley Cognitive Science Student Association",
@@ -3228,7 +3505,8 @@
       "sources_checked": [
         "https://www.linkedin.com/in/timothyguan",
         "https://linkedin.com/in/timothyguan",
-        "https://timguan.art"
+        "https://timguan.art",
+        "https://devpost.com/software/megamind-fs2cd3"
       ],
       "research_notes": "Links are attached to the supplied LinkedIn identity, not independently proven to the Neo attendee. Retain low confidence until roster confirmation. Did not add similarly named GitHub without direct corroboration."
     },
@@ -3240,9 +3518,11 @@
       "links": [
         "https://tinabmai.com/",
         "https://tinamai.people.stanford.edu/",
-        "https://twitter.com/tinabmai"
+        "https://twitter.com/tinabmai",
+        "https://devpost.com/software/i-patched-the-pixels-myself"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — I Patched The Pixels Myself: Adaptive image tokenization for diffusion models, learning to group pixels instead of using fixed-size patches.",
         "Personal site describes building an industrial research lab for hardware and physiological ML",
         "Stanford page describes CS/neuroscience and human-simulating agents",
         "Co-founder/CTO experience and published poetry",
@@ -3274,21 +3554,24 @@
       "sources_checked": [
         "https://www.linkedin.com/in/tinabmai",
         "https://tinabmai.com/",
-        "https://tinamai.people.stanford.edu/"
+        "https://tinamai.people.stanford.edu/",
+        "https://devpost.com/software/i-patched-the-pixels-myself"
       ],
       "research_notes": "Twitter URL is directly linked in fetched LinkedIn About, not independently fetched. Current site focus differs from older bio-ML headline; no unverified employer update."
     },
     {
       "name": "Vihaan Gupta",
-      "avatar": "https://github.com/vihaann06.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard CS and Philosophy student; HCI researcher and AWS engineering intern per personal site",
+      "avatar": "https://github.com/vihaann06.png?size=96",
       "linkedin": "https://www.linkedin.com/in/vgupta06",
       "links": [
         "https://vihaangupta.dev/",
-        "https://github.com/vihaann06"
+        "https://github.com/vihaann06",
+        "https://devpost.com/software/readme-html"
       ],
       "highlights": [
+        "Neo Hackathon 2026 — tldr: A compact web-page representation for browser agents that removes irrelevant content while preserving actionable controls.",
         "Personal site lists HCI research at Variation Lab and software engineering at AWS",
         "Interested in the intersection of technology and society",
         "GitHub links directly to the matching Harvard portfolio"
@@ -3319,7 +3602,8 @@
         "https://www.linkedin.com/in/vgupta06",
         "https://linkedin.com/in/vgupta06",
         "https://vihaangupta.dev/",
-        "https://github.com/vihaann06"
+        "https://github.com/vihaann06",
+        "https://devpost.com/software/readme-html"
       ],
       "research_notes": "LinkedIn fetch timed out. Name, Harvard affiliation and reciprocal GitHub portfolio link support identity; do not assume GitHub vgupta06 from LinkedIn handle."
     },
@@ -3328,8 +3612,12 @@
       "affiliation": "Unknown",
       "headline": "Hackathon attendee",
       "linkedin": null,
-      "links": [],
-      "highlights": [],
+      "links": [
+        "https://devpost.com/software/blood-jepa-07ws38"
+      ],
+      "highlights": [
+        "Neo Hackathon 2026 — blood JEPA: Machine-learning models that rank candidate gene perturbations from cell states to help guide CRISPR experiments."
+      ],
       "confidence": "low",
       "playstyle": "Little is public about you, so improvise as a cheerful attendee who paints a small emblem and makes friends.",
       "personality": {
@@ -3353,7 +3641,8 @@
       },
       "sources_checked": [
         "https://devpost.com/vd7294",
-        "https://linkedin.com/in/vincent-dangelo-a694b0272"
+        "https://linkedin.com/in/vincent-dangelo-a694b0272",
+        "https://devpost.com/software/blood-jepa-07ws38"
       ],
       "research_notes": "No new identity links added. Devpost is a candidate only, not accepted evidence about this person. Candidate LinkedIn fetch timed out; do not attach it without corroboration."
     },
@@ -3367,6 +3656,7 @@
         "https://v1network.substack.com/p/meet-vincent-po-head-of-the-neo-scholars"
       ],
       "highlights": [
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics.",
         "Mentors every Neo Scholar (original roster claim; not independently quantified)",
         "Coauthored Neo's 2025 Scholars announcement with Ali Partovi",
         "Program announcement describes mentorship, founder development, community events, and introductions",
@@ -3400,13 +3690,13 @@
         "https://v1network.substack.com/p/meet-vincent-po-head-of-the-neo-scholars",
         "https://www.linkedin.com/posts/vincent-po_its-a-privilege-every-day-to-meet-mentor-activity-7463275849895612416-0LEH"
       ],
-      "research_notes": "LinkedIn profile timed out; public post returned signup content. Neo and V1 pages fetched successfully. No private relationship details collected."
+      "research_notes": "LinkedIn profile timed out; public post returned signup content. Neo and V1 pages fetched successfully. No private relationship details collected. Neo Hackathon 2026 organizer role and event/food responsibilities confirmed by Leon Fattakhov (requester)."
     },
     {
       "name": "Vlad Cainamisir",
-      "avatar": "https://github.com/cainamisir.png?size=96",
       "affiliation": "Harvard / UCC (original roster; UCC not reverified)",
       "headline": "Harvard CS A.B./S.M. '26; data systems and AI builder",
+      "avatar": "https://github.com/cainamisir.png?size=96",
       "linkedin": "https://www.linkedin.com/in/cainamisir",
       "links": [
         "https://cainamisir.com",

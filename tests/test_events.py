@@ -125,9 +125,31 @@ def test_run_totals_track_appends_without_replacing_config() -> None:
         1,
         True,
         json.dumps(config, separators=(",", ":")),
+        9.0,
     )
     assert before_status == [expected]
     assert log.run_totals() == before_status
+    log.close()
+
+
+def test_run_last_ts_tracks_max_counted_event_timestamp() -> None:
+    log = EventLog()
+    log.append("r", 2.0, "run.created", None, {"config": {"width": 16}})
+    log.append("r", 8.0, "pixel", 1, {})
+    log.append("r", 5.0, "pixel", 1, {})
+
+    [row] = log.run_totals()
+    assert row[-1] == 8.0
+    log.close()
+
+
+def test_uncounted_only_run_gets_last_ts_from_its_first_upsert() -> None:
+    log = EventLog()
+    log.append("r", 1.0, "agent.status", 1, {"status": "idle"})
+    log.append("r", 2.0, "agent.status", 1, {"status": "thinking"})
+
+    [row] = log.run_totals()
+    assert row[-1] == 1.0
     log.close()
 
 
@@ -227,6 +249,25 @@ def test_run_meta_and_canvas_only_reads() -> None:
 
     log.append("r", 7.0, "run.deleted", None, {})
     assert log.run_meta("r") == RunMeta(1.0, json.dumps(config, separators=(",", ":")), True)
+    log.close()
+
+
+def test_canvas_span_and_events_extract_canvas_rows() -> None:
+    log = EventLog()
+    log.append("r", 1.0, "run.created", None, {"config": {"width": 4, "height": 2}})
+    pixel_id = log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 0, "color": 3})
+    log.append("r", 3.0, "agent.status", 1, {"status": "idle"})
+    clear_id = log.append("r", 4.0, "god.clear_canvas", None, {})
+    last_id = log.append("r", 5.0, "pixel", 2, {"x": 2, "y": 1, "color": 7})
+    log.append("other", 6.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+
+    assert log.canvas_span("r") == (2.0, 5.0, last_id)
+    assert log.canvas_span("missing") is None
+    assert log.canvas_events("r", 0, 1) == [(pixel_id, 2.0, "pixel", 1, 0, 3)]
+    assert log.canvas_events("r", pixel_id, 1) == [
+        (clear_id, 4.0, "god.clear_canvas", None, None, None)
+    ]
+    assert log.canvas_events("r", clear_id, 10) == [(last_id, 5.0, "pixel", 2, 1, 7)]
     log.close()
 
 

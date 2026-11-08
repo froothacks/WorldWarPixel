@@ -95,6 +95,12 @@ class EventStore(Protocol):
         self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
     ) -> list[Event]: ...
 
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None: ...
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]: ...
+
     def count(self, run_id: str) -> int: ...
 
     def run_meta(self, run_id: str) -> RunMeta | None: ...
@@ -107,7 +113,7 @@ class EventStore(Protocol):
 
     def run_totals(
         self,
-    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]: ...
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None, float | None]]: ...
 
     def interrupted_runs(self) -> list[str]:
         """Runs a server shut down mid-run (and nothing resumed or stopped since)."""
@@ -142,8 +148,8 @@ class EventLog:
                 """
                 INSERT INTO runs (
                     id, created_at, config, pixels, posts, turns, errors, updates, answers, deleted,
-                    state
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    state, last_ts
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     created_at = MIN(runs.created_at, excluded.created_at),
                     config = COALESCE(runs.config, excluded.config),
@@ -154,7 +160,8 @@ class EventLog:
                     updates = runs.updates + excluded.updates,
                     answers = runs.answers + excluded.answers,
                     deleted = MAX(runs.deleted, excluded.deleted),
-                    state = COALESCE(excluded.state, runs.state)
+                    state = COALESCE(excluded.state, runs.state),
+                    last_ts = MAX(COALESCE(runs.last_ts, excluded.last_ts), excluded.last_ts)
                 """,
                 (
                     run_id,
@@ -168,6 +175,7 @@ class EventLog:
                     delta.answers,
                     int(delta.deleted),
                     delta.state,
+                    ts,
                 ),
             )
         cur = self._conn.execute(
@@ -243,6 +251,46 @@ class EventLog:
             )
         return events
 
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None:
+        first = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = ? AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id ASC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if first is None:
+            return None
+        last = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = ? AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if last is None:
+            return None
+        return float(first[1]), float(last[1]), int(last[0])
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]:
+        rows = self._conn.execute(
+            "SELECT id, ts, kind, json_extract(payload, '$.x'),"
+            " json_extract(payload, '$.y'), json_extract(payload, '$.color')"
+            " FROM events"
+            f" WHERE run_id = ? AND id > ? AND kind IN ({CANVAS_KINDS_SQL})"
+            " ORDER BY run_id, id LIMIT ?",
+            (run_id, after_id, limit),
+        ).fetchall()
+        return [
+            (
+                int(row[0]),
+                float(row[1]),
+                str(row[2]),
+                None if row[3] is None else int(row[3]),
+                None if row[4] is None else int(row[4]),
+                None if row[5] is None else int(row[5]),
+            )
+            for row in rows
+        ]
+
     def count(self, run_id: str) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) FROM events WHERE run_id = ?", (run_id,)
@@ -283,10 +331,13 @@ class EventLog:
         rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
         return [str(r[0]) for r in rows]
 
-    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+    def run_totals(
+        self,
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None, float | None]]:
         """Return maintained per-run counters, ordered by run id."""
         rows = self._conn.execute(
-            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted, config"
+            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted,"
+            " config, last_ts"
             " FROM runs ORDER BY id"
         ).fetchall()
         return [
@@ -301,6 +352,7 @@ class EventLog:
                 int(row[7]),
                 bool(row[8]),
                 None if row[9] is None else str(row[9]),
+                None if row[10] is None else float(row[10]),
             )
             for row in rows
         ]

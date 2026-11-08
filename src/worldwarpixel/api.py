@@ -18,7 +18,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from worldwarpixel.personas.roster import roster_summaries
@@ -30,7 +30,7 @@ from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.speech import SpeechSynth, wav
-from worldwarpixel.sim.timelapse import build_timelapse
+from worldwarpixel.sim.timelapse import MAX_FRAMES, iter_timelapse
 from worldwarpixel.sim.video import VideoError
 from worldwarpixel.videos import VideoStore
 
@@ -557,24 +557,28 @@ async def get_events(
 async def get_timelapse(
     run_id: str,
     manager: ManagerDep,
-    frames: Annotated[int, Query(ge=1, le=600)] = 120,
-) -> Response:
+    frames: Annotated[int | None, Query(ge=1, le=MAX_FRAMES)] = None,
+) -> StreamingResponse:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
     run = manager.runs.get(run_id)
+    if run is None:
 
-    def render() -> bytes:
-        with reading(manager.log) as reader:
-            if run is None:
+        def dimensions() -> tuple[int, int]:
+            with reading(manager.log) as reader:
                 meta = _logged_run_meta(reader, run_id)
                 assert meta.config is not None
                 config = RunConfig.model_validate(json.loads(meta.config))
-                width, height = config.width, config.height
-            else:
-                width, height = run.canvas.width, run.canvas.height
-            return build_timelapse(reader, run_id, width, height, frames)
+                return config.width, config.height
 
-    data = await asyncio.to_thread(render)
-    return Response(content=data, media_type="application/octet-stream")
+        width, height = await asyncio.to_thread(dimensions)
+    else:
+        width, height = run.canvas.width, run.canvas.height
+
+    def generate() -> Iterator[bytes]:
+        with reading(manager.log) as reader:
+            yield from iter_timelapse(reader, run_id, width, height, frames)
+
+    return StreamingResponse(generate(), media_type="application/octet-stream")
 
 
 def _videos(manager: RunManager) -> VideoStore:

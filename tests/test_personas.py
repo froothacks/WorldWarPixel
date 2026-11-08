@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from worldwarpixel.personas import nemotron, synthetic, wvs
+from worldwarpixel.personas import roster as roster_mod
 from worldwarpixel.personas.allocation import allocate_seats
 from worldwarpixel.personas.pool import RespondentPool, load_pool
 from worldwarpixel.personas.proxy import (
@@ -315,3 +316,132 @@ def test_roster_persona_uses_the_personality_read() -> None:
     text = persona_text_roster(person, "an event")
     assert person.personality["summary"] in text and person.personality["canvas_approach"] in text
     assert "_" not in text.split("Style:")[1].split(".")[0]
+
+
+@pytest.mark.parametrize(
+    ("name", "project", "slug"),
+    [
+        ("Leon Fattakhov", "World War Pixel", "world-war-pixel"),
+        ("Gino Chiaranaipanich", "I Patched The Pixels Myself", "i-patched-the-pixels-myself"),
+        ("Leah Vashevko", "Warped", "warped"),
+        ("Nick Del Aguila", "Flaid", "flaid"),
+    ],
+)
+def test_roster_project_context_reaches_personas_and_profile_cards(
+    name: str, project: str, slug: str
+) -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == name)
+    highlight = next(
+        h for h in person.highlights if h.startswith(f"Neo Hackathon 2026 — {project}: ")
+    )
+    url = f"https://devpost.com/software/{slug}"
+    assert url in person.links
+    assert highlight in persona_text_roster(person, roster.event)
+    card = roster_card(person, roster.event)
+    assert highlight in card["highlights"] and url in card["links"]
+
+
+@pytest.mark.parametrize("name", ["Maddie Bernheim", "Clara Bae", "Pavla Bobosikova", "Vincent Po"])
+def test_roster_includes_confirmed_hackathon_organizer_context(name: str) -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == name)
+    highlight = (
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics."
+    )
+    assert highlight in person.highlights
+    assert highlight in persona_text_roster(person, roster.event)
+    assert highlight in roster_card(person, roster.event)["highlights"]
+
+
+def test_roster_includes_ali_partovis_hackathon_support() -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == "Ali Partovi")
+    highlight = (
+        "Neo Hackathon 2026 supporter: As Neo's founder, made the event possible "
+        "and encouraged and supported hackers throughout."
+    )
+    assert highlight in person.highlights
+    assert highlight in persona_text_roster(person, roster.event)
+    assert highlight in roster_card(person, roster.event)["highlights"]
+
+
+@pytest.mark.parametrize(
+    ("name", "title", "teammates"),
+    [
+        (
+            "Leon Fattakhov",
+            "World War Pixel",
+            {"Advait Maybhate", "Megan Chun", "Christoph Moser"},
+        ),
+        (
+            "Gino Chiaranaipanich",
+            "I Patched The Pixels Myself",
+            {"Tina Mai", "Alexander (Hongyi) Huang"},
+        ),
+        ("Micah Bozic", "Arcana", {"Ken Zhou", "Sofia Zaozerska", "khkim37382 Kim"}),
+        ("Nick Del Aguila", "Flaid", {"Derrick Ha"}),
+        ("Hunter Pruett", "Autonomous Fulfillment Center", set()),
+    ],
+)
+def test_roster_project_teammates_reach_personas_and_cards(
+    name: str, title: str, teammates: set[str]
+) -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == name)
+    project = next(p for p in person.projects if p.title == title)
+    assert set(project.members) == {name, *teammates}
+    text = persona_text_roster(person, roster.event)
+    assert f"Your hackathon project: {title}." in text
+    assert all(teammate in text for teammate in teammates)
+    card = roster_card(person, roster.event)["hackathon_projects"][0]
+    assert card["title"] == title and card["url"] == project.url
+    assert set(card["teammates"]) == teammates
+    if not teammates:
+        assert "No other project teammates are publicly listed." in text
+
+
+def test_project_catalog_is_sourced_and_links_all_confirmed_roster_members() -> None:
+    roster = load_roster("hackathon")
+    assert len(roster.projects) == 17 and sum(bool(p.projects) for p in roster.people) == 40
+    assert len({project.url for project in roster.projects}) == len(roster.projects)
+    for project in roster.projects:
+        assert project.members and len(project.members) == len(set(project.members))
+        assert project.url.startswith("https://devpost.com/software/")
+        for person in roster.people:
+            assert (project in person.projects) == (person.name in project.members)
+            if project in person.projects:
+                assert project.url in person.links
+
+
+def test_project_catalog_preserves_unknown_and_private_identities() -> None:
+    roster = load_roster("hackathon")
+    for name in ("Alexander Huang", "Kyuhyun Kim", "Maddie Bernheim", "Ali Partovi"):
+        person = next(p for p in roster.people if p.name == name)
+        assert not person.projects
+        assert "hackathon_projects" not in roster_card(person, roster.event)
+    hayden = next(p for p in roster.people if p.name == "Hayden Tedrake")
+    project = hayden.projects[0]
+    assert set(project.members) == {"Hayden Tedrake", "Aleksander Garbuz"}
+    assert "private teammate whose identity is not public" in project.team_notes
+    assert project.team_notes in persona_text_roster(hayden, roster.event)
+    card = roster_card(hayden, roster.event)["hackathon_projects"][0]
+    assert card["teammates"] == ["Aleksander Garbuz"]
+    assert card["team_notes"] == project.team_notes
+
+
+def test_roster_loads_legacy_data_without_project_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "roster.json"
+    path.write_text(
+        '{"id":"old","title":"Old","event":"an event",'
+        '"people":[{"name":"A","affiliation":"B","headline":"C"}]}'
+    )
+    monkeypatch.setattr(roster_mod, "data_path", lambda _: path)
+    load_roster.cache_clear()
+    try:
+        roster = load_roster("hackathon")
+        assert not roster.projects and not roster.people[0].projects
+    finally:
+        load_roster.cache_clear()

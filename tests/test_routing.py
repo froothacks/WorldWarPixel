@@ -83,9 +83,22 @@ def _pool(
     *,
     sleep: Any = asyncio.sleep,
     rng: random.Random | None = None,
+    max_in_flight: int = 16,
+    initial_in_flight: int | None = None,
 ) -> tuple[EndpointPool, list[FakeClient]]:
     clients = [FakeClient() for _ in range(n)]
-    endpoints = [Endpoint(f"ws{i}", f"https://ws{i}/v1", f"m{i}", "modal", ()) for i in range(n)]
+    endpoints = [
+        Endpoint(
+            f"ws{i}",
+            f"https://ws{i}/v1",
+            f"m{i}",
+            "modal",
+            (),
+            max_in_flight=max_in_flight,
+            initial_in_flight=initial_in_flight,
+        )
+        for i in range(n)
+    ]
     t = clock if clock is not None else [0.0]
     pool = EndpointPool(
         list(zip(endpoints, clients, strict=True)),
@@ -345,6 +358,386 @@ def test_public_stats_exposes_waiting_retry_and_agent_counts() -> None:
     assert stats["agents"] == 1
     assert stats["retry_in"] == 5
     assert stats["waiting"] == 2
+    assert stats["limit"] == 4
+    assert stats["in_flight"] == 0
+
+
+def test_endpoint_limits_concurrent_calls_and_releases_a_waiter() -> None:
+    async def main() -> None:
+        class BlockingClient:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+                self.entered: asyncio.Queue[int] = asyncio.Queue()
+                self.releases: list[asyncio.Event] = []
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                index = len(self.calls)
+                self.calls.append(kwargs)
+                release = asyncio.Event()
+                self.releases.append(release)
+                await self.entered.put(index)
+                await release.wait()
+                return cast(str, kwargs["model"])
+
+        client = BlockingClient()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=2,
+            initial_in_flight=2,
+        )
+        pool = EndpointPool([(endpoint, client)])
+        tasks = [asyncio.create_task(pool.create(f"key:{i}")) for i in range(3)]
+
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(2)] == [0, 1]
+        await asyncio.sleep(0)
+        assert len(client.calls) == 2
+        assert pool.public_stats()["only"]["in_flight"] == 2
+
+        client.releases[0].set()
+        assert await asyncio.wait_for(client.entered.get(), 1) == 2
+        assert pool.public_stats()["only"]["in_flight"] == 2
+
+        for release in client.releases:
+            release.set()
+        await asyncio.gather(*tasks)
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+    asyncio.run(main())
+
+
+def test_cancelled_slot_waiter_does_not_block_the_queue_or_leak() -> None:
+    async def main() -> None:
+        class BlockingClient:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+                self.entered: asyncio.Queue[int] = asyncio.Queue()
+                self.releases: list[asyncio.Event] = []
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                index = len(self.calls)
+                self.calls.append(kwargs)
+                release = asyncio.Event()
+                self.releases.append(release)
+                await self.entered.put(index)
+                await release.wait()
+                return cast(str, kwargs["model"])
+
+        client = BlockingClient()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=1,
+            initial_in_flight=1,
+        )
+        pool = EndpointPool([(endpoint, client)])
+        active = asyncio.create_task(pool.create("active"))
+        assert await asyncio.wait_for(client.entered.get(), 1) == 0
+
+        cancelled = asyncio.create_task(pool.create("cancelled"))
+        queued = asyncio.create_task(pool.create("queued"))
+        await asyncio.sleep(0)
+        assert len(pool._slot_waiters["only"]) == 2
+
+        cancelled.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled
+        assert len(pool._slot_waiters["only"]) == 1
+
+        client.releases[0].set()
+        assert await asyncio.wait_for(client.entered.get(), 1) == 1
+        assert len(client.calls) == 2
+        client.releases[1].set()
+        await asyncio.gather(active, queued)
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+    asyncio.run(main())
+
+
+def test_retry_after_wait_does_not_hold_an_endpoint_slot() -> None:
+    async def main() -> None:
+        clock = [0.0]
+        sleeping = asyncio.Event()
+        resume = asyncio.Event()
+
+        async def sleep(seconds: float) -> None:
+            sleeping.set()
+            await resume.wait()
+            clock[0] += seconds
+
+        pool, clients = _pool(
+            1,
+            clock,
+            sleep=sleep,
+            rng=NoJitter(),
+            max_in_flight=1,
+            initial_in_flight=1,
+        )
+        clients[0].outcomes = [_rate_limited({"retry-after": "20"}), "recovered"]
+        call = asyncio.create_task(pool.create("key"))
+        await asyncio.wait_for(sleeping.wait(), 1)
+
+        assert pool.public_stats()["ws0"]["in_flight"] == 0
+        assert pool.public_stats()["ws0"]["waiting"] == 1
+
+        resume.set()
+        assert cast(Any, await call) == "recovered"
+        assert pool.public_stats()["ws0"]["in_flight"] == 0
+
+    asyncio.run(main())
+
+
+def test_waiting_slot_rechecks_retry_after_before_calling_endpoint() -> None:
+    async def main() -> None:
+        clock = [0.0]
+        sleep_started = asyncio.Event()
+        resume_sleep = asyncio.Event()
+
+        async def sleep(seconds: float) -> None:
+            sleep_started.set()
+            await resume_sleep.wait()
+            clock[0] += seconds
+
+        class LimitedFirstCall:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.first_entered = asyncio.Event()
+                self.release_first = asyncio.Event()
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                self.calls += 1
+                if self.calls == 1:
+                    self.first_entered.set()
+                    await self.release_first.wait()
+                    raise _rate_limited({"retry-after": "20"})
+                return cast(str, kwargs["model"])
+
+        client = LimitedFirstCall()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=1,
+            initial_in_flight=1,
+        )
+        pool = EndpointPool(
+            [(endpoint, client)], clock=lambda: clock[0], sleep=sleep, rng=NoJitter()
+        )
+        first = asyncio.create_task(pool.create("first"))
+        await asyncio.wait_for(client.first_entered.wait(), 1)
+        second = asyncio.create_task(pool.create("second"))
+        await asyncio.sleep(0)
+        assert len(pool._slot_waiters["only"]) == 1
+
+        client.release_first.set()
+        await asyncio.wait_for(sleep_started.wait(), 1)
+        while pool.public_stats()["only"]["waiting"] < 2:
+            await asyncio.sleep(0)
+        assert client.calls == 1
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+        resume_sleep.set()
+        await asyncio.gather(first, second)
+        assert client.calls == 3
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+    asyncio.run(main())
+
+
+def test_rate_limits_halve_once_per_retry_window_and_not_below_one() -> None:
+    async def main() -> None:
+        clock = [0.0]
+        sleep_gate = asyncio.Event()
+        sleep_started = asyncio.Event()
+        sleep_count = 0
+
+        async def sleep(seconds: float) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            sleep_started.set()
+            await sleep_gate.wait()
+            clock[0] += seconds
+
+        class BurstClient:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.entered: asyncio.Queue[int] = asyncio.Queue()
+                self.release: list[asyncio.Event] = []
+                self.fail_count = 0
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                index = self.calls
+                self.calls += 1
+                if index < 2 or self.fail_count:
+                    if index >= 2:
+                        self.fail_count -= 1
+                        raise _rate_limited({"retry-after": "20"})
+                    gate = asyncio.Event()
+                    self.release.append(gate)
+                    await self.entered.put(index)
+                    await gate.wait()
+                    raise _rate_limited({"retry-after": "20"})
+                return cast(str, kwargs["model"])
+
+        client = BurstClient()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=8,
+            initial_in_flight=8,
+        )
+        pool = EndpointPool(
+            [(endpoint, client)], clock=lambda: clock[0], sleep=sleep, rng=NoJitter()
+        )
+        first = asyncio.create_task(pool.create("first"))
+        second = asyncio.create_task(pool.create("second"))
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(2)] == [0, 1]
+
+        client.release[0].set()
+        await asyncio.wait_for(sleep_started.wait(), 1)
+        assert pool.public_stats()["only"]["limit"] == 4
+        client.release[1].set()
+        while sleep_count < 2:
+            await asyncio.sleep(0)
+        assert pool.public_stats()["only"]["limit"] == 4
+
+        sleep_gate.set()
+        await asyncio.gather(first, second)
+        assert clock[0] >= 20
+
+        client.fail_count = 1
+        assert cast(Any, await pool.create("after-window")) == "m"
+        assert pool.public_stats()["only"]["limit"] == 2
+
+        client.fail_count = MAX_RATE_LIMIT_RETRIES
+        with pytest.raises(RateLimitError):
+            await pool.create("continue-halving")
+        assert pool.public_stats()["only"]["limit"] == 1
+
+    asyncio.run(main())
+
+
+def test_successes_increase_limit_additively_up_to_the_ceiling() -> None:
+    pool, _ = _pool(1, max_in_flight=4, initial_in_flight=2)
+
+    async def calls(count: int) -> None:
+        for _ in range(count):
+            await pool.create("key")
+
+    async def main() -> None:
+        await calls(2)
+        assert pool.public_stats()["ws0"]["limit"] == 3
+        await calls(3)
+        assert pool.public_stats()["ws0"]["limit"] == 4
+        await calls(8)
+        assert pool.public_stats()["ws0"]["limit"] == 4
+
+    asyncio.run(main())
+
+
+def test_429_epoch_ignores_old_successes_until_four_fresh_successes() -> None:
+    async def main() -> None:
+        clock = [0.0]
+        sleep_started = asyncio.Event()
+        resume_sleep = asyncio.Event()
+
+        async def sleep(seconds: float) -> None:
+            sleep_started.set()
+            await resume_sleep.wait()
+            clock[0] += seconds
+
+        class ControlledClient:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.entered: asyncio.Queue[int] = asyncio.Queue()
+                self.releases: list[asyncio.Event] = []
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                index = self.calls
+                self.calls += 1
+                release = asyncio.Event()
+                self.releases.append(release)
+                await self.entered.put(index)
+                await release.wait()
+                if index == 0:
+                    raise _rate_limited({"retry-after": "20"})
+                return cast(str, kwargs["model"])
+
+        client = ControlledClient()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=8,
+            initial_in_flight=8,
+        )
+        pool = EndpointPool(
+            [(endpoint, client)], clock=lambda: clock[0], sleep=sleep, rng=NoJitter()
+        )
+        original = [asyncio.create_task(pool.create(f"old:{i}")) for i in range(5)]
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(5)] == list(range(5))
+
+        client.releases[0].set()
+        await asyncio.wait_for(sleep_started.wait(), 1)
+        assert pool.public_stats()["only"]["limit"] == 4
+
+        for release in client.releases[1:3]:
+            release.set()
+        await asyncio.gather(*original[1:3])
+        assert pool.public_stats()["only"]["limit"] == 4
+        assert pool._successes_since_change["only"] == 0
+
+        resume_sleep.set()
+        assert await asyncio.wait_for(client.entered.get(), 1) == 5
+        for release in client.releases[3:5]:
+            release.set()
+        await asyncio.gather(*original[3:])
+        assert pool.public_stats()["only"]["limit"] == 4
+        assert pool._successes_since_change["only"] == 0
+
+        fresh = [asyncio.create_task(pool.create(f"fresh:{i}")) for i in range(3)]
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(3)] == [6, 7, 8]
+        for release in client.releases[5:]:
+            release.set()
+        await asyncio.gather(original[0], *fresh)
+        assert pool.public_stats()["only"]["limit"] == 5
+        assert pool._successes_since_change["only"] == 0
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+    asyncio.run(main())
 
 
 def test_describe_endpoint_returns_unknown_for_unattributed_error() -> None:

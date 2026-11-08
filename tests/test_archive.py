@@ -123,6 +123,8 @@ def test_unknown_and_legacy_runs() -> None:
     assert run is not None and run.state == "stopped" and len(run.agents) == 2
     [listed] = archived_summaries(log, set())
     assert listed["stats"] == run.stats and listed["narrator"] == run.narrator.stats
+    assert listed["last_event_at"] == 6.0
+    assert run.last_event_at == 6.0
     assert run.canvas.get(2, 3) == 4 and run.canvas.owner(2, 3) == 1
     assert run.stats["pixels"] == 1 and run.created_at == 1.0
     # Legacy pixel events had no prev_owner; the replayed canvas supplies it.
@@ -187,7 +189,7 @@ def test_archived_api_reads_use_and_close_readers(
         assert timelapse.status_code == 200
         assert timelapse.headers["content-type"] == "application/octet-stream"
         assert struct.unpack_from("<HHH", timelapse.content, 0) == (3, 16, 16)
-        assert len(readers) == 2 and closed == readers
+        assert len(readers) == 3 and closed == readers
 
 
 def test_archived_board_and_event_reads_do_not_replay(

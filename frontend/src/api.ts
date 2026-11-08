@@ -95,6 +95,7 @@ export interface RunSummary {
   config: RunConfig;
   created_at: number;
   started_at: number | null;
+  last_event_at: number | null;
   stats: RunStats;
   agents: number;
   threads: number;

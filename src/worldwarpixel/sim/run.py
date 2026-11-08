@@ -127,6 +127,7 @@ GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
 MEMORY_TURNS = 3  # own past turns shown to an agent
+THOUGHTS_KEPT = 50  # per agent, for the viewer and interviews
 CONTACTS_SHOWN = 5
 MENTION = re.compile(r"@(\w+(?:-\w+)*)")
 MAX_GOD_PIXELS = 50_000
@@ -163,6 +164,7 @@ class Run:
         self.created_at = clock()
         self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
+        self.last_event_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
         self._announcements: list[dict[str, Any]] = []
@@ -211,7 +213,7 @@ class Run:
         self._last_post_turn: dict[int, int] = {}
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
-            a.id: deque(maxlen=20) for a in self.agents
+            a.id: deque(maxlen=THOUGHTS_KEPT) for a in self.agents
         }
         self.contacts: dict[int, dict[int, float]] = {a.id: {} for a in self.agents}
         """Who each agent has recently talked with (shared threads, @mentions, invitations)."""
@@ -661,11 +663,11 @@ class Run:
         self.note_thought(agent.id, thought)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
 
-    def recall(self, agent_id: int, turns: int = MEMORY_TURNS) -> list[str]:
+    def recall(self, agent_id: int, turns: int = MEMORY_TURNS, limit: int = 200) -> list[str]:
         """An agent's own recent thoughts, as shown back to it."""
         now = self._clock()
         return [
-            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'], limit)}"
             for t in list(self.thoughts[agent_id])[-turns:]
         ]
 
@@ -751,7 +753,9 @@ class Run:
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
 
     def _record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
-        self.log.append(self.id, self._clock(), kind, agent_id, payload)
+        ts = self._clock()
+        self.log.append(self.id, ts, kind, agent_id, payload)
+        self.last_event_at = ts
 
     def record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
         """Append an event on behalf of a collaborator (the narrator)."""
@@ -767,6 +771,7 @@ class Run:
             "config": self.config.model_dump(),
             "created_at": self.created_at,
             "started_at": self.started_at,
+            "last_event_at": self.last_event_at,
             "stats": dict(self.stats),
             "agents": len(self.agents),
             "threads": len(self.board.threads()),
