@@ -18,6 +18,8 @@ import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
 import Territory from "./Territory";
 import Alliances from "./Alliances";
+import { ErrorIcon, Toasts } from "./Errors";
+import { errorHint, useToasts } from "./errorUtils";
 import Board from "./Board";
 import NarratorDock from "./NarratorDock";
 import Timelapse from "./Timelapse";
@@ -38,6 +40,7 @@ const TABS: [SideTab, string][] = [
 ];
 
 export default function LiveView({ run: initial, onLeave }: Props) {
+  const { toasts, notify, dismiss } = useToasts();
   const [run, setRun] = useState<RunSummary>(initial);
   const [palette, setPalette] = useState<string[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -270,7 +273,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const control = (action: "pause" | "resume" | "stop") =>
     api[action](initial.id)
       .then(setRun)
-      .catch((e: Error) => alert(e.message));
+      .catch((e: Error) => notify(`Couldn't ${action} the run`, e.message));
+  const [errDismissed, setErrDismissed] = useState<string | null>(null);
+  const [errOpen, setErrOpen] = useState(false);
   const [god, setGod] = useState(false);
   const [timelapse, setTimelapse] = useState(false);
   const [videoBusy, setVideoBusy] = useState(false);
@@ -281,7 +286,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       await api.renderVideo(initial.id);
       window.open(api.videoUrl(initial.id), "_blank");
     } catch (e) {
-      window.alert(`Video render failed: ${(e as Error).message}`);
+      notify("Video render failed", (e as Error).message);
     } finally {
       setVideoBusy(false);
     }
@@ -298,11 +303,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           // One alert per streak of failures, not one per brush segment.
           if (paintRejected.current) return;
           paintRejected.current = true;
-          alert(`God brush rejected: ${e.message}`);
+          notify("God brush rejected", e.message);
         },
       );
     },
-    [initial.id],
+    [initial.id, notify],
   );
 
   const llm = run.llm;
@@ -370,9 +375,21 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
         </div>
       </header>
-      {llm?.last_error && (
-        <div className="errbar" role="alert">
-          Model calls failing ({llm.failures}): {llm.last_error}
+      {llm?.last_error && llm.last_error !== errDismissed && (
+        <div className={`errbar ${errOpen ? "open" : ""}`} role="alert">
+          <ErrorIcon />
+          <strong>Model calls failing</strong>
+          {errorHint(llm.last_error) && <span className="errbar-hint">{errorHint(llm.last_error)}</span>}
+          <span className="errbar-count">{llm.failures.toLocaleString()} failed</span>
+          <span className="errbar-msg" title={llm.last_error}>
+            {llm.last_error}
+          </span>
+          <button className="text" onClick={() => setErrOpen((o) => !o)}>
+            {errOpen ? "Less" : "Details"}
+          </button>
+          <button className="icon-close" aria-label="Dismiss until the error changes" onClick={() => setErrDismissed(llm.last_error ?? null)}>
+            ×
+          </button>
         </div>
       )}
       <div className="live-grid">
@@ -385,6 +402,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
               tool={tool}
               onTool={setTool}
               onRun={setRun}
+              onError={notify}
               onClose={() => {
                 setGod(false);
                 setTool(null);
@@ -477,6 +495,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         </div>
       </div>
       {timelapse && <Timelapse runId={initial.id} palette={palette} onClose={() => setTimelapse(false)} />}
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, DEFAULT_CONFIG, type ModelInfo, type RosterSummary, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
+import { InlineError } from "./Errors";
 
 interface Props {
   onStarted: (run: RunSummary) => void;
@@ -299,7 +300,7 @@ export default function StartScreen({ onStarted }: Props) {
             </button>
           </div>
           {warning && <p className="warn">{warning}</p>}
-          {error && <p className="error">{error}</p>}
+          {error && <InlineError message={error} block />}
         </section>
 
         <section className="recent">

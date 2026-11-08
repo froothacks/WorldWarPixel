@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { InlineError } from "./Errors";
 import { api, GOD_ID, type Agent, type Post, type Society, type ThreadDigest } from "./api";
 
 interface Props {
@@ -38,6 +39,16 @@ function voterId(): string {
     localStorage.setItem("wwp-voter", id);
   }
   return id;
+}
+
+const voteClass = (mine: number | undefined) => ((mine ?? 0) > 0 ? "up" : (mine ?? 0) < 0 ? "down" : "");
+
+function Chevron({ down = false }: { down?: boolean }) {
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className={down ? "flip" : undefined}>
+      <path d="M2.5 7.75 6 4.25l3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 /** Seconds of recency one net vote is worth; mirrors VOTE_BOOST in sim/board.py. */
@@ -257,23 +268,27 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
         {threads.length > 0 && shown.length === 0 && <p className="muted small pad">No threads match “{query}”.</p>}
         {shown.map((t) => (
           <div key={t.thread_id} className="thread-item">
-          <div className="voter">
+          <div className={`voter ${voteClass(myVotes[t.thread_id])}`}>
             <button
-              className={`vote ${(myVotes[t.thread_id] ?? 0) > 0 ? "on" : ""}`}
+              className="vote vote-up"
+              aria-pressed={(myVotes[t.thread_id] ?? 0) > 0}
               title="Upvote: move this thread up the board (agents see the board in this order)"
               aria-label="Upvote"
               onClick={() => vote(t.thread_id, 1)}
             >
-              ▲
+              <Chevron />
             </button>
-            <span className="small">{t.votes ?? 0}</span>
+            <span className="vote-count" title={`Score ${t.votes ?? 0}`}>
+              {t.votes ?? 0}
+            </span>
             <button
-              className={`vote ${(myVotes[t.thread_id] ?? 0) < 0 ? "on" : ""}`}
+              className="vote vote-down"
+              aria-pressed={(myVotes[t.thread_id] ?? 0) < 0}
               title="Downvote: move this thread down the board"
               aria-label="Downvote"
               onClick={() => vote(t.thread_id, -1)}
             >
-              ▼
+              <Chevron down />
             </button>
           </div>
           <button
@@ -569,7 +584,7 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           <button type="submit" disabled={sending || !draft.trim()}>
             {sending ? "…" : "Reply"}
           </button>
-          {sendError && <span className="error small">{sendError}</span>}
+          {sendError && <InlineError message={sendError} />}
         </form>
       )}
     </>

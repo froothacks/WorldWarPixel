@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { InlineError } from "./Errors";
 import type { NarratorHighlight, NarratorState, NarratorUpdate } from "./api";
 
 const EVENT_MARK: Record<string, string> = {
@@ -125,11 +126,7 @@ export default function NarratorDock({ narrator, paused, onHighlight, onAsk }: P
           disabled={pending || !narrator || !hasModel}
           maxLength={500}
         />
-        {error && (
-          <span className="error" title={error}>
-            {error}
-          </span>
-        )}
+        {error && <InlineError message={error} />}
         <button type="submit" disabled={pending || !narrator || !hasModel || !question.trim()}>
           {pending ? "asking…" : "ask"}
         </button>
