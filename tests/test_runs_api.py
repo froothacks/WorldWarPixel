@@ -72,6 +72,7 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
         "gpt-6-luna",
         "qwen",
         "deepseek",
+        "deepseek-sail",
         "glm",
     }
     assert all(set(m) == {"id", "label", "model", "available", "endpoints"} for m in models)

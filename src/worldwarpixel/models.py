@@ -42,6 +42,23 @@ LEONFATTAKHOV = "LEONFATTAKHOV_"
 GLM_MODEL = "nvidia/GLM-5.3-Flash-NVFP4"
 GLM_SERVER = "ep-glm-5-3-flash-nvfp4-server"
 
+SAIL_BASE = "https://api.sailresearch.com/v1"
+SAIL_KEYS = 8
+# SAIL_API_KEY plus SAIL_API_KEY_2..SAIL_API_KEY_8: one endpoint per key, so several people's
+# Sail accounts share the load (keys that are not configured are simply skipped).
+
+
+def sail_endpoint(index: int, model: str) -> Endpoint:
+    """A Sail bearer endpoint for the ``index``-th API key (0 = SAIL_API_KEY)."""
+    secret = "SAIL_API_KEY" if index == 0 else f"SAIL_API_KEY_{index + 1}"
+    return Endpoint(
+        name="sail" if index == 0 else f"sail-{index + 1}",
+        base_url=SAIL_BASE,
+        model=model,
+        auth="bearer",
+        secrets=(secret,),
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
@@ -118,6 +135,18 @@ def model_registry() -> list[ModelSpec]:
             narrator_max_tokens=3000,
             # The shared endpoint 429s above ~16 concurrent calls.
             concurrency=16,
+        ),
+        ModelSpec(
+            id="deepseek-sail",
+            label="DeepSeek V4.1 Flash (Sail)",
+            endpoints=tuple(
+                sail_endpoint(i, "deepseek-ai/DeepSeek-V4.1-Flash-1017") for i in range(SAIL_KEYS)
+            ),
+            # Sail is not vLLM: the thinking hint is accepted but unnecessary (tool calls come
+            # back in ~3 s at the default 700-token budget, no reasoning burn like the Modal one).
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
         ),
         ModelSpec(
             id="glm",
