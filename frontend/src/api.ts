@@ -124,6 +124,8 @@ export interface Agent {
   headline?: string;
   /** Roster runs: school or company, so the people list can filter by it. */
   affiliation?: string;
+  /** Roster runs: public profile photo URL, if known. */
+  avatar?: string | null;
   status: AgentStatus;
   last_thought: Thought | null;
   society?: number | null;

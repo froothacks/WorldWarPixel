@@ -281,6 +281,20 @@ def test_hackathon_roster_is_unique_people_with_profiles() -> None:
     )
 
 
+def test_hackathon_roster_has_27_github_avatars() -> None:
+    avatars = [person.avatar for person in load_roster("hackathon").people if person.avatar]
+    assert len(avatars) == 27
+    assert all(avatar.startswith("https://github.com/") for avatar in avatars)
+
+
+def test_roster_card_includes_avatar_only_when_known() -> None:
+    people = {person.name: person for person in load_roster("hackathon").people}
+    with_avatar = roster_card(people["Advait Maybhate"], "an event")
+    without_avatar = roster_card(people["Aditya Agarwal"], "an event")
+    assert with_avatar["avatar"] == "https://github.com/Advait-M.png?size=96"
+    assert "avatar" not in without_avatar
+
+
 def test_seed_roster_is_one_individual_agent_per_person() -> None:
     roster = load_roster("hackathon")
     agents = seed_roster(roster.people, roster.event, 512, 320, 1.0, random.Random(3))

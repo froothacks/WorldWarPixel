@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, type Agent, type AgentDetail, type Thought } from "./api";
+import Avatar from "./Avatar";
 
 interface Props {
   runId: string;
@@ -113,7 +114,11 @@ export default function AgentDrawer({ runId, agent, palette, liveThoughts, pixel
   return (
     <aside className="drawer">
       <header className="panel-head">
-        <span className="swatch" style={{ background: palette[agent.color] ?? "#888" }} />
+        <Avatar
+          src={fresh?.avatar ?? agent.avatar}
+          color={palette[agent.color] ?? "#888"}
+          size={28}
+        />
         <strong>{agent.name}</strong>
         <span className={`status status-${agent.status}`}>{agent.status}</span>
         <button className="ghost" onClick={onClose}>

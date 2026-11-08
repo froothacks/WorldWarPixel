@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from worldwarpixel.sim.agents import AgentSpec, RandomWalkPolicy
+from worldwarpixel.sim.archive import restore_run
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT, RESYNC, Hub
 from worldwarpixel.sim.run import Run, RunConfig
@@ -71,6 +72,7 @@ def test_agents_act_on_their_own_cooldowns() -> None:
         assert detail is not None and detail["thoughts"]
         listed = run.agent_list()[0]
         assert listed["last_thought"] == detail["thoughts"][-1]
+        assert listed["avatar"] is None
         assert all(a.color >= 2 for a in run.agents)
         assert run.agent_detail(99) is None
 
@@ -230,9 +232,23 @@ def test_world_news_is_off_by_default_only_in_free_for_all() -> None:
 
 def test_hackathon_roster_run_has_one_agent_per_attendee() -> None:
     config = RunConfig(width=64, height=64, agents=5, roster="hackathon", seed=1)
-    run = Run("h", config, EventLog(), RandomWalkPolicy(seed=1))
+    log = EventLog()
+    run = Run("h", config, log, RandomWalkPolicy(seed=1))
     assert len(run.agents) == run.config.agents == 86
     row = run.agent_list()[0]
     assert row["headline"] and row["country"] and row["affiliation"]
     stokes = next(r for r in run.agent_list() if r["name"] == "Matt Stokes")
     assert stokes["affiliation"] == "Waterloo"
+
+    async def restore() -> Run | None:
+        await run.start()
+        await run.stop()
+        return restore_run(log, run.id)
+
+    restored = asyncio.run(restore())
+    assert restored is not None
+    avatar = next(agent for agent in run.agents if agent.persona_card.get("avatar"))
+    restored_avatar = next(agent for agent in restored.agents if agent.name == avatar.name)
+    assert restored_avatar.persona_card["avatar"] == avatar.persona_card["avatar"]
+    row = next(row for row in restored.agent_list() if row["name"] == avatar.name)
+    assert row["avatar"] == avatar.persona_card["avatar"]

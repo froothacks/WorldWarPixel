@@ -64,6 +64,7 @@ button.text:hover { background: none; color: var(--text); }
 .label { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
 .count { font-size: 12px; color: var(--faint); font-weight: 400; font-variant-numeric: tabular-nums; }
 .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.avatar { flex: none; display: block; border-radius: 50%; object-fit: cover; background: var(--raise); box-shadow: 0 0 0 1.5px var(--c); }
 
 .state { font-size: 12px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px 1px 7px; border-radius: 4px; background: color-mix(in srgb, currentColor 12%, transparent); text-transform: capitalize; }
 .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
@@ -176,6 +177,9 @@ button.text:hover { background: none; color: var(--text); }
 .agent-rows { overflow: auto; display: flex; flex-direction: column; padding: 0 8px 8px; }
 .agent-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: start; column-gap: 12px; border: 0; border-radius: 0; height: auto; text-align: left; padding: 11px 20px; border-bottom: 1px solid var(--border); border: 0; border-radius: 4px; padding: 9px 8px; }
 .agent-row .swatch { margin-top: 4px; }
+.people .agent-row { grid-template-columns: 22px 1fr auto; }
+.people .agent-row .swatch { justify-self: center; margin-top: 6px; }
+.agent-row .avatar { margin-top: 1px; }
 .agent-row:hover { background: var(--hover); }
 .agent-row.selected { background: var(--raise); box-shadow: inset 2px 0 0 var(--accent); box-shadow: none; }
 .show-more { width: auto; height: 32px; margin: 8px 20px 12px; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); background: none; margin: 8px 8px 4px; }
