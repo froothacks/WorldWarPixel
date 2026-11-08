@@ -47,9 +47,9 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert qwen.reasoning_effort is None
     assert qwen.max_tokens is None  # falls back to AGENT_MAX_TOKENS
 
-    deepseek = specs["deepseek"]
-    assert deepseek.auth == "modal"
-    assert deepseek.max_tokens == 3000
+    glm = specs["glm-5.3-flash"]
+    assert glm.auth == "modal" and not glm.vision
+    assert not glm.chat_template_kwargs and glm.reasoning_effort == "low"
 
     glm = specs["glm"]
     assert glm.auth == "modal" and glm.auth_workspace is None  # advait-m: MODAL_KEY/MODAL_SECRET

@@ -144,3 +144,8 @@ def test_dispatch_posts_restore_with_the_world_news_author() -> None:
     assert run.board.threads() == [post]
     assert run.world.snapshot()["edges"] == []
     run.narrator.observe_write(DISPATCH_ID, "post", post.to_dict())
+
+
+def test_runs_archived_without_a_model_still_load() -> None:
+    config = RunConfig.model_validate({**RunConfig().model_dump(), "model": None})
+    assert config.model == RunConfig().model

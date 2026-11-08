@@ -29,8 +29,28 @@ class Settings(BaseSettings):
     """Endpoint of the 'deepseek' model preset (see models.py); override for another deployment."""
     glm_base_url: str = "https://advait-m--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1"
     """Endpoint of the 'glm' model preset (see models.py); override for another deployment."""
+    timelapse_dir: str = "timelapses"
+    """Where rendered run videos ({run_id}.mp4 + .json) are written; on Modal a Volume path."""
+    timelapse_auto: bool = True
+    """Render a video automatically when a run is stopped."""
+    timelapse_duration: float = Field(default=20.0, ge=2, le=120)
+    """Length of the rendered timelapse in seconds (plus short holds at both ends)."""
+    timelapse_s3_bucket: str | None = None
+    """Optional S3-compatible bucket to mirror videos into (AWS creds from the environment)."""
+    timelapse_s3_endpoint: str | None = None
+    """Custom S3 endpoint (https://storage.googleapis.com for GCS, or R2); None for AWS."""
+    timelapse_s3_prefix: str = "timelapses/"
+    ffmpeg_path: str = "ffmpeg"
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
+    device_tokens: SecretStr = SecretStr("")
+    """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
+    whisper_model: str = "base"
+    """faster-whisper model size used to transcribe society-screen voice clips."""
+    murmur_condense: bool = False
+    """Rephrase voice transcripts into a rumour with the server's chat model."""
+    voice_dump_dir: str = ""
+    """When set, every received voice clip is saved there as a WAV (for debugging devices)."""
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"

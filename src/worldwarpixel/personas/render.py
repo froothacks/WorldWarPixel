@@ -124,7 +124,7 @@ def persona_text(name: str, r: Respondent, country: str) -> str:
 
     article = "an" if r.age in (11, 18) or 80 <= (r.age or 0) <= 89 else "a"
     who = f"{article} {r.age}-year-old {card.get('sex', 'person')}"
-    intro = f"{name}, {who} from {with_article(country)}"
+    intro = f"{name}, {who}"
     if card.get("ethnic_group"):
         intro += f" who identifies as {card['ethnic_group']}"
     if card.get("settlement"):
@@ -200,6 +200,7 @@ def persona_text(name: str, r: Respondent, country: str) -> str:
             _sentence("You", faith),
             _sentence("You", politics),
             _sentence("You", life),
+            f"Your home country is {with_article(country)}.",
             fun,
         )
         if s

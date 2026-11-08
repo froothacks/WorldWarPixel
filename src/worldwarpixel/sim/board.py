@@ -3,6 +3,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 MENTION_RE = re.compile(r"@([\w.-]+)")
+VOTE_BOOST = 60.0
+"""Seconds of recency one net viewer vote is worth when ranking threads."""
 
 
 @dataclass(slots=True)
@@ -31,6 +33,9 @@ class Board:
         self.max_body = max_body
         self._posts: dict[int, Post] = {}
         self._replies: dict[int, list[int]] = {}
+        self._votes: dict[int, int] = {}
+        self._ballots: dict[int, dict[str, int]] = {}
+        self._society: dict[int, int] = {}
         self._next_id = 1
 
     def _new_post(
@@ -57,8 +62,13 @@ class Board:
         """Forget every post but keep issuing fresh ids, so old links never point at new threads."""
         self._posts.clear()
         self._replies.clear()
+        self._votes.clear()
+        self._ballots.clear()
+        self._society.clear()
 
-    def post_thread(self, author_id: int, title: str, body: str, now: float) -> Post:
+    def post_thread(
+        self, author_id: int, title: str, body: str, now: float, society: int | None = None
+    ) -> Post:
         title = title.strip()
         if not title:
             raise BoardError("title must not be empty")
@@ -66,6 +76,8 @@ class Board:
             raise BoardError(f"title longer than {self.max_title} characters")
         post = self._new_post(author_id, None, None, title, body, now)
         self._replies[post.id] = []
+        if society is not None:
+            self._society[post.id] = society
         return post
 
     def reply(
@@ -81,11 +93,13 @@ class Board:
         self._replies[thread_id].append(post.id)
         return post
 
-    def restore(self, post: Post) -> None:
+    def restore(self, post: Post, society: int | None = None) -> None:
         """Re-insert a post read back from the event log, keeping its recorded ids."""
         self._next_id = max(self._next_id, post.id + 1)
         if post.thread_id == post.id:
             self._replies[post.id] = []
+            if society is not None:
+                self._society[post.id] = society
         elif post.thread_id in self._replies:
             self._replies[post.thread_id].append(post.id)
         else:
@@ -107,16 +121,50 @@ class Board:
     def reply_count(self, thread_id: int) -> int:
         return len(self._replies.get(thread_id, ()))
 
+    def society_of(self, thread_id: int) -> int | None:
+        """The society a thread was started in; None for run-wide threads (e.g. god mode)."""
+        return self._society.get(thread_id)
+
     def last_activity(self, thread_id: int) -> float:
         replies = self._replies[thread_id]
         last = replies[-1] if replies else thread_id
         return self._posts[last].created_at
 
+    def vote(self, thread_id: int, voter: str, value: int) -> int:
+        """Add a viewer click (+1/-1, repeatable; 0 withdraws theirs); returns the score."""
+        if thread_id not in self._replies:
+            raise BoardError(f"thread {thread_id} does not exist")
+        if value not in (-1, 0, 1):
+            raise BoardError("vote must be -1, 0 or 1")
+        ballots = self._ballots.setdefault(thread_id, {})
+        prev = ballots.get(voter, 0)
+        ballots[voter] = prev + value if value else 0
+        self._votes[thread_id] = self._votes.get(thread_id, 0) + ballots[voter] - prev
+        return self._votes[thread_id]
+
+    def votes(self, thread_id: int) -> int:
+        return self._votes.get(thread_id, 0)
+
+    def rank(self, thread_id: int) -> float:
+        """Most recent activity first; each net vote counts as VOTE_BOOST seconds newer/older."""
+        return self.last_activity(thread_id) + self.votes(thread_id) * VOTE_BOOST
+
     def digest(
-        self, limit: int = 10, name_of: Callable[[int], str] = lambda i: f"agent {i}"
+        self,
+        limit: int = 10,
+        name_of: Callable[[int], str] = lambda i: f"agent {i}",
+        society: int | None = None,
     ) -> list[dict[str, object]]:
-        """The most recently active threads, summarised for an agent's observation."""
-        ordered = sorted(self._replies, key=self.last_activity, reverse=True)[:limit]
+        """Threads in board order (recent activity, shifted by votes), summarised.
+
+        With ``society`` set, only that society's threads (plus run-wide ones) are included.
+        """
+        tids = (
+            [t for t in self._replies if self._society.get(t, society) == society]
+            if society is not None
+            else list(self._replies)
+        )
+        ordered = sorted(tids, key=self.rank, reverse=True)[:limit]
         out: list[dict[str, object]] = []
         for tid in ordered:
             root = self._posts[tid]
@@ -128,6 +176,8 @@ class Board:
                     "title": root.title,
                     "author": name_of(root.author_id),
                     "replies": len(replies),
+                    "votes": self.votes(tid),
+                    "society": self._society.get(tid),
                     "latest": (
                         {"author": name_of(latest.author_id), "body": latest.body}
                         if latest
@@ -141,7 +191,15 @@ class Board:
         self, limit: int = 100, name_of: Callable[[int], str] = lambda i: f"agent {i}"
     ) -> list[dict[str, object]]:
         """`digest` plus the ids and timestamps a viewer needs to sort, filter and mark unread."""
-        out = self.digest(limit=limit, name_of=name_of)
+        if self._society:
+            out, seen = [], set()
+            for s in sorted(set(self._society.values())):
+                for e in self.digest(limit=limit, name_of=name_of, society=s):
+                    if e["thread_id"] not in seen:
+                        seen.add(e["thread_id"])
+                        out.append(e)
+        else:
+            out = self.digest(limit=limit, name_of=name_of)
         for entry in out:
             root = self._posts[entry["thread_id"]]  # type: ignore[index]
             replies = [self._posts[i] for i in self._replies[root.id]]
