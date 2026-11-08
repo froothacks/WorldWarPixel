@@ -254,16 +254,28 @@ def test_device_voice_over_websocket(client: TestClient) -> None:
 def test_device_picks_its_run(client: TestClient) -> None:
     hdr = {"Authorization": "Bearer tok-b"}
     old = client.post("/runs", json={**SMALL, "societies": 2}).json()["id"]
-    client.post("/runs", json={**SMALL, "seed": 8})  # no societies: not a choice
+    plain = client.post("/runs", json={**SMALL, "seed": 8}).json()["id"]
     new = client.post("/runs", json={**SMALL, "societies": 3}).json()["id"]
     listed = client.get("/devices/runs", headers=hdr).json()
-    assert [r["id"] for r in listed["runs"]] == [new, old] and listed["newest"] == new
-    assert len(set(listed["runs"][0]["societies"])) == 3
+    assert [r["id"] for r in listed["runs"]] == [new, plain, old] and listed["newest"] == new
+    assert len(set(listed["runs"][0]["societies"])) == 3 and listed["runs"][1]["societies"] == []
     assert client.get("/devices/runs").status_code == 401
+    assert client.get(f"/devices/canvas?run={plain}", headers=hdr).status_code == 200
+    say = client.post(f"/devices/say?run={plain}", headers=hdr, json={"text": "hi"})
+    assert say.status_code == 409
     with client.websocket_connect("/devices/ws", headers=hdr) as ws:
         hello = ws.receive_json()
-        assert hello["run"] is None and [r["id"] for r in hello["runs"]] == [new, old]
+        assert hello["run"] is None and [r["id"] for r in hello["runs"]] == [new, plain, old]
         assert ws.receive_json()["run"] == new
+        ws.send_json({"type": "run.select", "run": plain})
+        while (msg := ws.receive_json())["type"] != "run.selected":
+            pass
+        state = ws.receive_json()
+        assert state["run"] == plain and state["society"] is None and state["societies"] == []
+        ws.send_json({"type": "agents.list"})
+        while (msg := ws.receive_json())["type"] != "agents":
+            pass
+        assert msg["run"] == plain and msg["agents"]
         ws.send_json({"type": "run.select", "run": "nope"})
         while (msg := ws.receive_json())["type"] != "error":
             pass
