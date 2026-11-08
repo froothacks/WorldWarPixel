@@ -107,15 +107,13 @@ DATA_VOLUME="name=data,type=cloud-storage,bucket=$BUCKET"
 DATA_VOLUME_MOUNT="volume=data,mount-path=/data"
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
-  --port 8080 --cpu 1 --memory 2Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
+  --port 8080 --cpu 2 --memory 4Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
   --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
   --add-volume "$DATA_VOLUME"
   --add-volume-mount "$DATA_VOLUME_MOUNT" --service-account "$RUNTIME_SA"
 )
 if [ -n "$CLOUDSQL_INSTANCE" ]; then
   args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
-  # DATABASE_URL comes from Secret Manager (socket DSN), not the env file.
-  args+=(--update-secrets "DATABASE_URL=DATABASE_URL:latest")
 fi
 # KEY=value lines -> the YAML gcloud expects; Secret Manager wins for same-named keys.
 app_secret_names="$(printf '%s\n' "${APP_SECRETS[@]}")"
