@@ -2,9 +2,11 @@
 
 Any bearer token in ``DEVICE_TOKENS`` admits a device; the society it maps to is only the default.
 A screen picks which society it shows and speaks to with ``?society=`` (HTTP and WebSocket) or a
-``society.select`` WebSocket message. It receives that society's live state and can send a short
-voice clip; the clip is transcribed and condensed into the society's unattributed murmur. With no
-tokens configured the endpoints are open (local development only).
+``society.select`` WebSocket message, and which run with ``?run=`` or ``run.select`` (by default it
+follows the newest live run with societies; ``GET /devices/runs`` lists the choices). It receives
+that society's live state and can send a short voice clip; the clip is transcribed and condensed
+into the society's unattributed murmur. With no tokens configured the endpoints are open (local
+development only).
 """
 
 import array
@@ -100,6 +102,22 @@ def current_run(manager: RunManager, run_id: str | None = None) -> Run | None:
     return max(live, key=lambda r: r.started_at or 0.0, default=None)
 
 
+def run_choices(manager: RunManager) -> list[dict[str, Any]]:
+    """Live runs a screen can join, newest first."""
+    live = [r for r in manager.active() if r.societies is not None]
+    live.sort(key=lambda r: r.started_at or 0.0, reverse=True)
+    return [
+        {
+            "id": r.id,
+            "started_at": r.started_at,
+            "agents": len(r.agents),
+            "model": r.config.model,
+            "societies": [s["name"] for s in r.society_summary()],
+        }
+        for r in live
+    ]
+
+
 def _run_for(request: Request, device: Device) -> Run:
     run = current_run(request.app.state.runs, request.query_params.get("run"))
     if run is None or run.societies is None:
@@ -191,6 +209,12 @@ async def device_me(request: Request, device: DeviceDep) -> dict[str, Any]:
     return out
 
 
+@router.get("/runs")
+async def device_runs(request: Request, device: DeviceDep) -> dict[str, Any]:
+    runs = run_choices(request.app.state.runs)
+    return {"runs": runs, "newest": runs[0]["id"] if runs else None}
+
+
 @router.get("/canvas")
 async def device_canvas(
     request: Request,
@@ -260,20 +284,33 @@ async def device_socket(websocket: WebSocket) -> None:
         return
     me = device
     await websocket.accept()
+    app = websocket.app
+    runs = run_choices(app.state.runs)
     await websocket.send_json(
-        {"type": "hello", "device": me.id, "society": me.society, "palette": PALETTE}
+        {
+            "type": "hello",
+            "device": me.id,
+            "society": me.society,
+            "palette": PALETTE,
+            "run": run_id,
+            "runs": runs,
+        }
     )
+    listed = [r["id"] for r in runs]
     voice: dict[str, Any] = {"status": "idle", "transcript": None, "error": None}
     clip: bytearray | None = None
     rate = RATE
     seen = 0
-    app = websocket.app
     busy: asyncio.Task[None] | None = None
     clip_run: Run | None = None
     clip_society = me.society
 
     async def push() -> None:
-        nonlocal seen
+        nonlocal seen, listed
+        runs = run_choices(app.state.runs)
+        if [r["id"] for r in runs] != listed:
+            listed = [r["id"] for r in runs]
+            await websocket.send_json({"type": "runs", "runs": runs})
         run = current_run(app.state.runs, run_id)
         if run is None or run.societies is None or me.society >= run.societies.count:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
@@ -346,6 +383,25 @@ async def device_socket(websocket: WebSocket) -> None:
                 clip_run = current_run(app.state.runs, run_id)
                 clip_society = me.society
                 voice.update(status="listening", error=None)
+            elif kind == "run.select":
+                rid = data.get("run")
+                chosen = current_run(app.state.runs, rid) if isinstance(rid, str) else None
+                if rid is not None and chosen is None:
+                    await websocket.send_json({"type": "error", "error": f"no live run {rid!r}"})
+                    continue
+                run_id = rid
+                chosen = chosen or current_run(app.state.runs)
+                if chosen and chosen.societies and me.society >= chosen.societies.count:
+                    me = replace(me, society=0)
+                await websocket.send_json(
+                    {
+                        "type": "run.selected",
+                        "run": chosen.id if chosen else None,
+                        "pinned": rid is not None,
+                        "society": me.society,
+                    }
+                )
+                await push()
             elif kind == "society.select":
                 n = data.get("society")
                 run = current_run(app.state.runs, run_id)
