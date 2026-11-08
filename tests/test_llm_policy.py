@@ -1,7 +1,10 @@
 import asyncio
 import json
 import random
-from typing import Any
+from typing import Any, Literal
+
+import pytest
+from openai import NOT_GIVEN
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
@@ -187,6 +190,23 @@ def test_openai_reasoning_model_params_are_passed_to_the_model() -> None:
     assert "max_tokens" not in request
     assert request["reasoning_effort"] == "none"
     assert not request.get("extra_body")  # no chat_template_kwargs for api.openai.com
+
+
+@pytest.mark.parametrize("token_param", ("max_tokens", "max_completion_tokens"))
+def test_unset_reasoning_effort_is_not_given(
+    token_param: Literal["max_tokens", "max_completion_tokens"],
+) -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient([_response(None, [])])
+    policy = LLMPolicy(
+        client,  # type: ignore[arg-type]
+        "m",
+        vision=False,
+        token_param=token_param,
+        reasoning_effort=None,
+    )
+    asyncio.run(policy.act(agent, tools, obs))
+    assert client.chat.completions.requests[0]["reasoning_effort"] is NOT_GIVEN
 
 
 def test_system_prompt_does_not_assign_a_usual_colour() -> None:

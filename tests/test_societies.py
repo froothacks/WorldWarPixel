@@ -241,6 +241,33 @@ def test_device_voice_over_websocket(client: TestClient) -> None:
         assert state["type"] == "state" and state["society"]["id"] == 1
 
 
+def test_device_picks_its_run(client: TestClient) -> None:
+    hdr = {"Authorization": "Bearer tok-b"}
+    old = client.post("/runs", json={**SMALL, "societies": 2}).json()["id"]
+    client.post("/runs", json={**SMALL, "seed": 8})  # no societies: not a choice
+    new = client.post("/runs", json={**SMALL, "societies": 3}).json()["id"]
+    listed = client.get("/devices/runs", headers=hdr).json()
+    assert [r["id"] for r in listed["runs"]] == [new, old] and listed["newest"] == new
+    assert listed["runs"][0]["societies"] == ["Red", "Blue", "Green"]
+    assert client.get("/devices/runs").status_code == 401
+    with client.websocket_connect("/devices/ws", headers=hdr) as ws:
+        hello = ws.receive_json()
+        assert hello["run"] is None and [r["id"] for r in hello["runs"]] == [new, old]
+        assert ws.receive_json()["run"] == new
+        ws.send_json({"type": "run.select", "run": "nope"})
+        while (msg := ws.receive_json())["type"] != "error":
+            pass
+        ws.send_json({"type": "run.select", "run": old})
+        while (msg := ws.receive_json())["type"] != "run.selected":
+            pass
+        assert msg == {"type": "run.selected", "run": old, "pinned": True, "society": 1}
+        assert ws.receive_json()["run"] == old
+        ws.send_json({"type": "run.select", "run": None})
+        while (msg := ws.receive_json())["type"] != "run.selected":
+            pass
+        assert msg["run"] == new and not msg["pinned"]
+
+
 def test_agent_votes_are_throttled() -> None:
     from worldwarpixel.sim.tools import ToolSet
 

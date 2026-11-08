@@ -16,6 +16,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
@@ -27,7 +28,10 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
+from worldwarpixel.sim.speech import SpeechSynth, wav
 from worldwarpixel.sim.timelapse import build_timelapse
+from worldwarpixel.sim.video import VideoError
+from worldwarpixel.videos import VideoStore
 
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
@@ -43,12 +47,18 @@ class RunManager:
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
+        videos: VideoStore | None = None,
+        auto_video: bool = False,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.log = log
+        self.videos = videos
+        self.auto_video = auto_video and videos is not None
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
         self.make_narrator = make_narrator
+        self.speech = speech
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
@@ -64,7 +74,7 @@ class RunManager:
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )
-        run = Run(run_id, config, self.log, policy, narrator_model=narrator)
+        run = Run(run_id, config, self.log, policy, narrator_model=narrator, speech=self.speech)
         self.runs[run_id] = run
         await run.start()
         return run
@@ -82,7 +92,9 @@ class RunManager:
             return run
         task = self._loading.get(run_id)
         if task is None:
-            task = asyncio.create_task(asyncio.to_thread(restore_run, self.log, run_id))
+            task = asyncio.create_task(
+                asyncio.to_thread(restore_run, self.log, run_id, self.speech)
+            )
             self._loading[run_id] = task
             task.add_done_callback(lambda _: self._loading.pop(run_id, None))
         restored = await task
@@ -95,6 +107,7 @@ class RunManager:
                 old = self.runs.pop(self._restored.pop(0), None)
                 if old is not None:
                     old.hub.close_all()
+                    old.speech.hub.close_all()
         return self.runs[run_id]
 
     async def summaries(self) -> list[dict[str, Any]]:
@@ -112,10 +125,15 @@ class RunManager:
             await run.stop()
         finally:
             run.hub.close_all()
+            run.speech.hub.close_all()
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        for run in self.runs.values():
+            run.speech.hub.close_all()
+        if self.videos is not None:
+            await self.videos.drain()
         self.log.close()
 
 
@@ -132,6 +150,7 @@ ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+videos_router = APIRouter(prefix="/videos", tags=["runs"])
 
 
 @rosters_router.get("")
@@ -173,7 +192,10 @@ async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 @router.post("/{run_id}/stop")
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
+    was_live = run.state != "stopped"
     await run.stop()
+    if was_live and manager.auto_video and manager.videos is not None:
+        manager.videos.schedule(manager.log, run_id)
     return run.summary()
 
 
@@ -376,8 +398,58 @@ async def get_timelapse(
     return Response(content=data, media_type="application/octet-stream")
 
 
+def _videos(manager: RunManager) -> VideoStore:
+    if manager.videos is None:
+        raise HTTPException(503, "video rendering is not configured on this server")
+    return manager.videos
+
+
+@router.post("/{run_id}/video", status_code=201)
+async def render_run_video(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Render (or re-render) the run's timelapse video from its event log so far."""
+    await manager.fetch(run_id)
+    try:
+        return await _videos(manager).render(manager.log, run_id)
+    except VideoError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.get("/{run_id}/video")
+async def get_run_video(run_id: str, manager: ManagerDep) -> Response:
+    """The rendered mp4 (see ``POST`` to render); 202 while a render is in progress."""
+    store = _videos(manager)
+    meta = store.meta(run_id)
+    if meta is None:
+        if store.rendering(run_id):
+            return Response(status_code=202, content="rendering", media_type="text/plain")
+        raise HTTPException(404, "no video rendered for this run yet; POST to render one")
+    return FileResponse(
+        store.video_path(run_id), media_type="video/mp4", filename=f"worldwarpixel-{run_id}.mp4"
+    )
+
+
+@router.get("/{run_id}/video/meta")
+async def get_run_video_meta(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    store = _videos(manager)
+    meta = store.meta(run_id)
+    if meta is None:
+        return {"run_id": run_id, "rendered": False, "rendering": store.rendering(run_id)}
+    return {**meta, "rendered": True, "rendering": False}
+
+
+@videos_router.get("")
+async def list_videos(manager: ManagerDep) -> list[dict[str, Any]]:
+    """Every rendered run video with its metadata sidecar, newest first."""
+    return _videos(manager).list()
+
+
 class NarratorQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=500)
+
+
+class SpeechRequest(BaseModel):
+    text: str
+    agent_id: int | None = None
 
 
 @router.get("/{run_id}/narrator")
@@ -396,6 +468,88 @@ async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep)
         return await run.narrator.ask(body.question)
     except NarratorUnavailable as e:
         raise HTTPException(503, f"narrator unavailable: {e}") from e
+
+
+@router.post("/{run_id}/speak", status_code=202)
+async def speak(
+    run_id: str, body: SpeechRequest, manager: ManagerDep, _god: GodDep
+) -> dict[str, bool]:
+    run = await manager.fetch(run_id)
+    if run.state == "stopped":
+        raise HTTPException(409, "run is not running")
+    try:
+        run.speech.say(body.text, body.agent_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"queued": True}
+
+
+@router.get("/{run_id}/speech")
+async def get_speech(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    return (await manager.fetch(run_id)).speech.state()
+
+
+@router.get("/{run_id}/speech/lines/{line_id}/audio")
+async def speech_audio(
+    run_id: str,
+    line_id: int,
+    manager: ManagerDep,
+    format: Annotated[str, Query(pattern="^(wav|pcm)$")] = "wav",
+) -> Response:
+    speech = (await manager.fetch(run_id)).speech
+    pcm = speech.audio(line_id)
+    if pcm is None:
+        raise HTTPException(404, f"no audio for line {line_id}")
+    rate = speech.sample_rate
+    if format == "pcm":
+        return Response(
+            pcm, media_type="application/octet-stream", headers={"X-Sample-Rate": str(rate)}
+        )
+    return Response(wav(pcm, rate), media_type="audio/wav")
+
+
+@router.websocket("/{run_id}/speech/ws")
+async def speech_socket(websocket: WebSocket, run_id: str) -> None:
+    manager: RunManager = websocket.app.state.runs
+    try:
+        run = await manager.fetch(run_id)
+    except HTTPException:
+        await websocket.close(code=4004, reason="run not found")
+        return
+    await websocket.accept()
+    run.speech.device_connected()
+    queue = run.speech.hub.subscribe()
+
+    async def send_snapshot() -> None:
+        await websocket.send_json({"type": "speech.snapshot", **run.speech.state()})
+
+    async def sender() -> None:
+        await send_snapshot()
+        while True:
+            msg = await queue.get()
+            if msg == CLOSE:
+                await websocket.close(code=1001, reason="run deleted")
+                return
+            if msg == RESYNC:
+                await send_snapshot()
+            elif isinstance(msg, str):
+                await websocket.send_text(msg)
+
+    async def receiver() -> None:
+        while True:
+            await websocket.receive_text()
+
+    tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in done:
+            with contextlib.suppress(WebSocketDisconnect):
+                task.result()
+    finally:
+        run.speech.hub.unsubscribe(queue)
+        run.speech.device_disconnected()
 
 
 @router.websocket("/{run_id}/ws")

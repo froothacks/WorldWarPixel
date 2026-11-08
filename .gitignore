@@ -21,3 +21,5 @@ frontend/dist/
 
 # Licensed survey microdata and derived personas (WVS forbids redistribution); Nemotron samples
 /data/
+firmware/podium/config.h
+timelapses/

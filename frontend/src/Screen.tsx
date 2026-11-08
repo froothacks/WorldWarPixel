@@ -18,15 +18,25 @@ interface DeviceState {
   voice: { status: string; transcript: string | null; error: string | null };
 }
 
+interface RunChoice {
+  id: string;
+  agents: number;
+  model: string;
+  societies: string[];
+}
+
 const THUMB_W = 128;
 const THUMB_H = 80;
 const MAX_SECONDS = 20;
 
 /** Browser stand-in for one ESP32 society screen: same /devices protocol, laptop mic. */
-export default function Screen({ society }: { society: number }) {
+export default function Screen({ society: wanted }: { society: number }) {
   const params = new URLSearchParams(location.search);
   const token = params.get("token");
-  const run = params.get("run");
+  const [run, setRun] = useState(params.get("run") ?? "");
+  const [runs, setRuns] = useState<RunChoice[]>([]);
+  const shown = runs.find((r) => r.id === run) ?? (run ? undefined : runs[0]);
+  const society = shown && wanted >= shown.societies.length ? 0 : wanted;
   const auth = `society=${society}${token ? `&token=${encodeURIComponent(token)}` : ""}${run ? `&run=${encodeURIComponent(run)}` : ""}`;
   const [state, setState] = useState<DeviceState | null>(null);
   const [palette, setPalette] = useState<string[]>([]);
@@ -49,7 +59,10 @@ export default function Screen({ society }: { society: number }) {
       sock.onopen = () => setConn("live");
       sock.onmessage = (m) => {
         const msg = JSON.parse(m.data as string);
-        if (msg.type === "hello") setPalette(msg.palette);
+        if (msg.type === "hello") {
+          setPalette(msg.palette);
+          setRuns(msg.runs ?? []);
+        } else if (msg.type === "runs") setRuns(msg.runs);
         else if (msg.type === "state") setState(msg);
         else if (msg.type === "migration") {
           setToast(msg.to === society ? `${msg.agent} joined` : `${msg.agent} left`);
@@ -213,6 +226,18 @@ export default function Screen({ society }: { society: number }) {
           </>
         )}
       </div>
+      <label className="screen-say">
+        World
+        <select value={run} onChange={(e) => setRun(e.target.value)} style={{ flex: 1 }}>
+          <option value="">Newest live world</option>
+          {run && !runs.some((r) => r.id === run) && <option value={run}>{run} (not live)</option>}
+          {runs.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.id} · {r.agents} agents · {r.model} · {r.societies.join("/")}
+            </option>
+          ))}
+        </select>
+      </label>
       <form
         className="screen-say"
         onSubmit={(e) => {
