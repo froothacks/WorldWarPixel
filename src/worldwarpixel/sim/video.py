@@ -296,7 +296,13 @@ def render_video(
         code = proc.wait()
     except BrokenPipeError as e:
         proc.wait()
+        tmp.unlink(missing_ok=True)
         raise VideoError(f"ffmpeg stopped early: {_stderr(proc)}") from e
+    except BaseException:
+        proc.kill()
+        proc.wait()
+        tmp.unlink(missing_ok=True)
+        raise
     if code != 0:
         tmp.unlink(missing_ok=True)
         raise VideoError(f"ffmpeg exited with {code}: {_stderr(proc)}")

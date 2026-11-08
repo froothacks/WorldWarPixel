@@ -112,6 +112,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     monkeypatch.setenv("EVENT_LOG_PATH", ":memory:")
     monkeypatch.setenv("TIMELAPSE_DIR", str(tmp_path))
     monkeypatch.setenv("TIMELAPSE_DURATION", "2")
+    monkeypatch.setenv("TIMELAPSE_AUTO", "true")
     get_settings.cache_clear()
     with TestClient(app) as c:
         yield c
