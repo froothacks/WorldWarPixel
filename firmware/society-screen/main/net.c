@@ -34,6 +34,7 @@ static bool s_run_resynced;        /* pinned-run re-select done this connection 
 static volatile bool s_retry_req;  /* UI asks for an immediate ws retry */
 static volatile int  s_ws_phase;   /* 0=awaiting tap, 1=auto-retry wait, 2=handshake now */
 static volatile int  s_ws_attempt;
+static volatile bool s_ws_failed;  /* handshake or connection ended (error/disconnect event) */
 static uint8_t s_last_op;          /* opcode of the frame being received */
 static char *s_txt;                /* reassembly buffer for text frames split across events */
 static int s_txt_len;
@@ -462,6 +463,7 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
     case WEBSOCKET_EVENT_DISCONNECTED:
         ESP_LOGW(TAG, "ws disconnected");
         s_ws_connected = false;
+        s_ws_failed = true;
         s_run_resynced = false;
         break;
     case WEBSOCKET_EVENT_DATA:
@@ -499,6 +501,7 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
         ESP_LOGW(TAG, "ws error type=%d status=%d",
                  d->error_handle.error_type, d->error_handle.esp_ws_handshake_status_code);
         s_ws_connected = false;
+        s_ws_failed = true;
         break;
     default:
         break;
@@ -542,9 +545,17 @@ static void ws_task(void *arg)
         s_ws = esp_websocket_client_init(&cfg);
         esp_websocket_register_events(s_ws, WEBSOCKET_EVENT_ANY, ws_event_handler, NULL);
         ESP_LOGI(TAG, "ws connecting %s://%s/devices/ws", scheme, p);
+        s_ws_failed = false;
         esp_err_t err = esp_websocket_client_start(s_ws);
         if (err != ESP_OK)
             ESP_LOGW(TAG, "ws start failed: %s", esp_err_to_name(err));
+
+        /* start() is asynchronous: wait for the handshake to succeed or fail */
+        for (int i = 0; err == ESP_OK && i < 35000 / 100 && !s_ws_connected && !s_ws_failed; i++) {
+            if (!(xEventGroupGetBits(s_eg) & EG_WIFI_UP))
+                break;
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
 
         /* wait until disconnected or wifi drops */
         while (s_ws_connected || esp_websocket_client_is_connected(s_ws)) {
