@@ -166,19 +166,22 @@ def persona_lines(agent: AgentSpec) -> list[str]:
     return lines
 
 
-def _mentions(run: Run, agent: AgentSpec, body: str) -> bool:
-    return any(run.find_agent(w) == agent.id for w in MENTION.findall(body))
+def _about(run: Run, agent: AgentSpec, post: Post) -> bool:
+    """The agent wrote the post or is @mentioned in its title or body."""
+    if post.author_id == agent.id:
+        return True
+    text = f"{post.title or ''} {post.body}"
+    return any(run.find_agent(w) == agent.id for w in MENTION.findall(text))
 
 
 def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> list[str]:
     """Every thread the agent wrote in or was @mentioned in, most recently active for it first,
-    with who said what. Long threads keep the opening post, the agent's own posts with the post
-    each answered, and the latest replies."""
+    with who said what. Long threads keep the opening post, the posts by or about the agent (own
+    replies with the post they answered), and the latest replies."""
     mine: list[tuple[float, list[Post]]] = []
     for root in run.board.threads():
         posts = run.board.thread(root.id)
-        touched = [p.created_at for p in posts if p.author_id == agent.id]
-        touched += [p.created_at for p in posts if _mentions(run, agent, p.body)]
+        touched = [p.created_at for p in posts if _about(run, agent, p)]
         if touched:
             mine.append((max(touched), posts))
     mine.sort(key=lambda t: t[0], reverse=True)
@@ -190,9 +193,13 @@ def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> lis
     used = 0
     for i, (_, posts) in enumerate(mine):
         keep = {0, *range(max(1, len(posts) - THREAD_TAIL), len(posts))}
+        index = {p.id: j for j, p in enumerate(posts)}
         for j, p in enumerate(posts):
-            if p.author_id == agent.id:
-                keep |= {j - 1, j} if j else {j}
+            if not _about(run, agent, p):
+                continue
+            keep.add(j)
+            if p.author_id == agent.id and j:
+                keep.add(index.get(p.parent_id, j - 1) if p.parent_id else j - 1)
         root = posts[0]
         block = [f'Thread "{root.title}", started by {who(root)}:']
         last = -1

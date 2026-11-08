@@ -297,6 +297,12 @@ def test_interview_context_has_threads_people_and_long_memory() -> None:
     run.meet(me.id, a.id)
     for i in range(12):
         run.note_thought(me.id, f"turn number {i}")
+    long = run.board.post_thread(c.id, f"@{me.name.split()[0]} paints too much", "see title", 7.0)
+    asked = run.board.reply(a.id, long.id, "What colour should the river be?", 8.0)
+    run.board.reply(b.id, long.id, f"@{me.name.split()[0]} you owe me a pixel", 9.0)
+    for i in range(15):
+        run.board.reply(c.id, long.id, f"filler {i}", 10.0 + i)
+    run.board.reply(me.id, long.id, "Blue, obviously", 30.0, parent_id=asked.id)
 
     text = context(run, me)
     assert text.startswith(f"You are {me.persona}")
@@ -306,4 +312,6 @@ def test_interview_context_has_threads_people_and_long_memory() -> None:
     assert a.name in text.split("People you have")[1] and "society" not in text
     assert "turn number 0" in text and "turn number 11" in text
     assert "not an assistant" in text
+    assert "paints too much" in text and "you owe me a pixel" in text
+    assert f"{a.name}: What colour should the river be?" in text and "filler 0" not in text
     assert other.id and ping.id
