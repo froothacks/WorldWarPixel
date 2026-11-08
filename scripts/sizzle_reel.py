@@ -738,9 +738,13 @@ async def _amain(args: argparse.Namespace) -> int:
             order = theme.get("order")
             if isinstance(order, list):
                 by_id = {r.run_id: r for r in picked}
-                reordered = [by_id[str(x)] for x in order if str(x) in by_id]
-                reordered.extend(r for r in picked if r not in reordered)
-                picked = reordered[: args.top]
+                ordered_ids: list[str] = []
+                for x in order:
+                    rid = str(x)
+                    if rid in by_id and rid not in ordered_ids:
+                        ordered_ids.append(rid)
+                ordered_ids.extend(r.run_id for r in picked if r.run_id not in ordered_ids)
+                picked = [by_id[rid] for rid in ordered_ids[: args.top]]
                 for i, r in enumerate(picked, 1):
                     r.rank = i
 
