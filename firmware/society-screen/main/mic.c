@@ -38,7 +38,7 @@ static const char *TAG = "mic";
 #define CHUNK_MS      40
 #define CHUNK_SAMPLES (SAMPLE_RATE * CHUNK_MS / 1000)   /* 640 */
 #define MAX_CLIP_MS   20000
-#define SPK_MAX       (30 * SAMPLE_RATE * 2)   /* longest reply clip: 30 s */
+#define SPK_MAX       (60 * SAMPLE_RATE * 2)   /* longest reply clip: 60 s (PSRAM) */
 #define SPK_PREBUF    (SAMPLE_RATE * 2 / 4)    /* start playing after 250 ms */
 
 static esp_codec_dev_handle_t s_dev;
