@@ -93,9 +93,6 @@ def model_registry() -> list[ModelSpec]:
                     "advait-m", "ep-world-war-pixel-server", "world-war-pixel", secret_prefix=ADVAIT
                 ),
                 modal_endpoint("chryztoph", "ep-qwen-server", "qwen", secret_prefix=CHRYZTOPH),
-                modal_endpoint(
-                    "leonfattakhov", "ep-qwen-server", "qwen", secret_prefix=LEONFATTAKHOV
-                ),
             ),
         ),
         ModelSpec(
@@ -107,6 +104,12 @@ def model_registry() -> list[ModelSpec]:
                     "ep-deepseek-v4-1-flash-server",
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=ADVAIT,
+                ),
+                modal_endpoint(
+                    "leonfattakhov",
+                    "ep-deepseek-v4-1-flash-server",
+                    "deepseek-ai/DeepSeek-V4.1-Flash",
+                    secret_prefix=LEONFATTAKHOV,
                 ),
             ),
             max_tokens=3000,

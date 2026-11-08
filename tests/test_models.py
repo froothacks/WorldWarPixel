@@ -73,13 +73,23 @@ def test_modal_endpoints_pair_secrets_with_their_workspace() -> None:
     assert {e.model for e in glm.endpoints} == {glm.model}
     qwen = find_model("qwen")
     assert qwen is not None
-    assert [e.name for e in qwen.endpoints] == ["advait-m", "chryztoph", "leonfattakhov"]
+    assert [e.name for e in qwen.endpoints] == ["advait-m", "chryztoph"]
     assert [e.secrets for e in qwen.endpoints] == [
         ("MODAL_KEY", "MODAL_SECRET"),
         ("CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"),
+    ]
+    assert [e.model for e in qwen.endpoints] == ["world-war-pixel", "qwen"]
+    deepseek = find_model("deepseek")
+    assert deepseek is not None
+    assert [e.name for e in deepseek.endpoints] == ["advait-m", "leonfattakhov"]
+    assert [e.secrets for e in deepseek.endpoints] == [
+        ("MODAL_KEY", "MODAL_SECRET"),
         ("LEONFATTAKHOV_MODAL_KEY", "LEONFATTAKHOV_MODAL_SECRET"),
     ]
-    assert [e.model for e in qwen.endpoints] == ["world-war-pixel", "qwen", "qwen"]
+    assert [e.model for e in deepseek.endpoints] == [
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+    ]
 
 
 def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
