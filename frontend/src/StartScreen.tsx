@@ -350,8 +350,8 @@ export default function StartScreen({ onStarted }: Props) {
                       : "";
                 const details = [
                   `${r.agents.toLocaleString()} agents`,
-                  ...(r.societies && r.societies.length > 0
-                    ? [`${r.societies.length.toLocaleString()} societies`]
+                  ...(r.config.societies > 0
+                    ? [`${r.config.societies.toLocaleString()} societies`]
                     : []),
                   `${r.config.width.toLocaleString()}×${r.config.height.toLocaleString()}`,
                   `${r.stats.pixels.toLocaleString()} px`,
