@@ -45,10 +45,10 @@ class ModelSpec:
     """Default agent output budget; None falls back to Settings.agent_max_tokens."""
     narrator_max_tokens: int | None = None
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
-    concurrency: int | None = None
-    """Cap on simultaneous model calls per run; None means no preset cap."""
     vision: bool = True
     """Show the model the canvas image (GLM reasons for minutes over images, so it gets text)."""
+    concurrency: int | None = None
+    """Cap on simultaneous model calls per preset; None means no preset cap."""
 
 
 def model_registry(settings: Settings) -> list[ModelSpec]:
