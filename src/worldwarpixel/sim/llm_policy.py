@@ -447,6 +447,9 @@ class LLMPolicy:
         }
         self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
+    def close(self) -> None:
+        self._pool.release(f"{self._route_prefix}:")
+
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
         prompt = guided_system_prompt if self._guided else system_prompt
         return prompt(agent, width, height, pixels, posts)

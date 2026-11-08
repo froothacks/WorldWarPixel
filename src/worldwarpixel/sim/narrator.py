@@ -99,6 +99,9 @@ class OpenAINarratorModel:
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
 
+    def close(self) -> None:
+        self._pool.release(self._route_key)
+
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         # Same endpoint quirks as the agent policy; see models.py.
         if not self._vision:
@@ -294,6 +297,10 @@ class Narrator:
         self._next_id = 1
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+
+    @property
+    def model(self) -> NarratorModel | None:
+        return self._model
 
     # -- lifecycle -------------------------------------------------------------------------
 
