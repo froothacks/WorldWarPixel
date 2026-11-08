@@ -26,7 +26,7 @@ CACHE_REPO="$REGION-docker.pkg.dev/$PROJECT/$REPO/cache"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 # Cloud SQL instance the app connects to via DATABASE_URL (Unix socket at /cloudsql/...);
 # set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
-CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE-worldwarpixel-pg}"
 
 # App secrets Cloud Run reads from Secret Manager (secret name = env var name). Anything else in
 # the project stays out. Model endpoint secrets must match models.py (tests/test_deploy_secrets.py).
@@ -59,6 +59,10 @@ done <<< "$secret_names"
 secret_args=""
 secret_display=""
 for secret_name in "${APP_SECRETS[@]}"; do
+  if [ "$secret_name" = DATABASE_URL ] && [ -z "$CLOUDSQL_INSTANCE" ]; then
+    echo "CLOUDSQL_INSTANCE is empty; DATABASE_URL not mounted (SQLite event log)"
+    continue
+  fi
   if [[ -z "${existing_secrets[$secret_name]+x}" ]]; then
     echo "Secret Manager has no $secret_name; skipped"
     continue
@@ -75,6 +79,10 @@ for secret_name in "${APP_SECRETS[@]}"; do
   secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
   secret_display+="${secret_display:+, }${secret_name}"
 done
+if [ -n "$CLOUDSQL_INSTANCE" ] && [[ ",$secret_args," != *",DATABASE_URL=DATABASE_URL:latest,"* ]]; then
+  echo "CLOUDSQL_INSTANCE=$CLOUDSQL_INSTANCE needs DATABASE_URL in Secret Manager (or set CLOUDSQL_INSTANCE=\"\" for SQLite)" >&2
+  exit 1
+fi
 
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
   || gcloud artifacts repositories create "$REPO" --location="$REGION" --repository-format=docker
