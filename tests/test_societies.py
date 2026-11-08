@@ -433,6 +433,8 @@ def test_parse_names_json_or_lines() -> None:
         "Vents",
     ]
     assert parse_names("x" * 80, 1) == ["x" * 40]
+    assert parse_names("Here are some ideas\n1. Anglers\n2. Vents", 2) == ["Anglers", "Vents"]
+    assert parse_names("Names:\nAnglers\nVents", 2) == ["Anglers", "Vents"]
 
 
 def test_naming_prompt_carries_the_theme() -> None:

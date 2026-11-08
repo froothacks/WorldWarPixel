@@ -130,7 +130,9 @@ def parse_names(text: str, count: int) -> list[str]:
         except ValueError:
             raw = []
     if not raw:
-        raw = text.splitlines()
+        lines = [ln for ln in text.splitlines() if ln.strip() and not ln.rstrip().endswith(":")]
+        listed = [ln for ln in lines if re.match(r"\s*(?:[-*\u2022]|\d+[.)])\s", ln)]
+        raw = listed or lines
     names: list[str] = []
     for item in raw:
         name = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", str(item)).strip(" \t\"'`,")
