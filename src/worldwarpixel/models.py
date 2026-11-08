@@ -8,6 +8,9 @@ The start screen picks one per run. The quirks are load-bearing:
 - The Modal vLLM endpoints want the classic ``max_tokens`` plus the
   ``chat_template_kwargs`` thinking hint, and DeepSeek needs a much larger output budget
   because it reasons before calling tools.
+- GLM on the chryztoph endpoint needs ``reasoning_effort="low"`` without the thinking hint
+  (with the hint it ignores the effort and thinks until the cap), rate-limits (429) large
+  fast runs, and gets no canvas image.
 """
 
 from dataclasses import dataclass
@@ -42,6 +45,8 @@ class ModelSpec:
     """Default agent output budget; None falls back to Settings.agent_max_tokens."""
     narrator_max_tokens: int | None = None
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
+    vision: bool = True
+    """Show the model the canvas image (GLM reasons for minutes over images, so it gets text)."""
 
 
 def model_registry(settings: Settings) -> list[ModelSpec]:
@@ -83,6 +88,8 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             auth="modal",
             # Reasons (reasoning_content) before the tool call, so it needs the large budget.
             chat_template_kwargs=False,
+            reasoning_effort="low",
+            vision=False,
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),
@@ -103,6 +110,8 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             auth="modal",
             auth_workspace="chryztoph",
             chat_template_kwargs=False,
+            reasoning_effort="low",
+            vision=False,
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),

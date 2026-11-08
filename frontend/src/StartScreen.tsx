@@ -21,7 +21,12 @@ const RANDOM_TURNS_PER_SEC = 100;
 const PRESETS = [50, 100, 250, 500, 1000, 2000, 5000];
 
 const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
-  { value: "llm", title: "Language model", hint: "Each turn is one call to the configured model." },
+  { value: "llm", title: "Free-for-all", hint: "Language model, no steering. Each turn is one call to the configured model." },
+  {
+    value: "llm-guided",
+    title: "Guided",
+    hint: "Language model with event framing, examples and free-spot hints. One call per turn.",
+  },
   { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
 ];
 
@@ -50,7 +55,7 @@ export default function StartScreen({ onStarted }: Props) {
         // Fall back to the first available preset when the current choice is unusable
         // (e.g. a Modal-only server where the gpt-6-luna default has no OpenAI key).
         setCfg((c) => {
-          if (c.policy !== "llm" || ms.length === 0) return c;
+          if (c.policy === "random" || ms.length === 0) return c;
           if (ms.some((m) => m.id === c.model && m.available)) return c;
           const first = ms.find((m) => m.available);
           return first ? { ...c, model: first.id } : c;
@@ -136,7 +141,7 @@ export default function StartScreen({ onStarted }: Props) {
             <span className="hint">{brain.hint}</span>
           </div>
 
-          {cfg.policy === "llm" && models.length > 0 && (
+          {cfg.policy !== "random" && models.length > 0 && (
             <div className="field">
               <span className="field-label">Model</span>
               <select value={cfg.model} onChange={(e) => set("model", e.target.value)}>
@@ -233,6 +238,22 @@ export default function StartScreen({ onStarted }: Props) {
                 );
               })}
             </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Societies</span>
+            <div className="segmented">
+              {[0, 2, 3, 4].map((n) => (
+                <button key={n} type="button" className={cfg.societies === n ? "on" : ""} onClick={() => set("societies", n)}>
+                  {n === 0 ? "Off" : n}
+                </button>
+              ))}
+            </div>
+            <span className="hint">
+              {cfg.societies
+                ? "Agents are split into groups, each with its own board. They can peek at other groups and move. Each group has a screen that listens to people in the room."
+                : "One shared board for everyone."}
+            </span>
           </div>
 
           <details className="advanced">

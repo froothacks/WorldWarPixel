@@ -19,7 +19,11 @@ export type ServerEvent =
   | { type: "post.created"; post: Post; author: string }
   | ({ type: "narrator.update"; stats?: NarratorStats } & NarratorUpdate)
   | { type: "canvas.cleared" }
-  | { type: "board.cleared" };
+  | { type: "board.cleared" }
+  | { type: "thread.voted"; thread_id: number; votes: number }
+  | { type: "society.joined"; agent_id: number; agent: string; from: number; to: number }
+  | { type: "society.renamed"; agent_id: number; society: number; name: string }
+  | { type: "society.murmur"; society: number; murmur: string; transcript: string };
 
 export interface StreamHandlers {
   onEvent: (event: ServerEvent) => void;
