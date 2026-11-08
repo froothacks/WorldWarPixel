@@ -184,6 +184,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
             if run.config.policy not in ("llm", "llm-guided"):
                 raise InterviewError("agents in this world have no language model to talk with")
+            if tts is not None and not settings.tts_base_url and settings.interview_model:
+                response = await tts.chat.completions.create(
+                    model=settings.interview_model,
+                    messages=cast(list[ChatCompletionMessageParam], messages),
+                    temperature=0.9,
+                    max_tokens=200,
+                    timeout=20,
+                )
+                return response.choices[0].message.content or ""
             spec = find_model(run.config.model)
             if spec is None or not model_available(settings, spec):
                 raise InterviewError(f"model {run.config.model!r} is unavailable")

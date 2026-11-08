@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     transcribe_model: str = "gpt-4o-mini-transcribe"
+    interview_model: str = "gpt-4.1-mini"
+    """Model society-screen interviews answer with, on TTS_API_KEY, so a visitor never waits behind
+    the run's agents. Empty = the run's own model."""
     """Hosted model for society-screen voice clips, used when TTS_API_KEY is an OpenAI key."""
     murmur_condense: bool = False
     """Rephrase voice transcripts into a rumour with the server's chat model."""
