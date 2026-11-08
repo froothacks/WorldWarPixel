@@ -5,9 +5,9 @@ Usage:
     python -m worldwarpixel.sim.events_migrate events.db --database-url postgresql://...
 
 The copy is idempotent: rows whose SQLite id already exists in Postgres with identical content
-are skipped, and the identity sequence is moved past the largest migrated id so new appends do
-not collide. A Postgres row with the same id but different content raises ValueError instead of
-silently dropping the SQLite event.
+are skipped, touched run summaries are recomputed from Postgres events, and the identity sequence
+is moved past the largest migrated id so new appends do not collide. A Postgres row with the same
+id but different content raises ValueError instead of silently dropping the SQLite event.
 """
 
 import argparse
@@ -19,6 +19,7 @@ from typing import Any
 import psycopg
 
 from worldwarpixel.sim.events_pg import PostgresEventLog
+from worldwarpixel.sim.migrations import postgres_run_rollup_sql
 
 INSERT_SQL = """
 INSERT INTO events (id, run_id, ts, kind, agent_id, payload)
@@ -49,16 +50,19 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
     target = psycopg.connect(database_url)
     try:
         with target.transaction():
+            target.execute("SET CONSTRAINTS events_run_fk DEFERRED")
             cursor = source.execute(
                 "SELECT id, run_id, ts, kind, agent_id, payload FROM events ORDER BY id"
             )
             total = 0
+            touched_run_ids: set[str] = set()
             while rows := cursor.fetchmany(batch_size):
                 ids = [int(row[0]) for row in rows]
                 existing = {
                     int(row[0]): row for row in target.execute(SELECT_SQL, (ids,)).fetchall()
                 }
                 for row in rows:
+                    touched_run_ids.add(str(row[1]))
                     current = existing.get(int(row[0]))
                     if current is None:
                         target.execute(INSERT_SQL, row)
@@ -67,6 +71,27 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
                             f"event id {row[0]} already exists in Postgres with different content"
                         )
                 total += len(rows)
+            if touched_run_ids:
+                target.execute(
+                    f"""
+                    INSERT INTO runs (
+                        id, created_at, pixels, posts, turns, errors, updates, answers, deleted,
+                        config
+                    )
+                    {postgres_run_rollup_sql(filter_run_ids=True)}
+                    ON CONFLICT (id) DO UPDATE SET
+                        created_at = EXCLUDED.created_at,
+                        config = EXCLUDED.config,
+                        pixels = EXCLUDED.pixels,
+                        posts = EXCLUDED.posts,
+                        turns = EXCLUDED.turns,
+                        errors = EXCLUDED.errors,
+                        updates = EXCLUDED.updates,
+                        answers = EXCLUDED.answers,
+                        deleted = EXCLUDED.deleted
+                    """,
+                    (list(touched_run_ids),),
+                )
             _reset_identity(target)
         return total
     finally:

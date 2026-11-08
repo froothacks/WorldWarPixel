@@ -28,12 +28,13 @@ static esp_websocket_client_handle_t s_ws;
 static volatile bool s_ws_connected;
 static int s_selected = -1;   /* society picked by user; -1 = token default */
 static TaskHandle_t s_ws_task;
-static int s_backoff_idx;
 static const int s_backoff_s[] = {1, 2, 5, 10};
 static bool s_run_resynced;        /* pinned-run re-select done this connection */
-static volatile bool s_retry_req;  /* UI asks for an immediate ws retry */
-static volatile int  s_ws_phase;   /* 0=awaiting tap, 1=auto-retry wait, 2=handshake now */
+static volatile bool s_retry_req;  /* human tapped CONNECT */
+static volatile int  s_ws_phase;   /* 0=awaiting tap, 2=handshake now, 3=last attempt failed */
 static volatile int  s_ws_attempt;
+static volatile bool s_canvas_req;  /* human tapped the canvas */
+static volatile bool s_runs_req;    /* human tapped REFRESH on the session list */
 static volatile bool s_ws_failed;  /* handshake or connection ended (error/disconnect event) */
 static uint8_t s_last_op;          /* opcode of the frame being received */
 static char *s_txt;                /* reassembly buffer for text frames split across events */
@@ -206,6 +207,15 @@ static void handle_state(const cJSON *root)
     } else {
         g_state.run_id[0] = 0;
         g_state.run_active = false;
+    }
+    /* the world changed under us (e.g. following newest): the people list is stale.
+     * Drop it instead of refetching; the visitor taps REFRESH. */
+    if (g_state.agents_run[0] && strcmp(g_state.agents_run, g_state.run_id)) {
+        g_state.agents_run[0] = 0;
+        g_state.n_agents = 0;
+        g_state.iv_agent.id = -1;
+        g_state.n_convo = 0;
+        g_state.iv_status = IV_IDLE;
     }
 
     const cJSON *soc = cJSON_GetObjectItem(root, "society");
@@ -455,7 +465,6 @@ static void ws_event_handler(void *arg, esp_event_base_t base, int32_t id, void 
         STATE_LOCK();
         g_state.conn = CONN_WS;
         STATE_UNLOCK();
-        s_backoff_idx = 0;
         /* server doesn't remember society choice across connections */
         if (s_selected >= 0)
             net_society_select(s_selected);
@@ -524,22 +533,25 @@ static void ws_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
+        /* only a human tap on CONNECT opens a connection: no automatic retries */
+        if (!s_retry_req) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+        s_retry_req = false;
         STATE_LOCK();
-        if (g_state.conn != CONN_NOT_PAIRED)
-            g_state.conn = CONN_WIFI;
+        g_state.conn = CONN_WIFI;
         STATE_UNLOCK();
 
         esp_websocket_client_config_t cfg = {
             .uri = uri,
             .buffer_size = 8192,
             .disable_auto_reconnect = true,
-            .reconnect_timeout_ms = 3000,
-            .network_timeout_ms = 30000,   /* modal cold starts can be slow */
+            .network_timeout_ms = 30000,   /* cold starts can be slow */
             .ping_interval_sec = 15,
             .headers = ws_auth,
             .crt_bundle_attach = esp_crt_bundle_attach,
         };
-        s_retry_req = false;
         s_ws_attempt++;
         s_ws_phase = 2;
         s_ws = esp_websocket_client_init(&cfg);
@@ -556,12 +568,11 @@ static void ws_task(void *arg)
                 break;
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+        bool ok = s_ws_connected;
 
-        /* wait until disconnected or wifi drops */
+        /* stay connected until the server or wifi drops us */
         while (s_ws_connected || esp_websocket_client_is_connected(s_ws)) {
             if (!(xEventGroupGetBits(s_eg) & EG_WIFI_UP))
-                break;
-            if (g_state.conn == CONN_NOT_PAIRED)
                 break;
             vTaskDelay(pdMS_TO_TICKS(200));
         }
@@ -574,40 +585,30 @@ static void ws_task(void *arg)
         if (g_state.conn == CONN_WS)
             g_state.conn = CONN_WIFI;
         STATE_UNLOCK();
+        s_ws_phase = ok ? 0 : 3;
+        if (ok)
+            ESP_LOGW(TAG, "ws closed - tap CONNECT");
+        else
+            ESP_LOGW(TAG, "ws connect failed - tap CONNECT");
 
-        if (!(xEventGroupGetBits(s_eg) & EG_WIFI_UP))
-            continue;   /* wifi task handles its own retry */
-
-        /* token check before blaming the network */
-        if (net_check_token() == 401) {
+        /* one token check per failed attempt, to tell "not paired" from "server down" */
+        if (!ok && (xEventGroupGetBits(s_eg) & EG_WIFI_UP) && net_check_token() == 401) {
             STATE_LOCK();
             g_state.conn = CONN_NOT_PAIRED;
             STATE_UNLOCK();
             ESP_LOGE(TAG, "server rejected token (401) - pair this device");
-            vTaskDelay(pdMS_TO_TICKS(30000));
-            continue;
         }
-
-        s_retry_req = false;
-        int delay_s = s_backoff_s[s_backoff_idx < 3 ? s_backoff_idx : 3];
-        s_backoff_idx++;
-        if (s_backoff_idx >= 5) {
-            s_ws_phase = 0;
-            /* auto-retries exhausted: wait for the on-screen RETRY tap */
-            ESP_LOGW(TAG, "ws retries exhausted - tap RETRY");
-            while (s_retry_req == false) {
-                if (!(xEventGroupGetBits(s_eg) & EG_WIFI_UP))
-                    break;   /* wifi dropped: outer loop re-waits for it */
-                vTaskDelay(pdMS_TO_TICKS(300));
-            }
-            s_retry_req = false;
-            s_backoff_idx = 0;
-            continue;
-        }
-        s_ws_phase = 1;
-        ESP_LOGW(TAG, "ws retry in %ds", delay_s);
-        vTaskDelay(pdMS_TO_TICKS(delay_s * 1000));
     }
+}
+
+void net_runs_refresh(void)
+{
+    s_runs_req = true;
+}
+
+void net_canvas_refresh(void)
+{
+    s_canvas_req = true;
 }
 
 bool net_ws_connected(void)
@@ -737,7 +738,23 @@ static void canvas_task(void *arg)
     if (!buf)
         buf = heap_caps_malloc(240 * 160, MALLOC_CAP_8BIT);
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(200));
+        if (s_runs_req) {   /* session list REFRESH */
+            s_runs_req = false;
+            int len = 0;
+            if (buf && http_get("/devices/runs", buf, 240 * 160 - 1, &len) == 200 && len > 0) {
+                buf[len] = 0;
+                cJSON *root = cJSON_Parse((const char *)buf);
+                if (root) {
+                    parse_runs(cJSON_GetObjectItem(root, "runs"));
+                    cJSON_Delete(root);
+                }
+                ESP_LOGI(TAG, "runs refreshed: %d", g_state.n_runs);
+            }
+        }
+        if (!s_canvas_req)
+            continue;   /* only a tap on the canvas fetches it */
+        s_canvas_req = false;
         if (!s_ws_connected || !buf)
             continue;
         int len = 0;

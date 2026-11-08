@@ -25,9 +25,9 @@ int  net_society_selected(void);   /* user's pick, or -1 = token default */
 void net_run_select(const char *id);
 const char *net_run_pinned(void);  /* pinned run id, or "" = following newest */
 
-/* Ask ws_task to retry the connection now (wakes the manual-retry wait). */
+/* Connect now (the only trigger: a human tap on CONNECT). */
 void net_ws_retry_now(void);
-/* 0 = waiting for tap, 1 = auto-retry backoff, 2 = handshake in progress */
+/* 0 = waiting for tap, 2 = handshake in progress, 3 = last attempt failed */
 void net_ws_phase(int *phase, int *attempt);
 
 /* Screen mode (MODE_SOCIETY / MODE_INTERVIEW), persisted in NVS. */
@@ -37,3 +37,9 @@ void net_set_mode(int mode);
 /* Interview mode: ask for the run's agents, pick one to talk to. */
 void net_agents_list(void);
 void net_interview_select(int agent_id);
+
+/* Fetch the canvas thumbnail once (only ever on a human tap). */
+void net_canvas_refresh(void);
+
+/* Re-fetch the session list once (only ever on a human tap). */
+void net_runs_refresh(void);

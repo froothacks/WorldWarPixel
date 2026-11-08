@@ -7,13 +7,11 @@ from typing import Any, cast
 from worldwarpixel.sim.agents import AgentSpec, RandomWalkPolicy
 from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PixelWrite
-from worldwarpixel.sim.events import EventStore
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.societies import Migration
 from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
-
-REJECTED = "Tool call rejected"
 
 
 def _stored_config(raw: dict[str, Any]) -> RunConfig:
@@ -90,7 +88,7 @@ def restore_run(log: EventStore, run_id: str, speech: SpeechSynth | None = None)
 def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:
     """``Run.summary``-shaped rows for logged runs not in ``skip``, without replaying them."""
     rows = []
-    for row in log.run_totals(REJECTED):
+    for row in log.run_totals():
         run_id, first_ts, pixels, posts, turns, errors, updates, answers, deleted, config = row
         if run_id in skip or deleted or config is None:
             continue

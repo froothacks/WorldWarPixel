@@ -14,7 +14,7 @@ from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
-from worldwarpixel.sim.events import EventStore
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.societies import Societies
@@ -576,7 +576,7 @@ class Run:
             try:
                 thought = await self.policy.act(agent, tools, obs)
             except ToolError as e:
-                thought = f"Tool call rejected: {e}"
+                thought = f"{REJECTED}: {e}"
                 self.stats["errors"] += 1
         if budget.posts < initial_posts:
             self._last_post_turn[agent.id] = turn

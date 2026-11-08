@@ -7,21 +7,8 @@ from typing import Any
 
 import psycopg
 
-from worldwarpixel.sim.events import Event, EventStore
-
-SCHEMA_STATEMENTS = (
-    """
-    CREATE TABLE IF NOT EXISTS events (
-        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        ts DOUBLE PRECISION NOT NULL,
-        kind TEXT NOT NULL,
-        agent_id INTEGER,
-        payload TEXT NOT NULL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id)",
-)
+from worldwarpixel.sim.events import Event, EventStore, run_deltas
+from worldwarpixel.sim.migrations import migrate_postgres
 
 
 class PostgresEventLog(EventStore):
@@ -33,44 +20,90 @@ class PostgresEventLog(EventStore):
             database_url, autocommit=True
         )
         self._batch_depth = 0
-        if initialize_schema:
-            try:
+        try:
+            if initialize_schema:
                 self._initialize_schema()
-            except Exception:
-                self._conn.close()
-                raise
+            self._known_runs = {
+                str(row[0]) for row in self._conn.execute("SELECT id FROM runs").fetchall()
+            }
+        except Exception:
+            self._conn.close()
+            raise
 
     def _initialize_schema(self) -> None:
-        for statement in SCHEMA_STATEMENTS:
-            self._conn.execute(statement)
-        self._conn.commit()
+        migrate_postgres(self._conn)
 
     def append(
         self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
     ) -> int:
-        try:
+        delta = run_deltas(kind, payload)
+        serialized = json.dumps(payload, separators=(",", ":"))
+
+        def write() -> int:
+            if run_id not in self._known_runs or delta.has_changes:
+                self._conn.execute(
+                    """
+                    INSERT INTO runs (
+                        id, created_at, config, pixels, posts, turns, errors, updates, answers,
+                        deleted
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        created_at = LEAST(runs.created_at, EXCLUDED.created_at),
+                        config = COALESCE(runs.config, EXCLUDED.config),
+                        pixels = runs.pixels + EXCLUDED.pixels,
+                        posts = runs.posts + EXCLUDED.posts,
+                        turns = runs.turns + EXCLUDED.turns,
+                        errors = runs.errors + EXCLUDED.errors,
+                        updates = runs.updates + EXCLUDED.updates,
+                        answers = runs.answers + EXCLUDED.answers,
+                        deleted = runs.deleted OR EXCLUDED.deleted
+                    """,
+                    (
+                        run_id,
+                        ts,
+                        delta.config,
+                        delta.pixels,
+                        delta.posts,
+                        delta.turns,
+                        delta.errors,
+                        delta.updates,
+                        delta.answers,
+                        delta.deleted,
+                    ),
+                )
             row = self._conn.execute(
                 "INSERT INTO events (run_id, ts, kind, agent_id, payload)"
                 " VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":"))),
+                (run_id, ts, kind, agent_id, serialized),
             ).fetchone()
             if row is None:
                 raise RuntimeError("event insert did not return an id")
+            return int(row[0])
+
+        try:
+            if self._batch_depth == 0:
+                with self._conn.transaction():
+                    event_id = write()
+            else:
+                event_id = write()
         except Exception:
             if self._batch_depth == 0:
                 self._conn.rollback()
             raise
-        if self._batch_depth == 0:
-            self._conn.commit()
-        return int(row[0])
+        self._known_runs.add(run_id)
+        return event_id
 
     @contextmanager
     def batch(self) -> Iterator[None]:
         """Run the block in one transaction, committing when it ends without an error."""
+        known_runs = self._known_runs.copy()
         self._batch_depth += 1
         try:
             with self._conn.transaction():
                 yield
+        except Exception:
+            self._known_runs = known_runs
+            raise
         finally:
             self._batch_depth -= 1
 
@@ -99,30 +132,14 @@ class PostgresEventLog(EventStore):
         return int(row[0]) if row is not None else 0
 
     def run_ids(self) -> list[str]:
-        rows = self._conn.execute("SELECT DISTINCT run_id FROM events ORDER BY run_id").fetchall()
+        rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
         return [str(r[0]) for r in rows]
 
-    def run_totals(
-        self, rejected_prefix: str
-    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
-        """Per run: id, first ts, counts of pixels/posts/turns/rejected turns/narrator updates/
-        narrator answers, deleted?, config JSON (if created). Rejected turns are thoughts
-        starting with ``rejected_prefix``."""
+    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+        """Return maintained per-run counters, ordered by run id."""
         rows = self._conn.execute(
-            "SELECT run_id, MIN(ts),"
-            " COUNT(*) FILTER (WHERE kind = 'pixel'),"
-            " COUNT(*) FILTER (WHERE kind = 'post'),"
-            " COUNT(*) FILTER (WHERE kind = 'agent.thought'),"
-            " COUNT(*) FILTER (WHERE kind = 'agent.thought'"
-            " AND substr(payload::jsonb ->> 'thought', 1, %s) = %s),"
-            " COUNT(*) FILTER (WHERE kind = 'narrator.update'"
-            " AND (payload::jsonb ->> 'kind') IS DISTINCT FROM 'answer'),"
-            " COUNT(*) FILTER (WHERE kind = 'narrator.update'"
-            " AND payload::jsonb ->> 'kind' = 'answer'),"
-            " COALESCE(bool_or(kind = 'run.deleted'), false),"
-            " MAX(CASE WHEN kind = 'run.created' THEN (payload::jsonb -> 'config')::text END)"
-            " FROM events GROUP BY run_id ORDER BY run_id",
-            (len(rejected_prefix), rejected_prefix),
+            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted, config"
+            " FROM runs ORDER BY id"
         ).fetchall()
         return [
             (
