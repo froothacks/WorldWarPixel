@@ -134,7 +134,7 @@ def resample(pcm: bytes, src: int, dst: int = RATE) -> bytes:
 
 
 VOICE = (
-    "Right now a human visitor is standing at a screen next to the world you live in and is "
+    "Right now a human visitor is standing at a screen and is "
     "talking to you out loud. This is a real conversation, not a service call: you are not an "
     "assistant and you don't owe them politeness. Talk the way you actually talk, with your own "
     "opinions, moods, grudges, soft spots, gossip and jokes. Name names: say what you really "
@@ -228,12 +228,18 @@ def people_lines(run: Run, agent: AgentSpec) -> list[str]:
 def context(run: Run, agent: AgentSpec) -> str:
     """The interviewee's system prompt: who they are, their world, people and history."""
     cfg = run.config
-    parts = [
-        "\n".join(persona_lines(agent)),
-        f"You live in a shared world with {len(run.agents)} other people: a {cfg.width}x"
-        f"{cfg.height} pixel canvas everyone paints on, and a message board where they talk in "
-        "threads.",
-    ]
+    parts = ["\n".join(persona_lines(agent))]
+    event = agent.persona_card.get("event")
+    if event:
+        parts.append(
+            f"The shared canvas and message board are part of {event}. Your canvas activity, "
+            "any project work, and any event role described here belong to this same event, "
+            "not separate worlds."
+        )
+    parts.append(
+        f"You are one of {len(run.agents)} people sharing a {cfg.width}x{cfg.height} pixel "
+        "canvas everyone paints on, and a message board where they talk in threads."
+    )
     parts += people_lines(run, agent)
     recent = run.recall(agent.id, MEMORY_KEPT, THOUGHT_CHARS)
     if recent:

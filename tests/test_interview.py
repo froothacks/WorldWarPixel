@@ -315,3 +315,32 @@ def test_interview_context_has_threads_people_and_long_memory() -> None:
     assert "paints too much" in text and "you owe me a pixel" in text
     assert f"{a.name}: What colour should the river be?" in text and "filler 0" not in text
     assert other.id and ping.id
+
+
+@pytest.mark.parametrize("name", ["Leon Fattakhov", "Maddie Bernheim", "Ali Partovi"])
+def test_hackathon_interview_treats_canvas_and_event_as_one_setting(name: str) -> None:
+    cfg = RunConfig(width=64, height=64, roster="hackathon", seed=1)
+    run = Run("hackathon-interview", cfg, EventLog(), RandomWalkPolicy(0))
+    agent = next(a for a in run.agents if a.name == name)
+    run.note_thought(agent.id, "I painted a blue robot on the canvas.")
+    event = agent.persona_card["event"]
+    highlight = next(
+        h for h in agent.persona_card["highlights"] if h.startswith("Neo Hackathon 2026")
+    )
+    prompts = [
+        interview.messages(run, agent, [], "How is the hackathon going?")[0]["content"],
+        interview.realtime_instructions(run, agent, []),
+    ]
+    for prompt in prompts:
+        assert f"The shared canvas and message board are part of {event}." in prompt
+        assert "belong to this same event, not separate worlds" in prompt
+        assert highlight in prompt
+        assert "I painted a blue robot on the canvas." in prompt
+        assert "world you live in" not in prompt and "You live in a shared world" not in prompt
+
+
+def test_world_interview_does_not_invent_a_hackathon() -> None:
+    run = Run("world-interview", RunConfig(agents=1), EventLog(), RandomWalkPolicy(0))
+    text = interview.context(run, run.agents[0])
+    assert "one of 1 people sharing" in text
+    assert "same event" not in text and "hackathon" not in text.lower()
