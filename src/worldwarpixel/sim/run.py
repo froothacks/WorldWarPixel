@@ -783,6 +783,7 @@ class Run:
                 **{k: getattr(a, k) for k in LIST_FIELDS},
                 "society": self.societies.of(a.id) if self.societies else None,
                 "affiliation": a.persona_card.get("affiliation", "") if a.headline else "",
+                "avatar": a.persona_card.get("avatar"),
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }

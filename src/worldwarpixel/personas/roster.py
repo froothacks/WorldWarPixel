@@ -32,6 +32,7 @@ class Person:
     confidence: str = "low"
     playstyle: str = ""
     personality: dict[str, Any] = field(default_factory=dict)
+    avatar: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,7 @@ def load_roster(roster: str) -> Roster:
             name=p["name"],
             affiliation=p["affiliation"],
             headline=p["headline"],
+            avatar=p.get("avatar"),
             linkedin=p.get("linkedin"),
             links=tuple(p.get("links", ())),
             highlights=tuple(p.get("highlights", ())),
@@ -112,6 +114,7 @@ def persona_card(person: Person, event: str) -> dict[str, Any]:
         "event": event,
         "affiliation": person.affiliation,
         "headline": person.headline,
+        "avatar": person.avatar,
         "linkedin": person.linkedin,
         "links": list(person.links) or None,
         "highlights": list(person.highlights) or None,

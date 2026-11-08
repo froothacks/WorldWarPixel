@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Agent, Society } from "./api";
+import Avatar from "./Avatar";
 import { errorHint } from "./errorUtils";
 
 interface Props {
@@ -46,14 +47,14 @@ export default function AgentList({ agents, societies = [], palette, selected, l
           setLimit(MAX_ROWS);
         }}
       />
-      <div className="agent-rows">
+      <div className={`agent-rows ${people ? "people" : ""}`}>
         {shown.map((a) => (
           <button
             key={a.id}
             className={`agent-row ${selected === a.id ? "selected" : ""}`}
             onClick={() => onSelect(selected === a.id ? null : a.id)}
           >
-            <span className="swatch" style={{ background: palette[a.color] ?? "#888" }} />
+            <Avatar src={a.avatar} color={palette[a.color] ?? "#888"} size={22} />
             <span className="agent-main">
               <span className="agent-name">
                 {a.name}

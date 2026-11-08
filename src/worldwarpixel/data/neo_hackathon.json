@@ -16,7 +16,8 @@
     "personality.traits": "Short trait words backed by public evidence",
     "personality.evidence": "Public signals used for the personality read",
     "personality.personality_confidence": "How much public personality signal we had: high | medium | low",
-    "sources_checked": "Public URLs actually consulted"
+    "sources_checked": "Public URLs actually consulted",
+    "avatar": "Optional public profile photo URL (GitHub avatar); shown in roster runs"
   },
   "people": [
     {
@@ -141,6 +142,7 @@
     },
     {
       "name": "Advait Maybhate",
+      "avatar": "https://github.com/Advait-M.png?size=96",
       "affiliation": "Warp",
       "headline": "Software engineer (Agents) at Warp",
       "linkedin": "https://www.linkedin.com/in/advait-m",
@@ -186,6 +188,7 @@
     },
     {
       "name": "Aengus McGuinness",
+      "avatar": "https://github.com/AengusMcGuinness.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard CS senior building low-latency C++/Rust systems",
       "linkedin": "https://www.linkedin.com/in/aengus-mcguinness",
@@ -223,6 +226,7 @@
     },
     {
       "name": "Aleksander Garbuz",
+      "avatar": "https://github.com/atg218.png?size=96",
       "affiliation": "MIT",
       "headline": "Aerospace engineer; MIT Satellite Team; lunar autonomy",
       "linkedin": "https://www.linkedin.com/in/aleksander-garbuz",
@@ -259,6 +263,7 @@
     },
     {
       "name": "Alessandro Maniscalco",
+      "avatar": "https://github.com/Alessandro-Maniscalco.png?size=96",
       "affiliation": "Penn",
       "headline": "Penn M&T junior (ME + finance); robotics deployment",
       "linkedin": "https://www.linkedin.com/in/alessandro-maniscalco-a4aa86257",
@@ -299,6 +304,7 @@
     },
     {
       "name": "Alessio Toniolo",
+      "avatar": "https://github.com/atoniolo76.png?size=96",
       "affiliation": "CMU / Modal",
       "headline": "CS at Carnegie Mellon; ex Modal MTS intern",
       "linkedin": "https://www.linkedin.com/in/atoniolo76",
@@ -479,6 +485,7 @@
     },
     {
       "name": "Amani Bobo",
+      "avatar": "https://github.com/amanibobo.png?size=96",
       "affiliation": "Atlanta",
       "headline": "CS student at Georgia State; AI systems & spatial computing",
       "linkedin": "https://www.linkedin.com/in/amanibobo",
@@ -523,6 +530,7 @@
     },
     {
       "name": "Andrew Hinh",
+      "avatar": "https://github.com/andrewhinh.png?size=96",
       "affiliation": "Modal",
       "headline": "Developer relations engineer at Modal",
       "linkedin": "https://www.linkedin.com/in/andrew-hinh",
@@ -564,6 +572,7 @@
     },
     {
       "name": "Anush Mutyala",
+      "avatar": "https://github.com/anushmutyala.png?size=96",
       "affiliation": "UBC",
       "headline": "Hardware engineer at Until Labs; ECE at UBC",
       "linkedin": "https://www.linkedin.com/in/anushmutyala",
@@ -603,6 +612,7 @@
     },
     {
       "name": "Aryan Mahajan",
+      "avatar": "https://github.com/aryanma.png?size=96",
       "affiliation": "Columbia",
       "headline": "Founding engineer at Dedalus Labs (YC S25); CS at Columbia",
       "linkedin": "https://www.linkedin.com/in/aryanma",
@@ -706,6 +716,7 @@
     },
     {
       "name": "Bhavye Mathur",
+      "avatar": "https://github.com/BhavyeMathur.png?size=96",
       "affiliation": "UMich",
       "headline": "Honors Math + CS at UMich",
       "linkedin": "https://www.linkedin.com/in/bhavye-mathur",
@@ -783,6 +794,7 @@
     },
     {
       "name": "Claire Guo",
+      "avatar": "https://github.com/claireg0.png?size=96",
       "affiliation": "Waterloo",
       "headline": "Software engineering student at Waterloo; SWE intern at Rox",
       "linkedin": "https://www.linkedin.com/in/claire-jl-guo",
@@ -880,6 +892,7 @@
     },
     {
       "name": "Dandi Desta",
+      "avatar": "https://github.com/dantdani.png?size=96",
       "affiliation": "Harvard",
       "headline": "Electrical engineering at Harvard",
       "linkedin": "https://www.linkedin.com/in/dandidesta",
@@ -991,6 +1004,7 @@
     },
     {
       "name": "Dev Seth",
+      "avatar": "https://github.com/dvsth.png?size=96",
       "affiliation": "UCC",
       "headline": "Builder at UCC; CS & Philosophy (Duke/Oxford)",
       "linkedin": "https://www.linkedin.com/in/dvsth",
@@ -1338,6 +1352,7 @@
     },
     {
       "name": "Jason Cameron",
+      "avatar": "https://github.com/JasonLovesDoggo.png?size=96",
       "affiliation": "Startups",
       "headline": "Founding engineer at Flint",
       "linkedin": "https://www.linkedin.com/in/jsoncameron",
@@ -1413,6 +1428,7 @@
     },
     {
       "name": "Jeff Lu",
+      "avatar": "https://github.com/Jeff15321.png?size=96",
       "affiliation": "UofT",
       "headline": "CS at the University of Toronto; SWE at Shopify",
       "linkedin": "https://www.linkedin.com/in/jeff-lu-8b3121281",
@@ -1687,6 +1703,7 @@
     },
     {
       "name": "Leah Vashevko",
+      "avatar": "https://github.com/theaquarium.png?size=96",
       "affiliation": "UChicago",
       "headline": "Computational & Applied Math and Philosophy at UChicago; FPGA engineer, UChicago Space Program",
       "linkedin": "https://www.linkedin.com/in/leahvashevko",
@@ -1786,6 +1803,7 @@
     },
     {
       "name": "Linda Xue",
+      "avatar": "https://github.com/lexue28.png?size=96",
       "affiliation": "MIT",
       "headline": "CS + Math at MIT; SPAR fellow (model forensics)",
       "linkedin": "https://www.linkedin.com/in/linda-xue-24b6a1265",
@@ -2001,6 +2019,7 @@
     },
     {
       "name": "Mason Wang",
+      "avatar": "https://github.com/masonwang025.png?size=96",
       "affiliation": "Stanford",
       "headline": "ML engineer at Neuralink; Stanford CS; ex co-founder/CTO of Tilde Research",
       "linkedin": "https://www.linkedin.com/in/mason-wang",
@@ -2209,6 +2228,7 @@
     },
     {
       "name": "Michal Kurek",
+      "avatar": "https://github.com/MKJM2.png?size=96",
       "affiliation": "Harvard",
       "headline": "SWE at Bloomberg (C++); Harvard CS A.B./S.M.",
       "linkedin": "https://www.linkedin.com/in/michalkurek25a0",
@@ -2286,6 +2306,7 @@
     },
     {
       "name": "Mikael Haji",
+      "avatar": "https://github.com/mikaelhaji.png?size=96",
       "affiliation": "Waterloo",
       "headline": "Chip hardware at NVIDIA; ECE at Waterloo",
       "linkedin": "https://www.linkedin.com/in/mikael-haji",
@@ -2328,6 +2349,7 @@
     },
     {
       "name": "Mira Yu",
+      "avatar": "https://github.com/mirabor.png?size=96",
       "affiliation": "Harvard",
       "headline": "CS & Government at Harvard",
       "linkedin": "https://www.linkedin.com/in/miraayu",
@@ -2489,6 +2511,7 @@
     },
     {
       "name": "Nikita Mounier",
+      "avatar": "https://github.com/nikitamounier.png?size=96",
       "affiliation": "Penn",
       "headline": "Penn M&T; Neo Scholar",
       "linkedin": "https://www.linkedin.com/in/nikita-mounier",
@@ -2527,6 +2550,7 @@
     },
     {
       "name": "Nirvik Baruah",
+      "avatar": "https://github.com/nirvikbaruah.png?size=96",
       "affiliation": "Sail Research",
       "headline": "Member of Technical Staff at Sail Research; Stanford CS BS/MS; ex-Jane Street",
       "linkedin": "https://www.linkedin.com/in/nirvik-baruah",
@@ -2768,6 +2792,7 @@
     },
     {
       "name": "Rick Panchal",
+      "avatar": "https://github.com/ppanchal97.png?size=96",
       "affiliation": "OpenAI",
       "headline": "Applied AI at OpenAI",
       "linkedin": "https://www.linkedin.com/in/parik-panchal",
@@ -3072,6 +3097,7 @@
     },
     {
       "name": "Soham Bafana",
+      "avatar": "https://github.com/snbafana.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard student building AI and robotics projects",
       "linkedin": "https://www.linkedin.com/in/snbafana",
@@ -3254,6 +3280,7 @@
     },
     {
       "name": "Vihaan Gupta",
+      "avatar": "https://github.com/vihaann06.png?size=96",
       "affiliation": "Harvard",
       "headline": "Harvard CS and Philosophy student; HCI researcher and AWS engineering intern per personal site",
       "linkedin": "https://www.linkedin.com/in/vgupta06",
@@ -3377,6 +3404,7 @@
     },
     {
       "name": "Vlad Cainamisir",
+      "avatar": "https://github.com/cainamisir.png?size=96",
       "affiliation": "Harvard / UCC (original roster; UCC not reverified)",
       "headline": "Harvard CS A.B./S.M. '26; data systems and AI builder",
       "linkedin": "https://www.linkedin.com/in/cainamisir",
