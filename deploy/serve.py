@@ -92,7 +92,7 @@ def serve() -> int:
     if server.poll() is None:
         server.terminate()
         try:
-            server.wait(30)
+            server.wait(10)
         except subprocess.TimeoutExpired:
             server.kill()
     if tunnel is not None and tunnel.poll() is None:
