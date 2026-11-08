@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
-from worldwarpixel.api import RunManager, random_policy, rosters_router
+from worldwarpixel.api import RunManager, random_policy, rosters_router, videos_router
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
 from worldwarpixel.devices import router as devices_router
@@ -22,6 +22,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
 
 
@@ -154,6 +155,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.max_active_runs,
             make_policy,
             make_narrator=make_narrator,
+            videos=VideoStore(
+                settings.timelapse_dir,
+                s3_bucket=settings.timelapse_s3_bucket,
+                s3_endpoint=settings.timelapse_s3_endpoint,
+                s3_prefix=settings.timelapse_s3_prefix,
+                duration=settings.timelapse_duration,
+                ffmpeg=settings.ffmpeg_path,
+            ),
+            auto_video=settings.timelapse_auto,
         )
         try:
             yield
@@ -167,6 +177,7 @@ app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
 app.include_router(runs_router)
 app.include_router(devices_router)
 app.include_router(rosters_router)
+app.include_router(videos_router)
 
 
 def get_chat_service(request: Request) -> ChatService:

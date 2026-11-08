@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+**/__pycache__
+**/node_modules
+frontend/dist
+tests
+events.db*
+timelapses
+*.mp4
+*.env
+.env*
+data

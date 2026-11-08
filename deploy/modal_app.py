@@ -39,7 +39,7 @@ def build_image() -> modal.Image:
             'python -c "from faster_whisper import WhisperModel;'
             " WhisperModel('base', device='cpu', compute_type='int8')\""
         )
-        .apt_install("curl", "ca-certificates", "xz-utils")
+        .apt_install("curl", "ca-certificates", "xz-utils", "ffmpeg", "fonts-dejavu-core")
         .run_commands(
             f"curl -fsSL https://nodejs.org/dist/v{NODE_VERSION}/{node}.tar.xz"
             " | tar -xJ -C /usr/local --strip-components=1"
@@ -63,6 +63,7 @@ def build_image() -> modal.Image:
                 "EVENT_LOG_PATH": "/root/state/events.db",
                 "EVENT_LOG_BACKUP": "/data/events.db",
                 "BACKUP_INTERVAL": "60",
+                "TIMELAPSE_DIR": "/data/timelapses",
             }
         )
     )

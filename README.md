@@ -51,6 +51,7 @@ Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so th
 - `GET /runs/{id}/threads`, `GET /runs/{id}/threads/{thread_id}`: board digest / full thread.
 - `GET /runs/{id}/canvas`: the canvas as rows of hex palette indices.
 - `GET /runs/{id}/events?after=&limit=`: the event log.
+- `POST /runs/{id}/video`, `GET /runs/{id}/video`, `GET /runs/{id}/video/meta`, `GET /videos`: render / download / describe / list timelapse videos (see below).
 - `GET /runs/{id}/narrator`: narrator history and stats. `POST /runs/{id}/narrator/ask` with `{"question": ...}` answers a user question from the same digest and returns (and streams) a `narrator.update` with `kind: "answer"`.
 - `WS /runs/{id}/ws`: realtime stream. On connect the server sends a JSON `snapshot` (run, palette, agents, threads, narrator history) and a binary full-canvas frame; after that, JSON events (`run.state`, `agent.status`, `agent.thought`, `post.created`, `narrator.update`) and a binary pixel-diff frame every 250 ms.
 
@@ -64,6 +65,10 @@ curl -X POST localhost:8000/runs -H 'content-type: application/json' \
 ## Narrator
 
 Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the model (`NARRATOR_MODEL`, default `OPENAI_MODEL`) for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
+
+## Timelapse videos
+
+Stopping a run (`POST /runs/{id}/stop`) renders an mp4 in the background (`TIMELAPSE_AUTO`, default on): the canvas timelapse on the left, the message board on the right with posts appearing on the same clock, and the latest narrator headline as a caption (`sim/video.py`; frames are composed with Pillow and piped to `ffmpeg`, which must be on the PATH or at `FFMPEG_PATH`). `POST /runs/{id}/video` renders on demand (also for live runs and runs restored from the log), `GET /runs/{id}/video` streams the file, `GET /videos` lists everything rendered. Videos land in `TIMELAPSE_DIR` (`/data/timelapses` on the Modal Volume in production) next to a `{run_id}.json` sidecar with the run's config, stats, top countries and narrator headlines, so the archive can be scanned later to pick out the good ones. Set `TIMELAPSE_S3_BUCKET` (plus `TIMELAPSE_S3_ENDPOINT` — `https://storage.googleapis.com` for Google Cloud Storage, or the R2 endpoint — and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, which for GCS are a service account's HMAC key) to mirror both files into a bucket. `python -m worldwarpixel.videos [run_id ...]` renders missing videos for archived runs.
 
 ## Chat endpoints
 
@@ -163,6 +168,10 @@ Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the UR
 3. Remove any old apex A / `www` CNAME records so they don't shadow the tunnel's DNS record.
 
 **Continuous deploy.** `.github/workflows/deploy.yml` runs the legacy-Sandbox `retire` step and then `modal deploy deploy/modal_app.py` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the container, so a running simulation stops.
+
+### Cloud Run (GCP)
+
+The same app also deploys to one always-on [Cloud Run](https://cloud.google.com/run) instance (`min=max=1`, CPU always allocated) in project `world-war-pixel-514101`. `Dockerfile` mirrors the Modal image (frontend built in, Whisper weights baked, ffmpeg) and `deploy/cloudrun.sh` builds it with Cloud Build and deploys it with the `world-war-pixel-timelapses-514101` bucket mounted at `/data`, so the SQLite backup and the rendered timelapses land directly in GCS with no extra credentials. The app runs as the `worldwarpixel-run` service account, which gets `Storage Object Admin` on that bucket only. One-time setup with the gcloud CLI authenticated: `APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh`, where the file holds the `KEY=value` app settings (`OPENAI_API_KEY`, `MODAL_KEY`, ... and a required `GOD_TOKEN`, since the service is public); it prints the service URL. `deploy.yml` runs the same script after CI on `main` when the `GCP_SA_KEY` repository secret (a deployer service-account JSON key with Cloud Run Admin, Artifact Registry Admin, Storage Admin, Service Account Admin, Service Account User, Cloud Build Editor, Service Usage Admin) is set; the `GCP_APP_ENV` secret holds the `KEY=value` lines for the app settings (deploy fails without it).
 
 ## Development
 
