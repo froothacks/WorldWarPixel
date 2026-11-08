@@ -27,7 +27,7 @@ typedef enum {
 #define MAX_THREADS   3
 #define MAX_PALETTE   16
 #define MAX_RUNS      8
-#define MAX_AGENTS    48
+#define MAX_AGENTS    120
 #define MAX_CONVO     6
 
 typedef enum {

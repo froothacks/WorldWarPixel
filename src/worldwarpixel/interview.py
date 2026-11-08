@@ -22,7 +22,7 @@ RATE = 16_000
 """Screens play what they record: 16 kHz signed 16-bit little-endian mono."""
 MAX_TURNS = 6
 MAX_REPLY = 400
-MAX_AGENTS = 48
+MAX_AGENTS = 120
 
 Chat = Callable[[Run, list[dict[str, str]]], Awaitable[str]]
 """Ask the run's model for one completion (the app wires the real client; tests fake it)."""
