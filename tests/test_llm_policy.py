@@ -536,13 +536,22 @@ def test_shared_rules_precede_persona(guided: bool) -> None:
     agent, _, _, _ = _setup()
     other = copy.deepcopy(agent)
     other.persona = "Someone else."
-    other.persona_card = {"event": "Another event"}
     other.home_x = 20
     policy = LLMPolicy(FakeClient([]), "m", guided=guided)  # type: ignore[arg-type]
     first = policy.describe(agent, 64, 40, 4, 1)
     second = policy.describe(other, 64, 40, 2, 0)
     assert first.split("You are ")[0] == second.split("You are ")[0]
     assert len(first.split("You are ")[0]) > 400
+
+
+@pytest.mark.parametrize("event", (None, "An event"))
+def test_guided_world_news_concern(event: str | None) -> None:
+    agent, _, _, _ = _setup()
+    if event:
+        agent.persona_card["event"] = event
+    policy = LLMPolicy(FakeClient([]), "m", guided=True)  # type: ignore[arg-type]
+    concern = "you" if event else "your country"
+    assert f"If one concerns {concern}, react" in policy.describe(agent, 64, 40, 4, 1)
 
 
 @pytest.mark.parametrize(

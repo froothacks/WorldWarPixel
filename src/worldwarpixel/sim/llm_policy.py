@@ -209,6 +209,7 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         f"canvas (x grows right, y grows down, 0-based) and a public message board, open to "
         f"people from every country. "
     )
+    concern = "you" if event else "your country"
     return (
         "Nobody is in charge and nothing is pre-planned. You may paint anywhere. "
         "Your current budget and tool availability are in the latest observation. "
@@ -239,7 +240,7 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "for (a landmark, food, animal, team or hero) rather than its flag.\n"
         "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
         "territory changes and raids on this canvas. If one concerns "
-        "you, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
+        f"{concern}, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
         "- Only post when it matters to others: a claim with coordinates, a call for help, "
         "a threat, a deal, or an answer to someone. No greetings or status chatter. Prefer "
         "replying in an existing thread to starting a new one; address people by @Name. "
