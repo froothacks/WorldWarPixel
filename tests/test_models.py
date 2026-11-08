@@ -20,7 +20,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry(Settings())}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "qwen-c", "glm-5.3-flash"}
+    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm", "qwen-c", "glm-5.3-flash"}
 
     luna = specs["gpt-6-luna"]
     assert luna.base_url == "https://api.openai.com/v1"
@@ -41,11 +41,24 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert deepseek.auth == "modal"
     assert deepseek.max_tokens == 3000
 
+    glm = specs["glm"]
+    assert glm.auth == "modal" and glm.auth_workspace is None  # advait-m: MODAL_KEY/MODAL_SECRET
+    assert glm.model == specs["glm-5.3-flash"].model
+    assert "advait-m--ep-glm-5-3-flash-nvfp4" in (glm.base_url or "")
+    assert not glm.chat_template_kwargs
+    assert glm.max_tokens == 3000 and glm.narrator_max_tokens == 3000
+
 
 def test_modal_base_urls_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = _settings(monkeypatch, QWEN_BASE_URL="https://example.modal.direct/v1")
+    settings = _settings(
+        monkeypatch,
+        QWEN_BASE_URL="https://example.modal.direct/v1",
+        GLM_BASE_URL="https://glm.example.modal.direct/v1",
+    )
     qwen = find_model(settings, "qwen")
     assert qwen is not None and qwen.base_url == "https://example.modal.direct/v1"
+    glm = find_model(settings, "glm")
+    assert glm is not None and glm.base_url == "https://glm.example.modal.direct/v1"
 
 
 def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,6 +83,7 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
         False,
         True,
         True,
+        True,  # glm (advait-m workspace) shares MODAL_KEY/MODAL_SECRET
         False,  # chryztoph workspace presets need their own credential pair
         False,
     ]

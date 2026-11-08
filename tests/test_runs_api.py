@@ -72,6 +72,7 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
         "gpt-6-luna",
         "qwen",
         "deepseek",
+        "glm",
         "qwen-c",
         "glm-5.3-flash",
     }
