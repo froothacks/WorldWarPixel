@@ -39,7 +39,18 @@ gcloud iam service-accounts describe "$RUNTIME_SA" >/dev/null 2>&1 \
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member "serviceAccount:$RUNTIME_SA" --role roles/storage.objectAdmin >/dev/null
 
-gcloud builds submit --tag "$IMAGE" --quiet .
+# Submit async and poll: `gcloud builds submit`'s log streaming needs project Viewer, which the
+# deployer SA need not have; the build itself only needs Cloud Build Editor.
+BUILD_ID="$(gcloud builds submit --tag "$IMAGE" --quiet --async --format="value(id)" .)"
+echo "Cloud Build $BUILD_ID"
+while :; do
+  STATUS="$(gcloud builds describe "$BUILD_ID" --format="value(status)")"
+  case "$STATUS" in
+    SUCCESS) break ;;
+    FAILURE|CANCELLED|TIMEOUT|INTERNAL_ERROR) echo "Cloud Build $BUILD_ID ended $STATUS" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
 
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
