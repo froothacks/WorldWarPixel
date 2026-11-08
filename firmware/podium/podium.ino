@@ -15,12 +15,12 @@
 #include "st77922_init.h"
 
 constexpr int BACKLIGHT_PIN = 41;
-const int AMP_EN = -1;
-constexpr int I2S_BCLK = 5;
-constexpr int I2S_WS = 4;
-constexpr int I2S_DOUT = 6;
-constexpr int I2S_DIN = 7;
-constexpr int I2S_MCLK = 2;
+const int AMP_EN = 1;  // active low
+constexpr int I2S_BCLK = 18;
+constexpr int I2S_WS = 21;
+constexpr int I2S_DOUT = 15;
+constexpr int I2S_DIN = 16;
+constexpr int I2S_MCLK = 17;
 
 constexpr int SCREEN_WIDTH = 320;
 constexpr int SCREEN_HEIGHT = 480;
@@ -422,23 +422,36 @@ void drawSelfTest() {
 
 void playSelfTestTone() {
   constexpr uint32_t SAMPLE_RATE = 24000;
-  constexpr uint32_t SAMPLE_COUNT = SAMPLE_RATE;
   constexpr float TWO_PI_VALUE = 6.28318530718f;
-  constexpr float AMPLITUDE = 5000.0f;
+  constexpr float AMPLITUDE = 6000.0f;
+  // Ode to Joy, opening phrase.
+  static const float notes[] = {329.63f, 329.63f, 349.23f, 392.0f, 392.0f, 349.23f, 329.63f,
+                                293.66f, 261.63f, 261.63f, 293.66f, 329.63f, 329.63f, 293.66f,
+                                293.66f};
+  static const uint8_t beats[] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 1, 4};
+  constexpr uint32_t BEAT_SAMPLES = SAMPLE_RATE / 6;
   uint8_t buffer[512];
 
-  for (uint32_t offset = 0; offset < SAMPLE_COUNT;) {
-    const uint32_t samplesPerChunk = sizeof(buffer) / 2;
-    const uint32_t left = SAMPLE_COUNT - offset;
-    const uint32_t count = samplesPerChunk < left ? samplesPerChunk : left;
-    for (uint32_t i = 0; i < count; ++i) {
-      const float angle = TWO_PI_VALUE * 440.0f * (offset + i) / SAMPLE_RATE;
-      const int16_t sample = static_cast<int16_t>(AMPLITUDE * sinf(angle));
-      buffer[i * 2] = sample & 0xFF;
-      buffer[i * 2 + 1] = (sample >> 8) & 0xFF;
+  for (size_t n = 0; n < sizeof(notes) / sizeof(notes[0]); ++n) {
+    const uint32_t total = BEAT_SAMPLES * beats[n];
+    const uint32_t fade = SAMPLE_RATE / 100;
+    for (uint32_t offset = 0; offset < total;) {
+      const uint32_t samplesPerChunk = sizeof(buffer) / 2;
+      const uint32_t left = total - offset;
+      const uint32_t count = samplesPerChunk < left ? samplesPerChunk : left;
+      for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t k = offset + i;
+        float env = 1.0f;
+        if (k < fade) env = static_cast<float>(k) / fade;
+        if (total - k < fade * 4) env = static_cast<float>(total - k) / (fade * 4);
+        const float angle = TWO_PI_VALUE * notes[n] * k / SAMPLE_RATE;
+        const int16_t sample = static_cast<int16_t>(AMPLITUDE * env * sinf(angle));
+        buffer[i * 2] = sample & 0xFF;
+        buffer[i * 2 + 1] = (sample >> 8) & 0xFF;
+      }
+      i2s.write(buffer, count * 2);
+      offset += count;
     }
-    i2s.write(buffer, count * 2);
-    offset += count;
   }
 }
 
@@ -487,7 +500,7 @@ void setup() {
 
   if (AMP_EN >= 0) {
     pinMode(AMP_EN, OUTPUT);
-    digitalWrite(AMP_EN, HIGH);
+    digitalWrite(AMP_EN, LOW);
   }
 
   i2s.setPins(I2S_BCLK, I2S_WS, I2S_DOUT, I2S_DIN, I2S_MCLK);
