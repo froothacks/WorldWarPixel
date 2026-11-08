@@ -34,6 +34,7 @@ static volatile bool s_retry_req;  /* human tapped CONNECT */
 static volatile int  s_ws_phase;   /* 0=awaiting tap, 2=handshake now, 3=last attempt failed */
 static volatile int  s_ws_attempt;
 static volatile bool s_canvas_req;  /* human tapped the canvas */
+static volatile bool s_runs_req;    /* human tapped REFRESH on the session list */
 static volatile bool s_ws_failed;  /* handshake or connection ended (error/disconnect event) */
 static uint8_t s_last_op;          /* opcode of the frame being received */
 static char *s_txt;                /* reassembly buffer for text frames split across events */
@@ -600,6 +601,11 @@ static void ws_task(void *arg)
     }
 }
 
+void net_runs_refresh(void)
+{
+    s_runs_req = true;
+}
+
 void net_canvas_refresh(void)
 {
     s_canvas_req = true;
@@ -733,6 +739,19 @@ static void canvas_task(void *arg)
         buf = heap_caps_malloc(240 * 160, MALLOC_CAP_8BIT);
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(200));
+        if (s_runs_req) {   /* session list REFRESH */
+            s_runs_req = false;
+            int len = 0;
+            if (buf && http_get("/devices/runs", buf, 240 * 160 - 1, &len) == 200 && len > 0) {
+                buf[len] = 0;
+                cJSON *root = cJSON_Parse((const char *)buf);
+                if (root) {
+                    parse_runs(cJSON_GetObjectItem(root, "runs"));
+                    cJSON_Delete(root);
+                }
+                ESP_LOGI(TAG, "runs refreshed: %d", g_state.n_runs);
+            }
+        }
         if (!s_canvas_req)
             continue;   /* only a tap on the canvas fetches it */
         s_canvas_req = false;

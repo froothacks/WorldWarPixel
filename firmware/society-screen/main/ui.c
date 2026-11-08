@@ -332,9 +332,14 @@ static void draw_connect(const app_state_t *st, int64_t now, int64_t flash_until
 #define SP_ROW  36
 #define SP_ROWS (MAX_RUNS + 1)   /* row 0 = follow the newest session */
 
-static void draw_session_picker(const app_state_t *st)
+static void draw_session_picker(const app_state_t *st, bool flash)
 {
     gfx_draw_text(8, 30, "PICK A SESSION", 2, C_TEXT);
+    int w = LCD_W - 4 - IV_REFRESH_X;
+    gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
+    gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+    gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
+                           flash ? C_BG : C_YELLOW);
     if (st->n_runs == 0) {
         gfx_draw_text_centered(LCD_W / 2, 170, "NO LIVE SESSIONS", 2, C_YELLOW);
         draw_wrapped(24, 200, LCD_W - 48,
@@ -631,7 +636,11 @@ void ui_task(void *arg)
         int session_y = interview ? IV_SESSION_Y : 124;
         if (live && tap && ty >= session_y && ty <= session_y + 14)
             picking = true;
-        else if (picking && st.conn == CONN_WS && tap && ty >= SP_Y) {
+        else if (picking && st.conn == CONN_WS && tap && tx >= IV_REFRESH_X &&
+                 ty >= IV_REFRESH_Y && ty < IV_REFRESH_Y + IV_REFRESH_H) {
+            net_runs_refresh();
+            refresh_flash = now_us + 400000;
+        } else if (picking && st.conn == CONN_WS && tap && ty >= SP_Y) {
             int r = (ty - SP_Y) / SP_ROW;
             if (ty >= BTN_Y) {
                 picking = false;
@@ -684,7 +693,7 @@ void ui_task(void *arg)
             if (st.conn != CONN_WS) {
                 draw_connect(&st, esp_timer_get_time(), retry_flash_until);
             } else if (picking) {
-                draw_session_picker(&st);
+                draw_session_picker(&st, esp_timer_get_time() < refresh_flash);
             } else {
                 if (interview) {
                     draw_iv_header(&st, esp_timer_get_time() < refresh_flash);

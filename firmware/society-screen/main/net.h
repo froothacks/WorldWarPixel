@@ -40,3 +40,6 @@ void net_interview_select(int agent_id);
 
 /* Fetch the canvas thumbnail once (only ever on a human tap). */
 void net_canvas_refresh(void);
+
+/* Re-fetch the session list once (only ever on a human tap). */
+void net_runs_refresh(void);
