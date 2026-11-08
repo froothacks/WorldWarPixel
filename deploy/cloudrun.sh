@@ -57,7 +57,6 @@ while IFS= read -r secret_name; do
 done <<< "$secret_names"
 secret_args=""
 secret_display=""
-mounted_secret_names=""
 for secret_name in "${APP_SECRETS[@]}"; do
   if [[ -z "${existing_secrets[$secret_name]+x}" ]]; then
     echo "Secret Manager has no $secret_name; skipped"
@@ -74,10 +73,6 @@ for secret_name in "${APP_SECRETS[@]}"; do
   fi
   secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
   secret_display+="${secret_display:+, }${secret_name}"
-  if [ -n "$mounted_secret_names" ]; then
-    mounted_secret_names+=$'\n'
-  fi
-  mounted_secret_names+="$secret_name"
 done
 
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
@@ -120,8 +115,11 @@ if [ -n "$CLOUDSQL_INSTANCE" ]; then
   args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
 fi
 # KEY=value lines -> the YAML gcloud expects; Secret Manager wins for same-named keys.
+app_secret_names="$(printf '%s\n' "${APP_SECRETS[@]}")"
 yaml="$(mktemp)"
-trap 'rm -f "$yaml"' EXIT
+filtered_env="$(mktemp)"
+warnings="$(mktemp)"
+trap 'rm -f "$yaml" "$filtered_env" "$warnings"' EXIT
 if [ -n "$secret_args" ]; then
   args+=(--set-secrets "$secret_args")
   echo "Secrets from Secret Manager: $secret_display"
@@ -129,22 +127,36 @@ else
   echo "Secrets from Secret Manager: (none)"
 fi
 if [ -n "${APP_ENV_FILE:-}" ]; then
-  awk -v secret_names="$mounted_secret_names" '
+  awk -v app_secret_names="$app_secret_names" -v secret_names="$secret_names" \
+    -v warnings_file="$warnings" '
     BEGIN {
+      count = split(app_secret_names, app_names, "\n")
+      for (i = 1; i <= count; i++) {
+        if (app_names[i] != "") app_secret_keys[app_names[i]] = 1
+      }
       count = split(secret_names, names, "\n")
       for (i = 1; i <= count; i++) {
-        if (names[i] != "") secret_keys[names[i]] = 1
+        if (names[i] != "") existing_secret_keys[names[i]] = 1
       }
     }
     !/^[[:space:]]*(#|$)/ {
       if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
         key = $0
         sub(/=.*/, "", key)
-        if (key in secret_keys) next
+        if (key in app_secret_keys || key in existing_secret_keys) {
+          print key >> warnings_file
+          next
+        }
       }
       print
     }
-  ' "$APP_ENV_FILE" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' > "$yaml"
+  ' "$APP_ENV_FILE" > "$filtered_env"
+  while IFS= read -r key; do
+    if [[ -n "$key" ]]; then
+      echo "::warning::$key from APP_ENV_FILE ignored; secrets come from Secret Manager"
+    fi
+  done < "$warnings"
+  sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' "$filtered_env" > "$yaml"
 fi
 if [ -s "$yaml" ]; then
   args+=(--env-vars-file "$yaml")
