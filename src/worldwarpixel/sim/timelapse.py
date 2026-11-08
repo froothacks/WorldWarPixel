@@ -25,6 +25,8 @@ def iter_events(log: EventStore, run_id: str) -> Iterable[Event]:
         if not page:
             return
         yield from page
+        if len(page) < PAGE:
+            return
         after = page[-1].id
 
 
