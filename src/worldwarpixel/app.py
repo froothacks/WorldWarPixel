@@ -180,6 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 s3_prefix=settings.timelapse_s3_prefix,
                 duration=settings.timelapse_duration,
                 ffmpeg=settings.ffmpeg_path,
+                autosave_interval=settings.timelapse_autosave_interval,
             ),
             auto_video=settings.timelapse_auto,
         )

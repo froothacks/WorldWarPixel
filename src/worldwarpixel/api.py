@@ -77,6 +77,8 @@ class RunManager:
         run = Run(run_id, config, self.log, policy, narrator_model=narrator, speech=self.speech)
         self.runs[run_id] = run
         await run.start()
+        if self.auto_video and self.videos is not None:
+            self.videos.start_autosave(self.log, run_id)
         return run
 
     def get(self, run_id: str) -> Run:
@@ -118,6 +120,8 @@ class RunManager:
 
     async def delete(self, run_id: str) -> None:
         run = await self.fetch(run_id)
+        if self.videos is not None:
+            self.videos.stop_autosave(run_id)
         self.runs.pop(run_id, None)
         if run_id in self._restored:
             self._restored.remove(run_id)
@@ -129,6 +133,8 @@ class RunManager:
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
+        if self.videos is not None:
+            self.videos.stop_all_autosaves()
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
         for run in self.runs.values():
             run.speech.hub.close_all()
@@ -193,6 +199,8 @@ async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
     was_live = run.state != "stopped"
+    if was_live and manager.videos is not None:
+        manager.videos.stop_autosave(run_id)
     await run.stop()
     if was_live and manager.auto_video and manager.videos is not None:
         manager.videos.schedule(manager.log, run_id)

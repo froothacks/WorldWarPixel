@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     """Where rendered run videos ({run_id}.mp4 + .json) are written; on Modal a Volume path."""
     timelapse_auto: bool = True
     """Render a video automatically when a run is stopped."""
+    timelapse_autosave_interval: float = Field(default=30.0, ge=0, le=3600)
+    """Seconds between autosaves of the in-progress video while a run is live (0 disables).
+    Each autosave overwrites the same {run_id}.mp4, so the archive keeps one growing video per
+    run instead of a prefix per snapshot."""
     timelapse_duration: float = Field(default=20.0, ge=2, le=120)
     """Length of the rendered timelapse in seconds (plus short holds at both ends)."""
     timelapse_s3_bucket: str | None = None
