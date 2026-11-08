@@ -200,7 +200,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
       {societies.length > 0 && (
         <div className="society-tabs" role="tablist" aria-label="Society">
           <button role="tab" aria-selected={society === null} className={society === null ? "on" : ""} onClick={() => setSociety(null)}>
-            <span className="society-name">All societies</span>
+            <span className="society-name">All</span>
           </button>
           {societies.map((s) => (
             <button
@@ -222,7 +222,6 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
       {current && (
         <div className="society-info" style={{ "--c": current.color } as CSSProperties}>
           <div className="society-info-text">
-            <span className="society-info-label">Heard in the room</span>
             {current.murmur ? (
               <span className="murmur" title={current.transcript ? `Heard: “${current.transcript}”` : undefined}>
                 “{current.murmur}”
@@ -232,7 +231,7 @@ export default function Board({ runId, threads: allThreads, agentName, agentColo
             )}
           </div>
           <a href={`?screen=${current.id}&run=${runId}`} target="_blank" rel="noreferrer" title="Open this society's screen (emulator)">
-            Open screen ↗
+            Screen ↗
           </a>
         </div>
       )}
