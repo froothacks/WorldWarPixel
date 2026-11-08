@@ -5,7 +5,7 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import Any, cast
 
@@ -17,12 +17,16 @@ from worldwarpixel.sim.events import (
     SLOW_READ_SECONDS,
     Event,
     EventStore,
+    RunDelta,
     RunMeta,
     run_deltas,
 )
 from worldwarpixel.sim.migrations import CANVAS_KINDS_SQL, migrate_postgres
 
 logger = logging.getLogger(__name__)
+
+_Row = tuple[str, float, str, int | None, Mapping[str, object]]
+"""One queued event: run id, timestamp, kind, agent id and JSON-able payload."""
 
 
 class PostgresEventLog(EventStore):
@@ -66,6 +70,74 @@ class PostgresEventLog(EventStore):
     def _initialize_schema(self) -> None:
         migrate_postgres(self._conn)
 
+    def _upsert_run(self, run_id: str, ts: float, delta: RunDelta) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO runs (
+                id, created_at, config, pixels, posts, turns, errors, updates, answers,
+                deleted, state
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                created_at = LEAST(runs.created_at, EXCLUDED.created_at),
+                config = COALESCE(runs.config, EXCLUDED.config),
+                pixels = runs.pixels + EXCLUDED.pixels,
+                posts = runs.posts + EXCLUDED.posts,
+                turns = runs.turns + EXCLUDED.turns,
+                errors = runs.errors + EXCLUDED.errors,
+                updates = runs.updates + EXCLUDED.updates,
+                answers = runs.answers + EXCLUDED.answers,
+                deleted = runs.deleted OR EXCLUDED.deleted,
+                state = COALESCE(EXCLUDED.state, runs.state)
+            """,
+            (
+                run_id,
+                ts,
+                delta.config,
+                delta.pixels,
+                delta.posts,
+                delta.turns,
+                delta.errors,
+                delta.updates,
+                delta.answers,
+                delta.deleted,
+                delta.state,
+            ),
+        )
+
+    def _update_projection(self, run_id: str, kind: str, payload: Mapping[str, object]) -> None:
+        if kind == "post":
+            self._conn.execute(
+                """
+                INSERT INTO posts (
+                    run_id, id, thread_id, parent_id, author_id, title, body, created_at,
+                    society
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, id) DO NOTHING
+                """,
+                (
+                    run_id,
+                    cast(int, payload["id"]),
+                    cast(int, payload["thread_id"]),
+                    None if payload.get("parent_id") is None else cast(int, payload["parent_id"]),
+                    cast(int, payload["author_id"]),
+                    None if payload.get("title") is None else str(payload["title"]),
+                    str(payload["body"]),
+                    cast(float, payload["created_at"]),
+                    None if payload.get("society") is None else cast(int, payload["society"]),
+                ),
+            )
+        elif kind == "board.vote":
+            self._conn.execute(
+                """
+                INSERT INTO thread_votes (run_id, thread_id, votes) VALUES (%s, %s, %s)
+                ON CONFLICT (run_id, thread_id) DO UPDATE SET votes = EXCLUDED.votes
+                """,
+                (run_id, cast(int, payload["thread_id"]), cast(int, payload["votes"])),
+            )
+        elif kind == "god.clear_board":
+            self._conn.execute("DELETE FROM posts WHERE run_id = %s", (run_id,))
+            self._conn.execute("DELETE FROM thread_votes WHERE run_id = %s", (run_id,))
+
     def append(
         self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
     ) -> int:
@@ -74,38 +146,7 @@ class PostgresEventLog(EventStore):
 
         def write() -> int:
             if run_id not in self._known_runs or delta.has_changes:
-                self._conn.execute(
-                    """
-                    INSERT INTO runs (
-                        id, created_at, config, pixels, posts, turns, errors, updates, answers,
-                        deleted, state
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        created_at = LEAST(runs.created_at, EXCLUDED.created_at),
-                        config = COALESCE(runs.config, EXCLUDED.config),
-                        pixels = runs.pixels + EXCLUDED.pixels,
-                        posts = runs.posts + EXCLUDED.posts,
-                        turns = runs.turns + EXCLUDED.turns,
-                        errors = runs.errors + EXCLUDED.errors,
-                        updates = runs.updates + EXCLUDED.updates,
-                        answers = runs.answers + EXCLUDED.answers,
-                        deleted = runs.deleted OR EXCLUDED.deleted,
-                        state = COALESCE(EXCLUDED.state, runs.state)
-                    """,
-                    (
-                        run_id,
-                        ts,
-                        delta.config,
-                        delta.pixels,
-                        delta.posts,
-                        delta.turns,
-                        delta.errors,
-                        delta.updates,
-                        delta.answers,
-                        delta.deleted,
-                        delta.state,
-                    ),
-                )
+                self._upsert_run(run_id, ts, delta)
             row = self._conn.execute(
                 "INSERT INTO events (run_id, ts, kind, agent_id, payload)"
                 " VALUES (%s, %s, %s, %s, %s) RETURNING id",
@@ -113,40 +154,7 @@ class PostgresEventLog(EventStore):
             ).fetchone()
             if row is None:
                 raise RuntimeError("event insert did not return an id")
-            if kind == "post":
-                self._conn.execute(
-                    """
-                    INSERT INTO posts (
-                        run_id, id, thread_id, parent_id, author_id, title, body, created_at,
-                        society
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (run_id, id) DO NOTHING
-                    """,
-                    (
-                        run_id,
-                        cast(int, payload["id"]),
-                        cast(int, payload["thread_id"]),
-                        None
-                        if payload.get("parent_id") is None
-                        else cast(int, payload["parent_id"]),
-                        cast(int, payload["author_id"]),
-                        None if payload.get("title") is None else str(payload["title"]),
-                        str(payload["body"]),
-                        cast(float, payload["created_at"]),
-                        None if payload.get("society") is None else cast(int, payload["society"]),
-                    ),
-                )
-            elif kind == "board.vote":
-                self._conn.execute(
-                    """
-                    INSERT INTO thread_votes (run_id, thread_id, votes) VALUES (%s, %s, %s)
-                    ON CONFLICT (run_id, thread_id) DO UPDATE SET votes = EXCLUDED.votes
-                    """,
-                    (run_id, cast(int, payload["thread_id"]), cast(int, payload["votes"])),
-                )
-            elif kind == "god.clear_board":
-                self._conn.execute("DELETE FROM posts WHERE run_id = %s", (run_id,))
-                self._conn.execute("DELETE FROM thread_votes WHERE run_id = %s", (run_id,))
+            self._update_projection(run_id, kind, payload)
             return int(row[0])
 
         try:
@@ -161,6 +169,53 @@ class PostgresEventLog(EventStore):
             raise
         self._known_runs.add(run_id)
         return event_id
+
+    def append_many(self, rows: Sequence[_Row]) -> None:
+        if not rows:
+            return
+
+        deltas: dict[str, RunDelta] = {}
+        created_at: dict[str, float] = {}
+        for run_id, ts, kind, _, payload in rows:
+            delta = run_deltas(kind, payload)
+            previous = deltas.get(run_id, RunDelta())
+            deltas[run_id] = RunDelta(
+                pixels=previous.pixels + delta.pixels,
+                posts=previous.posts + delta.posts,
+                turns=previous.turns + delta.turns,
+                errors=previous.errors + delta.errors,
+                updates=previous.updates + delta.updates,
+                answers=previous.answers + delta.answers,
+                deleted=previous.deleted or delta.deleted,
+                config=previous.config if previous.config is not None else delta.config,
+                state=delta.state if delta.state is not None else previous.state,
+            )
+            if run_id in created_at:
+                created_at[run_id] = min(created_at[run_id], ts)
+            else:
+                created_at[run_id] = ts
+
+        event_rows = [
+            (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":")))
+            for run_id, ts, kind, agent_id, payload in rows
+        ]
+
+        with self._conn.transaction(), self._conn.pipeline():
+            for run_id, delta in deltas.items():
+                if run_id not in self._known_runs or delta.has_changes:
+                    self._upsert_run(run_id, created_at[run_id], delta)
+
+            with self._conn.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO events (run_id, ts, kind, agent_id, payload)"
+                    " VALUES (%s, %s, %s, %s, %s)",
+                    event_rows,
+                )
+
+            for run_id, _, kind, _, payload in rows:
+                self._update_projection(run_id, kind, payload)
+
+        self._known_runs.update(deltas)
 
     @contextmanager
     def batch(self) -> Iterator[None]:
@@ -299,10 +354,6 @@ class PostgresEventLog(EventStore):
         self._conn.close()
 
 
-_Row = tuple[str, float, str, int | None, Mapping[str, object]]
-"""One queued event: run id, timestamp, kind, agent id and JSON-able payload."""
-
-
 class BufferedPostgresEventLog(EventStore):
     """Postgres event log that keeps appends off the caller's thread.
 
@@ -418,9 +469,7 @@ class BufferedPostgresEventLog(EventStore):
     def _flush(log: PostgresEventLog, batch: list[_Row]) -> None:
         for attempt in range(5):
             try:
-                with log.batch():
-                    for row in batch:
-                        log.append(*row)
+                log.append_many(batch)
                 return
             except (pg_errors.LockNotAvailable, pg_errors.QueryCanceled):
                 if attempt == 4:

@@ -177,6 +177,111 @@ def test_run_totals_match_the_sqlite_shape(pg_log: PostgresEventLog) -> None:
     assert row[9] is not None and json.loads(row[9]) == config
 
 
+def test_append_many_matches_sequential_appends(pg_log: PostgresEventLog) -> None:
+    config = {"width": 16, "height": 16, "agents": 2}
+    mixed_rows: list[tuple[float, str, int | None, dict[str, object]]] = [
+        (10.0, "run.created", None, {"config": config}),
+        (1.0, "pixel", 1, {"x": 1, "y": 1, "color": 2}),
+        (2.0, "pixel", 1, {"x": 2, "y": 1, "color": 2}),
+        (3.0, "agent.thought", 1, {"thought": "Painting a sun"}),
+        (4.0, "agent.thought", 1, {"thought": "Tool call rejected: bad json"}),
+        (5.0, "narrator.update", None, {"kind": "update", "text": "A new mural"}),
+        (6.0, "narrator.update", None, {"kind": "answer", "text": "We will defend it"}),
+        (
+            7.0,
+            "post",
+            1,
+            {
+                "id": 1,
+                "thread_id": 1,
+                "parent_id": None,
+                "author_id": 1,
+                "title": "Before clear",
+                "body": "This post will be removed",
+                "created_at": 7.0,
+                "society": 1,
+            },
+        ),
+        (8.0, "board.vote", 1, {"thread_id": 1, "value": 1, "votes": 3}),
+        (9.0, "run.state", None, {"state": "running"}),
+        (10.0, "run.state", None, {"state": "stopped"}),
+        (10.5, "run.created", None, {"config": {"width": 99}}),
+        (11.0, "run.deleted", None, {}),
+        (12.0, "god.clear_board", None, {}),
+        (
+            13.0,
+            "post",
+            1,
+            {
+                "id": 2,
+                "thread_id": 2,
+                "parent_id": None,
+                "author_id": 1,
+                "title": "After clear",
+                "body": "This post remains",
+                "created_at": 13.0,
+                "society": 2,
+            },
+        ),
+        (14.0, "board.vote", 1, {"thread_id": 2, "value": 1, "votes": 4}),
+    ]
+
+    def rows_for(
+        run_id: str,
+    ) -> list[tuple[str, float, str, int | None, dict[str, object]]]:
+        return [(run_id, ts, kind, agent_id, payload) for ts, kind, agent_id, payload in mixed_rows]
+
+    pg_log.append_many(rows_for("batch"))
+    for row in rows_for("sequential"):
+        pg_log.append(*row)
+
+    batch_events = pg_log.read("batch")
+    sequential_events = pg_log.read("sequential")
+    assert [(event.kind, event.payload) for event in batch_events] == [
+        (event.kind, event.payload) for event in sequential_events
+    ]
+
+    batch_meta = pg_log.run_meta("batch")
+    sequential_meta = pg_log.run_meta("sequential")
+    assert batch_meta == sequential_meta
+    assert batch_meta is not None
+    assert batch_meta.created_at == 1.0
+    assert batch_meta.deleted
+    assert batch_meta.config is not None and json.loads(batch_meta.config) == config
+
+    totals = {row[0]: row[1:] for row in pg_log.run_totals()}
+    assert totals["batch"] == totals["sequential"]
+    assert totals["batch"][:7] == (1.0, 2, 2, 2, 1, 1, 1)
+    assert totals["batch"][7] is True
+    assert totals["batch"][8] is not None and json.loads(totals["batch"][8]) == config
+
+    states = {}
+    for run_id in ("batch", "sequential"):
+        state = pg_log._conn.execute("SELECT state FROM runs WHERE id = %s", (run_id,)).fetchone()
+        assert state is not None
+        states[run_id] = state[0]
+    assert states == {"batch": "stopped", "sequential": "stopped"}
+    assert pg_log.posts("batch") == pg_log.posts("sequential")
+    assert [post.id for post, _ in pg_log.posts("batch")] == [2]
+    assert pg_log.thread_votes("batch") == pg_log.thread_votes("sequential") == {2: 4}
+
+
+def test_append_many_failure_rolls_back_and_preserves_known_runs(
+    pg_log: PostgresEventLog,
+) -> None:
+    rows: list[tuple[str, float, str, int | None, dict[str, object]]] = [
+        ("bad-batch", 1.0, "run.created", None, {"config": {}}),
+        ("bad-batch", 2.0, "post", 1, {"id": 1}),
+    ]
+
+    with pytest.raises(KeyError):
+        pg_log.append_many(rows)
+
+    assert "bad-batch" not in pg_log._known_runs
+    assert pg_log.count("bad-batch") == 0
+    assert "bad-batch" not in pg_log.run_ids()
+
+
 def test_migrate_sqlite_to_pg_is_idempotent(pg_url: str, tmp_path: Path) -> None:
     sqlite_path = tmp_path / "events.db"
     source = EventLog(sqlite_path)
