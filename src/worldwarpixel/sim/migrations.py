@@ -227,6 +227,11 @@ MIGRATIONS = (
             )
             """,
             """
+            WITH cleared AS (
+                SELECT run_id, MAX(id) AS id FROM events
+                WHERE kind = 'god.clear_board'
+                GROUP BY run_id
+            )
             INSERT OR IGNORE INTO posts (
                 run_id, id, thread_id, parent_id, author_id, title, body, created_at, society
             )
@@ -236,12 +241,15 @@ MIGRATIONS = (
                 json_extract(e.payload, '$.title'), json_extract(e.payload, '$.body'),
                 json_extract(e.payload, '$.created_at'), json_extract(e.payload, '$.society')
             FROM events AS e
-            WHERE e.kind = 'post' AND e.id > COALESCE((
-                SELECT MAX(c.id) FROM events AS c
-                WHERE c.run_id = e.run_id AND c.kind = 'god.clear_board'
-            ), 0)
+            LEFT JOIN cleared AS c ON c.run_id = e.run_id
+            WHERE e.kind = 'post' AND e.id > COALESCE(c.id, 0)
             """,
             """
+            WITH cleared AS (
+                SELECT run_id, MAX(id) AS id FROM events
+                WHERE kind = 'god.clear_board'
+                GROUP BY run_id
+            )
             INSERT OR IGNORE INTO thread_votes (run_id, thread_id, votes)
             SELECT run_id, thread_id, votes FROM (
                 SELECT e.run_id, json_extract(e.payload, '$.thread_id') AS thread_id,
@@ -251,10 +259,8 @@ MIGRATIONS = (
                         ORDER BY e.id DESC
                     ) AS rn
                 FROM events AS e
-                WHERE e.kind = 'board.vote' AND e.id > COALESCE((
-                    SELECT MAX(c.id) FROM events AS c
-                    WHERE c.run_id = e.run_id AND c.kind = 'god.clear_board'
-                ), 0)
+                LEFT JOIN cleared AS c ON c.run_id = e.run_id
+                WHERE e.kind = 'board.vote' AND e.id > COALESCE(c.id, 0)
             ) WHERE rn = 1
             """,
         ),
