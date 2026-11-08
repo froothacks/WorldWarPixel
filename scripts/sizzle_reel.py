@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a hype sizzle reel from WorldWarPixel timelapse videos.
+"""Build a hype sizzle reel from World War Pixel timelapse videos.
 
 Pulls ``{run_id}.mp4`` + ``{run_id}.json`` sidecars from the GCS timelapse bucket (or a local
 dir), scores runs from the sidecar metadata, picks highlight windows by frame-to-frame change,
@@ -195,7 +195,7 @@ async def llm_theme(runs: list[RunPick], model_id: str) -> dict[str, Any] | None
         for r in runs[:8]
     ]
     prompt = (
-        "You are editing a 30s hype reel for WorldWarPixel, a pixel-art war simulation. "
+        "You are editing a 30s hype reel for World War Pixel, a pixel-art war simulation. "
         "Choose the most cinematic order and write a punchy title + one-line tagline. "
         'Return ONLY JSON: {"title": str, "tagline": str, "order": [run_id, ...]}.\n'
         + json.dumps(summary, ensure_ascii=False)
@@ -282,7 +282,7 @@ def make_text_card(path: Path, title: str, subtitle: str) -> None:
         stroke_width=1,
         stroke_fill=(0, 0, 0),
     )
-    mark = "WORLDWARPPIXEL"
+    mark = "WORLD WAR PIXEL"
     mw = small_font.getlength(mark)
     draw.text(((WIDTH - mw) / 2, HEIGHT * 0.40 + 210), mark, font=small_font, fill=(90, 140, 255))
     img.save(path)
@@ -745,7 +745,7 @@ def vertex_analyze_run(
     duration = max(_num(run.meta, "duration_s", 22.5), 1.0)
     video_b64 = base64.b64encode(run.video.read_bytes()).decode("ascii")
     prompt = (
-        "You are analyzing a WorldWarPixel timelapse (pixel-art war simulator). "
+        "You are analyzing a World War Pixel timelapse (pixel-art war simulator). "
         "Watch the video and "
         'return ONLY JSON: {"useful": bool, "random_pixels": bool, "cinematic_score": 0-10, '
         '"title": str, "tagline": str, "highlights": [{"start_s": float, "end_s": float, '
@@ -965,7 +965,11 @@ async def _amain(args: argparse.Namespace) -> int:
         old.unlink()
     shot_paths: list[Path] = []
 
-    intro_title = str((theme or {}).get("title") or "WORLDWARPPIXEL")
+    intro_title = (
+        str((theme or {}).get("title") or "WORLD WAR PIXEL")
+        .replace("WorldWarPixel", "World War Pixel")
+        .replace("WORLDWARPPIXEL", "WORLD WAR PIXEL")
+    )
     intro_sub = str((theme or {}).get("tagline") or "top runs · pixel wars · narrator chaos")
     intro_card = workdir / "intro.png"
     make_text_card(intro_card, intro_title, intro_sub)
