@@ -51,6 +51,7 @@ Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so th
 - `GET /runs/{id}/threads`, `GET /runs/{id}/threads/{thread_id}`: board digest / full thread.
 - `GET /runs/{id}/canvas`: the canvas as rows of hex palette indices.
 - `GET /runs/{id}/events?after=&limit=`: the event log.
+- `POST /runs/{id}/video`, `GET /runs/{id}/video`, `GET /runs/{id}/video/meta`, `GET /videos`: render / download / describe / list timelapse videos (see below).
 - `GET /runs/{id}/narrator`: narrator history and stats. `POST /runs/{id}/narrator/ask` with `{"question": ...}` answers a user question from the same digest and returns (and streams) a `narrator.update` with `kind: "answer"`.
 - `WS /runs/{id}/ws`: realtime stream. On connect the server sends a JSON `snapshot` (run, palette, agents, threads, narrator history) and a binary full-canvas frame; after that, JSON events (`run.state`, `agent.status`, `agent.thought`, `post.created`, `narrator.update`) and a binary pixel-diff frame every 250 ms.
 
@@ -76,6 +77,10 @@ The run option `speak_narrator` defaults to `true`.
 - `GET /runs/{id}/speech` returns panel status, recent lines and synthesis stats.
 - `GET /runs/{id}/speech/lines/{line_id}/audio?format=pcm` returns s16le mono PCM; WAV is the default.
 - `WS /runs/{id}/speech/ws` streams a snapshot followed by `speech.line` events.
+
+## Timelapse videos
+
+Stopping a run (`POST /runs/{id}/stop`) renders an mp4 in the background (`TIMELAPSE_AUTO`, default on): the canvas timelapse on the left, the message board on the right with posts appearing on the same clock, and the latest narrator headline as a caption (`sim/video.py`; frames are composed with Pillow and piped to `ffmpeg`, which must be on the PATH or at `FFMPEG_PATH`). `POST /runs/{id}/video` renders on demand (also for live runs and runs restored from the log), `GET /runs/{id}/video` streams the file, `GET /videos` lists everything rendered. Videos land in `TIMELAPSE_DIR` (`/data/timelapses` on the Modal Volume in production) next to a `{run_id}.json` sidecar with the run's config, stats, top countries and narrator headlines, so the archive can be scanned later to pick out the good ones. Set `TIMELAPSE_S3_BUCKET` (plus `TIMELAPSE_S3_ENDPOINT` — `https://storage.googleapis.com` for Google Cloud Storage, or the R2 endpoint — and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, which for GCS are a service account's HMAC key) to mirror both files into a bucket. `python -m worldwarpixel.videos [run_id ...]` renders missing videos for archived runs.
 
 ## Chat endpoints
 

@@ -282,6 +282,9 @@ export const api = {
       { method: "POST", body: JSON.stringify({ voter, vote }) },
     ),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
+  renderVideo: (id: string) =>
+    request<{ bytes: number }>(`/runs/${id}/video`, { method: "POST" }),
+  videoUrl: (id: string) => `/runs/${id}/video`,
   ask: (id: string, question: string) =>
     request<NarratorUpdate>(`/runs/${id}/narrator/ask`, {
       method: "POST",
