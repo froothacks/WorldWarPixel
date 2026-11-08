@@ -9,7 +9,7 @@ import pytest
 
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.events_migrate import migrate
-from worldwarpixel.sim.events_pg import PostgresEventLog
+from worldwarpixel.sim.events_pg import BufferedPostgresEventLog, PostgresEventLog
 
 PG_URL = os.environ.get("DATABASE_URL_TEST")
 pytestmark = pytest.mark.skipif(PG_URL is None, reason="DATABASE_URL_TEST is not set")
@@ -209,3 +209,33 @@ def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
         assert conn.execute(
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
         ).fetchall() == [(1, 1), (2, 1)]
+
+
+def test_buffered_writes_flush_in_order(pg_url: str) -> None:
+    log = BufferedPostgresEventLog(pg_url, flush_interval=0.05, batch_size=3)
+    for i in range(7):
+        log.append("b", float(i), "pixel", 1, {"x": i})
+    log.close()
+
+    check = PostgresEventLog(pg_url)
+    try:
+        events = check.read("b")
+        assert [e.payload["x"] for e in events] == list(range(7))
+        assert [e.id for e in events] == sorted(e.id for e in events)
+    finally:
+        check.close()
+
+
+def test_buffered_batch_still_flushes_in_order(pg_url: str) -> None:
+    log = BufferedPostgresEventLog(pg_url, flush_interval=0.05, batch_size=100)
+    with log.batch():
+        for i in range(4):
+            log.append("c", float(i), "post", 2, {"body": str(i)})
+    log.close()
+
+    check = PostgresEventLog(pg_url)
+    try:
+        events = check.read("c")
+        assert [e.payload["body"] for e in events] == ["0", "1", "2", "3"]
+    finally:
+        check.close()
