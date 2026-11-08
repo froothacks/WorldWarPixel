@@ -559,10 +559,7 @@ class Run:
             board=self._feed(agent, self._clock(), society),
         )
         now = self._clock()
-        obs.memory = [
-            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
-            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
-        ]
+        obs.memory = self.recall(agent.id)
         if self.societies is not None and society is not None:
             obs.society = {
                 **self.societies.get(society).to_dict(),
@@ -585,11 +582,22 @@ class Run:
             self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
-        entry = {"ts": self._clock(), "thought": thought}
-        self.thoughts[agent.id].append(entry)
-        self._record("agent.thought", agent.id, entry)
-        self.hub.publish("agent.thought", agent_id=agent.id, **entry)
+        self.note_thought(agent.id, thought)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
+
+    def recall(self, agent_id: int, turns: int = MEMORY_TURNS) -> list[str]:
+        """An agent's own recent thoughts, as shown back to it."""
+        now = self._clock()
+        return [
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            for t in list(self.thoughts[agent_id])[-turns:]
+        ]
+
+    def note_thought(self, agent_id: int, thought: str) -> None:
+        entry = {"ts": self._clock(), "thought": thought}
+        self.thoughts[agent_id].append(entry)
+        self._record("agent.thought", agent_id, entry)
+        self.hub.publish("agent.thought", agent_id=agent_id, **entry)
 
     # -- societies -------------------------------------------------------------------------
 
