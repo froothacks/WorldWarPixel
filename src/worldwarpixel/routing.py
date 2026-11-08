@@ -3,7 +3,8 @@
 Each caller passes a sticky ``key`` (one per agent, one per narrator). New keys go to the
 least-loaded endpoint, with rendezvous hashing as a deterministic tie-breaker, so agents keep
 their server's KV cache affinity while spreading evenly. Rate-limited endpoints pause their
-assigned callers; endpoints that are down fail over and cool down for a while.
+assigned callers; endpoint concurrency limits adapt to errors and successes. Endpoints that are
+down fail over and cool down for a while.
 """
 
 import asyncio
@@ -12,6 +13,7 @@ import logging
 import math
 import random
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,6 +44,19 @@ class Endpoint:
     auth: Literal["modal", "bearer"]
     secrets: tuple[str, ...]
     """Env var names: modal = (key, secret) sent as Modal-Key/Modal-Secret; bearer = (api key,)."""
+    max_in_flight: int = 16
+    """Maximum number of concurrent requests this endpoint may receive."""
+    initial_in_flight: int | None = None
+    """Initial concurrency limit; defaults to min(4, max_in_flight)."""
+
+    def __post_init__(self) -> None:
+        if self.max_in_flight < 1:
+            raise ValueError("max_in_flight must be at least 1")
+        if (
+            self.initial_in_flight is not None
+            and not 1 <= self.initial_in_flight <= self.max_in_flight
+        ):
+            raise ValueError("initial_in_flight must be between 1 and max_in_flight")
 
 
 def describe_endpoint(e: BaseException) -> str:
@@ -52,7 +67,15 @@ def describe_endpoint(e: BaseException) -> str:
     return f"{endpoint.name} ({endpoint.base_url})" if endpoint.base_url else endpoint.name
 
 
-def modal_endpoint(workspace: str, server: str, model: str, *, secret_prefix: str) -> Endpoint:
+def modal_endpoint(
+    workspace: str,
+    server: str,
+    model: str,
+    *,
+    secret_prefix: str,
+    max_in_flight: int = 16,
+    initial_in_flight: int | None = None,
+) -> Endpoint:
     """A Modal ``<workspace>--<server>.us-west.modal.direct`` endpoint with proxy auth from
     ``<secret_prefix>MODAL_KEY`` / ``<secret_prefix>MODAL_SECRET``."""
     return Endpoint(
@@ -61,6 +84,8 @@ def modal_endpoint(workspace: str, server: str, model: str, *, secret_prefix: st
         model=model,
         auth="modal",
         secrets=(f"{secret_prefix}MODAL_KEY", f"{secret_prefix}MODAL_SECRET"),
+        max_in_flight=max_in_flight,
+        initial_in_flight=initial_in_flight,
     )
 
 
@@ -163,6 +188,20 @@ class EndpointPool:
         self._waiting: dict[str, int] = {}
         self._assigned: dict[str, str] = {}
         self._assigned_counts: dict[str, int] = {e.name: 0 for e, _ in self._endpoints}
+        self._limits: dict[str, int] = {
+            endpoint.name: (
+                endpoint.initial_in_flight
+                if endpoint.initial_in_flight is not None
+                else min(4, endpoint.max_in_flight)
+            )
+            for endpoint, _ in self._endpoints
+        }
+        self._limit_epoch: dict[str, int] = dict.fromkeys(self._limits, 0)
+        self._in_flight: dict[str, int] = dict.fromkeys(self._limits, 0)
+        self._successes_since_change: dict[str, int] = dict.fromkeys(self._limits, 0)
+        self._slot_waiters: dict[str, deque[asyncio.Future[None]]] = {
+            name: deque() for name in self._limits
+        }
         self.stats: dict[str, dict[str, int]] = {
             e.name: {"calls": 0, "errors": 0, "failovers": 0, "rate_limited": 0}
             for e, _ in self._endpoints
@@ -246,6 +285,73 @@ class EndpointPool:
             finally:
                 self._waiting[endpoint] -= 1
 
+    def _wake_slot_waiters(self, endpoint: str) -> None:
+        waiters = self._slot_waiters[endpoint]
+        capacity = math.floor(self._limits[endpoint])
+        while waiters and self._in_flight[endpoint] < capacity:
+            waiter = waiters.popleft()
+            if waiter.done():
+                continue
+            self._in_flight[endpoint] += 1
+            waiter.set_result(None)
+
+    async def _acquire_slot(self, endpoint: str) -> None:
+        waiters = self._slot_waiters[endpoint]
+        if not waiters and self._in_flight[endpoint] < math.floor(self._limits[endpoint]):
+            self._in_flight[endpoint] += 1
+            return
+
+        waiter = asyncio.get_running_loop().create_future()
+        waiters.append(waiter)
+        self._wake_slot_waiters(endpoint)
+        try:
+            await waiter
+        except asyncio.CancelledError:
+            if waiter.done() and not waiter.cancelled():
+                self._in_flight[endpoint] -= 1
+            else:
+                if waiter in waiters:
+                    waiters.remove(waiter)
+            self._wake_slot_waiters(endpoint)
+            raise
+
+    def _release_slot(self, endpoint: str) -> None:
+        self._in_flight[endpoint] -= 1
+        self._wake_slot_waiters(endpoint)
+
+    def _record_success(self, endpoint: Endpoint, epoch: int) -> None:
+        name = endpoint.name
+        if epoch != self._limit_epoch[name] or self._limited_until.get(name, 0.0) > self._clock():
+            return
+        self._successes_since_change[name] += 1
+        threshold = max(1, math.floor(self._limits[name]))
+        if self._successes_since_change[name] < threshold:
+            return
+
+        self._successes_since_change[name] = 0
+        previous = self._limits[name]
+        updated = min(endpoint.max_in_flight, previous + 1)
+        if updated != previous:
+            self._limits[name] = updated
+            log.info("endpoint %s limit %d -> %d (successes)", name, previous, updated)
+            self._wake_slot_waiters(name)
+
+    def _record_rate_limit(self, endpoint: Endpoint, error: RateLimitError) -> float:
+        name = endpoint.name
+        now = self._clock()
+        already_limited = self._limited_until.get(name, 0.0) > now
+        retry = retry_after(error, self._cooldown)
+        self._limited_until[name] = max(self._limited_until.get(name, 0.0), now + retry)
+        self._successes_since_change[name] = 0
+        if not already_limited:
+            self._limit_epoch[name] += 1
+            previous = self._limits[name]
+            updated = max(1, math.floor(previous / 2))
+            if updated != previous:
+                self._limits[name] = updated
+                log.info("endpoint %s limit %d -> %d (rate limit)", name, previous, updated)
+        return self._limited_until[name] - now
+
     async def create(self, key: str, **kwargs: Any) -> ChatCompletion:
         """Call the assigned endpoint; pause on 429 and fail over on 5xx/connect."""
         primary = self._assign(key)
@@ -270,53 +376,63 @@ class EndpointPool:
             stats = self.stats[endpoint.name]
             while True:
                 await self._wait_for_limit(endpoint.name)
+                await self._acquire_slot(endpoint.name)
+                epoch = self._limit_epoch[endpoint.name]
+                if self._limited_until.get(endpoint.name, 0.0) > self._clock():
+                    self._release_slot(endpoint.name)
+                    continue
                 stats["calls"] += 1
+                response: ChatCompletion | None = None
+                error: Exception | None = None
+                retry_wait: float | None = None
                 try:
-                    response: ChatCompletion = await client.chat.completions.create(
-                        model=endpoint.model, **kwargs
-                    )
-                    return response
+                    response = await client.chat.completions.create(model=endpoint.model, **kwargs)
                 except Exception as e:
                     stats["errors"] += 1
                     cast(Any, e).endpoint = endpoint
+                    error = e
                     if isinstance(e, RateLimitError):
-                        stats["rate_limited"] += 1
-                        rate_limit_retries += 1
-                        now = self._clock()
-                        retry = retry_after(e, self._cooldown)
-                        self._limited_until[endpoint.name] = max(
-                            self._limited_until.get(endpoint.name, 0.0), now + retry
-                        )
-                        wait = self._limited_until[endpoint.name] - now
-                        log.warning(
-                            "endpoint %s rate limited; retrying in %.1fs",
-                            endpoint.name,
-                            wait,
-                        )
-                        if rate_limit_retries >= MAX_RATE_LIMIT_RETRIES:
-                            raise
-                        await self._wait_for_limit(endpoint.name)
-                        continue
-                    if not isinstance(e, RETRYABLE):
-                        raise
-                    if isinstance(e, APITimeoutError):
-                        raise  # slow, not down: retrying elsewhere would only double the wait
-                    self._cooling_until[endpoint.name] = self._clock() + self._cooldown
-                    attempted.add(endpoint.name)
-                    last_error = e
-                    next_candidates = self._candidates(key, attempted, primary)
-                    if not next_candidates:
-                        raise
-                    next_endpoint = next_candidates[0][0]
+                        retry_wait = self._record_rate_limit(endpoint, e)
+                else:
+                    self._record_success(endpoint, epoch)
+                finally:
+                    self._release_slot(endpoint.name)
+
+                if error is None:
+                    assert response is not None
+                    return response
+                if isinstance(error, RateLimitError):
+                    stats["rate_limited"] += 1
+                    rate_limit_retries += 1
                     log.warning(
-                        "endpoint %s failed (%s: %s); failing over to %s",
+                        "endpoint %s rate limited; retrying in %.1fs",
                         endpoint.name,
-                        type(e).__name__,
-                        e,
-                        next_endpoint.name,
+                        retry_wait,
                     )
-                    stats["failovers"] += 1
-                    break
+                    if rate_limit_retries >= MAX_RATE_LIMIT_RETRIES:
+                        raise error
+                    await self._wait_for_limit(endpoint.name)
+                    continue
+                if not isinstance(error, RETRYABLE):
+                    raise error
+                if isinstance(error, APITimeoutError):
+                    raise error  # slow, not down: retrying elsewhere would only double the wait
+                self._cooling_until[endpoint.name] = self._clock() + self._cooldown
+                attempted.add(endpoint.name)
+                last_error = error
+                next_candidates = self._candidates(key, attempted, primary)
+                if not next_candidates:
+                    raise error
+                next_endpoint = next_candidates[0][0]
+                log.warning(
+                    "endpoint %s failed (%s: %s); failing over to %s",
+                    endpoint.name,
+                    type(error).__name__,
+                    error,
+                    next_endpoint.name,
+                )
+                stats["failovers"] += 1
+                break
 
     def public_stats(self) -> dict[str, Any]:
         now = self._clock()
@@ -327,6 +443,8 @@ class EndpointPool:
                 "retry_in": round(max(0.0, self._limited_until.get(name, 0.0) - now), 1),
                 "waiting": self._waiting.get(name, 0),
                 "agents": self._assigned_counts[name],
+                "limit": self._limits[name],
+                "in_flight": self._in_flight[name],
             }
             for name, counts in self.stats.items()
         }

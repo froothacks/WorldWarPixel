@@ -48,7 +48,13 @@ SAIL_KEYS = 8
 # Sail accounts share the load (keys that are not configured are simply skipped).
 
 
-def sail_endpoint(index: int, model: str) -> Endpoint:
+def sail_endpoint(
+    index: int,
+    model: str,
+    *,
+    max_in_flight: int = 16,
+    initial_in_flight: int | None = None,
+) -> Endpoint:
     """A Sail bearer endpoint for the ``index``-th API key (0 = SAIL_API_KEY)."""
     secret = "SAIL_API_KEY" if index == 0 else f"SAIL_API_KEY_{index + 1}"
     return Endpoint(
@@ -57,6 +63,8 @@ def sail_endpoint(index: int, model: str) -> Endpoint:
         model=model,
         auth="bearer",
         secrets=(secret,),
+        max_in_flight=max_in_flight,
+        initial_in_flight=initial_in_flight,
     )
 
 
@@ -83,8 +91,6 @@ class ModelSpec:
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
     vision: bool = True
     """Show the model the canvas image (GLM reasons for minutes over images, so it gets text)."""
-    concurrency: int | None = None
-    """Cap on simultaneous model calls per preset; None means no preset cap."""
 
     @property
     def model(self) -> str:
@@ -117,24 +123,27 @@ def model_registry() -> list[ModelSpec]:
         ModelSpec(
             id="deepseek",
             label="DeepSeek V4.1 Flash",
+            # The shared endpoint 429s above ~16 concurrent calls; 8 each keeps the preset at 16.
             endpoints=(
                 modal_endpoint(
                     "advait-m",
                     "ep-deepseek-v4-1-flash-server",
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=ADVAIT,
+                    max_in_flight=8,
+                    initial_in_flight=8,
                 ),
                 modal_endpoint(
                     "leonfattakhov",
                     "ep-deepseek-v4-1-flash-server",
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=LEONFATTAKHOV,
+                    max_in_flight=8,
+                    initial_in_flight=8,
                 ),
             ),
             max_tokens=3000,
             narrator_max_tokens=3000,
-            # The shared endpoint 429s above ~16 concurrent calls.
-            concurrency=16,
         ),
         ModelSpec(
             id="deepseek-sail",
