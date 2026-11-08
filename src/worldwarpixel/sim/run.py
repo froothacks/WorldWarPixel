@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hashlib
 import random
 import re
 import time
@@ -14,10 +15,10 @@ from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
-from worldwarpixel.sim.events import EventStore
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
-from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.societies import Societies, random_names
 from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
@@ -96,6 +97,16 @@ class RunConfig(BaseModel):
         le=6,
         description="Split agents into this many societies, each with its own board (0 = off)",
     )
+    society_theme: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Optional free-text nudge for what the generated society names are about",
+    )
+    society_names: list[str] | None = Field(
+        default=None,
+        max_length=6,
+        description="Starting society names; random (or model-generated) when omitted",
+    )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
@@ -140,6 +151,9 @@ class Run:
         self._clock = clock
         self._sleep = sleep
         self.state: RunState = "created"
+        self.interrupted = False
+        """Rebuilt from the log of a run a server shutdown interrupted; it is due to resume."""
+        self.resume_paused = False
         self.created_at = clock()
         self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
@@ -165,7 +179,13 @@ class Run:
         self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
         if config.societies:
-            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            names = [n for n in config.society_names or [] if n.strip()][: config.societies]
+            rng = random.Random(f"societies-{config.seed}") if config.seed is not None else None
+            names += random_names(config.societies - len(names), rng or random.Random(), names)
+            self.config = config = config.model_copy(update={"society_names": names})
+            self.societies = Societies(
+                config.societies, switch_cooldown=3 * config.cooldown, names=names
+            )
             self.societies.assign([a.id for a in self.agents])
         self.dispatcher = Dispatcher(
             self.board,
@@ -300,8 +320,13 @@ class Run:
 
     def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
         """A viewer's up/down click on a thread; it shifts where the board ranks it."""
-        votes = self.board.vote(thread_id, voter, value)
-        self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
+        ballot = hashlib.sha256(f"{self.id}:{voter}".encode()).hexdigest()[:16]
+        votes = self.board.vote(thread_id, ballot, value)
+        self._record(
+            "board.vote",
+            None,
+            {"thread_id": thread_id, "voter": ballot, "value": value, "votes": votes},
+        )
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 
@@ -316,6 +341,16 @@ class Run:
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._agent_votes[(agent_id, thread_id)] = now
+        self._record(
+            "board.vote",
+            agent_id,
+            {
+                "thread_id": thread_id,
+                "voter": f"agent:{agent_id}",
+                "value": 1 if up else -1,
+                "votes": votes,
+            },
+        )
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 
@@ -426,12 +461,16 @@ class Run:
 
     # -- lifecycle -------------------------------------------------------------------------
 
-    async def start(self) -> None:
-        if self.state != "created":
+    async def start(self, *, resumed: bool = False) -> None:
+        """Start the agents; ``resumed`` continues a run rebuilt from the log after a restart."""
+        if self.state != ("stopped" if resumed else "created"):
             raise RuntimeError(f"run is {self.state}")
-        self.started_at = self._clock()
-        roster = [a.to_dict() for a in self.agents]
-        self._record("run.created", None, {"config": self.config.model_dump(), "agents": roster})
+        if not resumed:
+            self.started_at = self._clock()
+            roster = [a.to_dict() for a in self.agents]
+            self._record(
+                "run.created", None, {"config": self.config.model_dump(), "agents": roster}
+            )
         self._set_state("running")
         self._running.set()
         self.hub.start()
@@ -451,7 +490,24 @@ class Run:
 
     async def stop(self) -> None:
         if self.state == "stopped":
+            if self.interrupted:  # stopping it while it waits to resume keeps it stopped
+                self.interrupted = False
+                self._record("run.state", None, {"state": "stopped"})
             return
+        await self._halt()
+        self._set_state("stopped")
+        await self.hub.stop()
+
+    async def interrupt(self) -> None:
+        """Stop for a server shutdown, logged as ``interrupted`` so the next server resumes it."""
+        if self.state in ("stopped", "created"):
+            return
+        self._record("run.state", None, {"state": "interrupted", "was": self.state})
+        await self._halt()
+        self.state = "stopped"
+        await self.hub.stop()
+
+    async def _halt(self) -> None:
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
@@ -460,8 +516,6 @@ class Run:
         self._tasks = []
         await self.narrator.stop()
         self._running.set()
-        self._set_state("stopped")
-        await self.hub.stop()
 
     def _set_state(self, state: RunState) -> None:
         self.state = state
@@ -576,7 +630,7 @@ class Run:
             try:
                 thought = await self.policy.act(agent, tools, obs)
             except ToolError as e:
-                thought = f"Tool call rejected: {e}"
+                thought = f"{REJECTED}: {e}"
                 self.stats["errors"] += 1
         if budget.posts < initial_posts:
             self._last_post_turn[agent.id] = turn

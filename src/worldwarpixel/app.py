@@ -1,10 +1,13 @@
+import asyncio
+import logging
 import os
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import NOT_GIVEN, AsyncOpenAI, omit
@@ -30,9 +33,18 @@ from worldwarpixel.sim.events import open_event_log
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.societies import naming_messages, parse_names
 from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
-from worldwarpixel.voice import Murmurer, WhisperTranscriber
+from worldwarpixel.voice import Murmurer, NoTranscriber, OpenAITranscriber, Transcriber
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+SLOW_REQUEST_MS = 1000
+http_logger = logging.getLogger("worldwarpixel.http")
 
 
 class Message(BaseModel):
@@ -88,6 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pools: dict[str, EndpointPool] = {}
     app.state.model_pools = pools
     clients: list[AsyncOpenAI] = []
+    semaphores: dict[str, asyncio.Semaphore] = {}
 
     def pool_for(spec: ModelSpec) -> EndpointPool:
         pool = pools.get(spec.id)
@@ -121,6 +134,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             client, settings.openai_model, settings.max_concurrency
         )
 
+        def semaphore_for(spec: ModelSpec) -> asyncio.Semaphore | None:
+            """One semaphore per preset shared by every run, so N runs can't multiply the cap."""
+            if spec.concurrency is None:
+                return None
+            sem = semaphores.get(spec.id)
+            if sem is None:
+                sem = asyncio.Semaphore(spec.concurrency)
+                semaphores[spec.id] = sem
+            return sem
+
         def make_policy(config: RunConfig) -> Policy:
             if config.policy in ("llm", "llm-guided"):
                 spec = resolve_model(config)
@@ -138,24 +161,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     token_param=spec.token_param,
                     chat_template_kwargs=spec.chat_template_kwargs,
                     reasoning_effort=spec.reasoning_effort,
+                    max_concurrency=spec.concurrency,
+                    semaphore=semaphore_for(spec),
                 )
             return random_policy(config)
 
-        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
-            if run.config.policy not in ("llm", "llm-guided"):
-                raise InterviewError("agents in this world have no language model to talk with")
-            spec = find_model(run.config.model)
-            if spec is None or not model_available(settings, spec):
-                raise InterviewError(f"model {run.config.model!r} is unavailable")
+        async def complete(
+            spec: ModelSpec, key: str, messages: list[dict[str, str]], temperature: float
+        ) -> str:
             limit = spec.max_tokens if spec.max_tokens is not None else settings.agent_max_tokens
             completion = spec.token_param == "max_completion_tokens"
             reasoning: Any = (
                 spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
             )
             response = await pool_for(spec).create(
-                f"interview-{run.id}",
+                key,
                 messages=cast(list[ChatCompletionMessageParam], messages),
-                temperature=0.9,
+                temperature=temperature,
                 timeout=settings.request_timeout,
                 max_tokens=omit if completion else limit,
                 max_completion_tokens=limit if completion else omit,
@@ -168,8 +190,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             return response.choices[0].message.content or ""
 
+        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
+            if run.config.policy not in ("llm", "llm-guided"):
+                raise InterviewError("agents in this world have no language model to talk with")
+            spec = find_model(run.config.model)
+            if spec is None or not model_available(settings, spec):
+                raise InterviewError(f"model {run.config.model!r} is unavailable")
+            return await complete(spec, f"interview-{run.id}", messages, 0.9)
+
+        async def name_societies(config: RunConfig) -> list[str] | None:
+            """Starting society names from the run's model; None falls back to random names."""
+            spec = find_model(config.model)
+            if config.policy == "random" or spec is None or not model_available(settings, spec):
+                return None
+            messages = naming_messages(config.societies, config.society_theme)
+            try:
+                raw = await asyncio.wait_for(complete(spec, "societies", messages, 1.0), 30)
+            except Exception as e:
+                logging.getLogger(__name__).warning("society naming failed: %r", e)
+                return None
+            return parse_names(raw, config.societies) or None
+
         app.state.interview_chat = interview_chat
-        app.state.transcriber = WhisperTranscriber(settings.whisper_model)
+        transcriber: Transcriber = NoTranscriber()
+        if tts is not None and not settings.tts_base_url:
+            transcriber = OpenAITranscriber(
+                tts, settings.transcribe_model, settings.request_timeout
+            )
+        app.state.transcriber = transcriber
         app.state.murmurer = Murmurer(
             client if settings.murmur_condense else None,
             settings.openai_model,
@@ -192,6 +240,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 token_param=spec.token_param,
                 chat_template_kwargs=spec.chat_template_kwargs,
                 reasoning_effort=spec.reasoning_effort,
+                semaphore=semaphore_for(spec),
                 vision=spec.vision,
             )
 
@@ -201,6 +250,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             make_policy,
             make_narrator=make_narrator,
             speech=speech,
+            name_societies=name_societies,
             videos=VideoStore(
                 settings.timelapse_dir,
                 s3_bucket=settings.timelapse_s3_bucket,
@@ -212,6 +262,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             auto_video=settings.timelapse_auto,
         )
+        if settings.resume_runs:
+            app.state.runs.start_resuming()
         try:
             yield
         finally:
@@ -223,6 +275,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_http_request(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        http_logger.error(
+            "%s %s -> error in %.0f ms", request.method, request.url.path, elapsed_ms, exc_info=True
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    level = logging.WARNING if elapsed_ms >= SLOW_REQUEST_MS else logging.INFO
+    if request.url.path != "/health" or level == logging.WARNING:
+        http_logger.log(
+            level,
+            "%s %s -> %d in %.0f ms",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
+
+
 app.include_router(runs_router)
 app.include_router(devices_router)
 app.include_router(rosters_router)

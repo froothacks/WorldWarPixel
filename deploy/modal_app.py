@@ -10,6 +10,7 @@ old and new containers, so up to 60 seconds of events from the old container can
     uv run --with modal==1.6.3 python deploy/modal_app.py retire  # retire legacy Sandbox once
 """
 
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -32,16 +33,18 @@ def build_image() -> modal.Image:
     node = f"node-v{NODE_VERSION}-linux-x64"
     return (
         modal.Image.debian_slim(python_version="3.12")
-        .uv_sync(str(ROOT), extra_options="--no-dev --extra voice")
-        # Society screens' voice clips are transcribed in-process; bake the Whisper weights in.
-        .run_commands(
-            'python -c "from faster_whisper import WhisperModel;'
-            " WhisperModel('base', device='cpu', compute_type='int8')\""
-        )
+        .uv_sync(str(ROOT), extra_options="--no-dev")
         .apt_install("curl", "ca-certificates", "xz-utils", "ffmpeg", "fonts-dejavu-core")
         .run_commands(
             f"curl -fsSL https://nodejs.org/dist/v{NODE_VERSION}/{node}.tar.xz"
             " | tar -xJ -C /usr/local --strip-components=1"
+        )
+        # Cloudflare Tunnel client; the container dials out, so no inbound ports or Modal
+        # custom domains (a paid feature) are needed to serve worldwarpixel.com.
+        .run_commands(
+            "curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/"
+            "cloudflared-linux-amd64 -o /usr/local/bin/cloudflared"
+            " && chmod +x /usr/local/bin/cloudflared"
         )
         .add_local_dir(
             ROOT / "frontend", "/app/frontend", copy=True, ignore=["node_modules", "dist"]
@@ -93,6 +96,8 @@ app = modal.App(APP_NAME)
 )
 @modal.concurrent(max_inputs=1000)
 class Web:
+    _tunnel: subprocess.Popen[bytes] | None = None
+
     @modal.enter()
     def start(self) -> None:
         sys.path.insert(0, "/app/deploy")
@@ -101,9 +106,16 @@ class Web:
         serve.restore()
         self._serve = serve
         self._stop = threading.Event()
+        self._tunnel = self._start_tunnel()
 
         def loop() -> None:
             while not self._stop.wait(serve.INTERVAL):
+                if self._tunnel is not None and self._tunnel.poll() is not None:
+                    print("cloudflared exited; restarting", flush=True)
+                    self._tunnel = self._start_tunnel()
+                elif self._tunnel is None and serve.TUNNEL_TOKEN:
+                    # The initial launch failed (e.g. a transient error); keep retrying.
+                    self._tunnel = self._start_tunnel()
                 try:
                     serve.backup()
                 except Exception as exc:
@@ -111,6 +123,17 @@ class Web:
 
         self._backups = threading.Thread(target=loop, daemon=True)
         self._backups.start()
+
+    def _start_tunnel(self) -> subprocess.Popen[bytes] | None:
+        # A tunnel failure must never take down the app or the backup loop with it.
+        try:
+            tunnel = self._serve.start_tunnel()
+        except Exception as exc:
+            print(f"cloudflared failed to start: {exc!r}", flush=True)
+            return None
+        if tunnel is not None:
+            print("cloudflared tunnel started", flush=True)
+        return tunnel
 
     @modal.asgi_app(label="worldwarpixel-home")
     def web(self) -> Any:
@@ -122,6 +145,12 @@ class Web:
     def stop(self) -> None:
         self._stop.set()
         self._backups.join()  # never overlap the final backup with a periodic one
+        if self._tunnel is not None and self._tunnel.poll() is None:
+            self._tunnel.terminate()
+            try:
+                self._tunnel.wait(10)
+            except subprocess.TimeoutExpired:
+                self._tunnel.kill()
         self._serve.backup()
 
 

@@ -1,14 +1,16 @@
 import asyncio
 import contextlib
+import json
+import logging
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
     Depends,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -19,12 +21,11 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from worldwarpixel.config import get_settings
 from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
-from worldwarpixel.sim.archive import archived_summaries, restore_run
-from worldwarpixel.sim.board import BoardError
-from worldwarpixel.sim.events import EventStore
+from worldwarpixel.sim.archive import archived_board, archived_summaries, restore_run
+from worldwarpixel.sim.board import Board, BoardError
+from worldwarpixel.sim.events import EventStore, RunMeta
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
@@ -33,8 +34,32 @@ from worldwarpixel.sim.timelapse import build_timelapse
 from worldwarpixel.sim.video import VideoError
 from worldwarpixel.videos import VideoStore
 
+RESUME_WINDOW = 600.0
+"""Seconds a new server keeps looking for runs to resume: in a rolling deploy the old server
+only shuts down (and marks its runs interrupted) after the new one is up."""
+RESUME_POLL = 2.0
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def reading(log: EventStore) -> Iterator[EventStore]:
+    """A separate connection for long reads, so they don't hold up the shared one."""
+    reader = log.reader()
+    try:
+        yield reader
+    finally:
+        if reader is not log:
+            reader.close()
+
+
+def _logged_run_meta(log: EventStore, run_id: str) -> RunMeta:
+    meta = log.run_meta(run_id)
+    if meta is None or meta.deleted or meta.config is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    return meta
 
 
 class RunManager:
@@ -43,15 +68,17 @@ class RunManager:
     def __init__(
         self,
         log: EventStore,
-        max_active_runs: int = 4,
+        max_active_runs: int = 20,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
         videos: VideoStore | None = None,
         auto_video: bool = False,
         speech: SpeechSynth | None = None,
+        name_societies: Callable[[RunConfig], Awaitable[list[str] | None]] | None = None,
     ) -> None:
         self.log = log
+        self.name_societies = name_societies
         self.videos = videos
         self.auto_video = auto_video and videos is not None
         self.max_active_runs = max_active_runs
@@ -62,6 +89,7 @@ class RunManager:
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
+        self._resumer: asyncio.Task[None] | None = None
 
     def active(self) -> list[Run]:
         return [r for r in self.runs.values() if r.state != "stopped"]
@@ -71,6 +99,14 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
+        if config.societies and not config.society_names and self.name_societies is not None:
+            names = await self.name_societies(config)
+            if names:
+                config = config.model_copy(update={"society_names": names})
+            if len(self.active()) >= self.max_active_runs:  # another launch finished meanwhile
+                raise HTTPException(
+                    409, f"{self.max_active_runs} runs already active; stop one first"
+                )
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )
@@ -94,9 +130,24 @@ class RunManager:
             return run
         task = self._loading.get(run_id)
         if task is None:
-            task = asyncio.create_task(
-                asyncio.to_thread(restore_run, self.log, run_id, self.speech)
-            )
+
+            def restore() -> Run | None:
+                started = time.perf_counter()
+                with reading(self.log) as reader:
+                    restored = restore_run(self.log, run_id, self.speech, source=reader)
+                elapsed = time.perf_counter() - started
+                if restored is None:
+                    logger.info("run %s not found in log", run_id)
+                else:
+                    logger.info(
+                        "restored run %s pixels=%d in %.1fs",
+                        run_id,
+                        restored.stats["pixels"],
+                        elapsed,
+                    )
+                return restored
+
+            task = asyncio.create_task(asyncio.to_thread(restore))
             self._loading[run_id] = task
             task.add_done_callback(lambda _: self._loading.pop(run_id, None))
         restored = await task
@@ -111,6 +162,75 @@ class RunManager:
                     old.hub.close_all()
                     old.speech.hub.close_all()
         return self.runs[run_id]
+
+    def start_resuming(self, window: float = RESUME_WINDOW, poll: float = RESUME_POLL) -> None:
+        """Keep resuming interrupted runs in the background for ``window`` seconds."""
+        self._resumer = asyncio.create_task(self._resume_loop(window, poll))
+
+    async def _resume_loop(self, window: float, poll: float) -> None:
+        deadline = time.monotonic() + window
+        while True:
+            try:
+                await self.resume_interrupted()
+            except Exception:
+                logger.exception("resuming interrupted runs failed")
+            if time.monotonic() >= deadline:
+                return
+            await asyncio.sleep(poll)
+
+    async def resume_interrupted(self) -> list[Run]:
+        """Rebuild runs a previous server interrupted from the log and set them going again."""
+
+        def find() -> list[str]:
+            with reading(self.log) as reader:
+                return reader.interrupted_runs()
+
+        resumed = []
+        for run_id in await asyncio.to_thread(find):
+            if run_id in self.runs and run_id not in self._restored:
+                continue
+            run = await self._resume(run_id)
+            if run is not None:
+                resumed.append(run)
+        return resumed
+
+    async def _resume(self, run_id: str) -> Run | None:
+        def restore() -> Run | None:
+            with reading(self.log) as reader:
+                return restore_run(self.log, run_id, self.speech, source=reader)
+
+        run = await asyncio.to_thread(restore)
+        if run is None or (run_id in self.runs and run_id not in self._restored):
+            return None
+        try:
+            if len(self.active()) >= self.max_active_runs:
+                raise RuntimeError(f"{self.max_active_runs} runs already active")
+            run.policy = self.make_policy(run.config)
+            run.narrator.set_model(
+                self.make_narrator(run.config)
+                if self.make_narrator is not None
+                else self.narrator_model
+            )
+        except Exception as e:
+            logger.warning("not resuming run %s: %r", run_id, e)
+            self.log.append(run_id, time.time(), "run.state", None, {"state": "stopped"})
+            return None
+        old = self.runs.get(run_id)
+        if old is not None and not old.interrupted:  # stopped as an archive while we rebuilt it
+            return None
+        old = self.runs.pop(run_id, None)
+        if old is not None:  # opened as a stopped archive meanwhile; viewers reconnect to this one
+            self._restored.remove(run_id)
+            old.hub.close_all()
+            old.speech.hub.close_all()
+        self.runs[run_id] = run
+        await run.start(resumed=True)
+        if run.resume_paused:
+            run.pause()
+        if self.auto_video and self.videos is not None:
+            self.videos.start_autosave(self.log, run_id)
+        logger.info("resumed run %s pixels=%d", run_id, run.stats["pixels"])
+        return run
 
     async def summaries(self) -> list[dict[str, Any]]:
         """Runs in memory plus the finished runs only the event log still knows about."""
@@ -133,9 +253,13 @@ class RunManager:
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
+        if self._resumer is not None:
+            self._resumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._resumer
         if self.videos is not None:
             self.videos.stop_all_autosaves()
-        await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        await asyncio.gather(*(r.interrupt() for r in self.runs.values()))
         for run in self.runs.values():
             run.speech.hub.close_all()
         if self.videos is not None:
@@ -207,11 +331,8 @@ async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     return run.summary()
 
 
-def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
-    """God endpoints are open unless GOD_TOKEN is configured; then the header must match."""
-    expected = get_settings().god_token.get_secret_value()
-    if expected and not secrets.compare_digest(x_god_token or "", expected):
-        raise HTTPException(403, "god mode requires a valid X-God-Token")
+def require_god() -> None:
+    """God endpoints are open to everyone."""
 
 
 GodDep = Annotated[None, Depends(require_god)]
@@ -341,13 +462,42 @@ async def get_agent(run_id: str, agent_id: int, manager: ManagerDep) -> dict[str
 
 @router.get("/{run_id}/threads")
 async def list_threads(run_id: str, manager: ManagerDep) -> list[dict[str, Any]]:
-    run = await manager.fetch(run_id)
-    return run.board.listing(limit=100, name_of=run.agent_name)
+    run = manager.runs.get(run_id)
+    if run is not None:
+        return run.board.listing(limit=100, name_of=run.agent_name)
+
+    def read_board() -> tuple[Board, Callable[[int], str]] | None:
+        with reading(manager.log) as reader:
+            _logged_run_meta(reader, run_id)
+            return archived_board(reader, run_id)
+
+    archived = await asyncio.to_thread(read_board)
+    if archived is None:
+        run = await manager.fetch(run_id)
+        return run.board.listing(limit=100, name_of=run.agent_name)
+    board, name_of = archived
+    return board.listing(limit=100, name_of=name_of)
 
 
 @router.get("/{run_id}/threads/{thread_id}")
 async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[dict[str, Any]]:
-    posts = (await manager.fetch(run_id)).board.thread(thread_id)
+    run = manager.runs.get(run_id)
+    if run is not None:
+        posts = run.board.thread(thread_id)
+    else:
+
+        def read_board() -> tuple[Board, Callable[[int], str]] | None:
+            with reading(manager.log) as reader:
+                _logged_run_meta(reader, run_id)
+                return archived_board(reader, run_id, thread_id)
+
+        archived = await asyncio.to_thread(read_board)
+        if archived is None:
+            run = await manager.fetch(run_id)
+            posts = run.board.thread(thread_id)
+        else:
+            board, _ = archived
+            posts = board.thread(thread_id)
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
@@ -384,12 +534,23 @@ async def get_events(
     after: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
 ) -> list[dict[str, Any]]:
-    await manager.fetch(run_id)
-    events = manager.log.read(run_id, after_id=after, limit=limit)
-    return [
-        {"id": e.id, "ts": e.ts, "kind": e.kind, "agent_id": e.agent_id, "payload": e.payload}
-        for e in events
-    ]
+    def read_events() -> list[dict[str, Any]]:
+        with reading(manager.log) as reader:
+            if run_id not in manager.runs:
+                _logged_run_meta(reader, run_id)
+            events = reader.read(run_id, after_id=after, limit=limit)
+            return [
+                {
+                    "id": e.id,
+                    "ts": e.ts,
+                    "kind": e.kind,
+                    "agent_id": e.agent_id,
+                    "payload": e.payload,
+                }
+                for e in events
+            ]
+
+    return await asyncio.to_thread(read_events)
 
 
 @router.get("/{run_id}/timelapse")
@@ -399,10 +560,20 @@ async def get_timelapse(
     frames: Annotated[int, Query(ge=1, le=600)] = 120,
 ) -> Response:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
-    run = await manager.fetch(run_id)
-    data = await asyncio.to_thread(
-        build_timelapse, manager.log, run_id, run.canvas.width, run.canvas.height, frames
-    )
+    run = manager.runs.get(run_id)
+
+    def render() -> bytes:
+        with reading(manager.log) as reader:
+            if run is None:
+                meta = _logged_run_meta(reader, run_id)
+                assert meta.config is not None
+                config = RunConfig.model_validate(json.loads(meta.config))
+                width, height = config.width, config.height
+            else:
+                width, height = run.canvas.width, run.canvas.height
+            return build_timelapse(reader, run_id, width, height, frames)
+
+    data = await asyncio.to_thread(render)
     return Response(content=data, media_type="application/octet-stream")
 
 

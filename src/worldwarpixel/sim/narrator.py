@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from worldwarpixel.routing import EndpointPool, as_pool
+from worldwarpixel.routing import EndpointPool, as_pool, describe_endpoint
 from worldwarpixel.sim.canvas import PALETTE, Canvas
 
 if TYPE_CHECKING:
@@ -87,6 +87,7 @@ class OpenAINarratorModel:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
+        semaphore: asyncio.Semaphore | None = None,
         vision: bool = True,
     ) -> None:
         self._pool = as_pool(client, model)
@@ -98,8 +99,16 @@ class OpenAINarratorModel:
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
+        # Shares the preset's endpoint cap with the agents so narrations count too.
+        self._semaphore = semaphore
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
+        if self._semaphore is None:
+            return await self._complete(messages)
+        async with self._semaphore:
+            return await self._complete(messages)
+
+    async def _complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         # Same endpoint quirks as the agent policy; see models.py.
         if not self._vision:
             messages = [_text_only(m) for m in messages]
@@ -115,6 +124,7 @@ class OpenAINarratorModel:
                 messages=messages,
                 max_completion_tokens=self._max_tokens,
                 temperature=0.4,
+                frequency_penalty=0.5,
                 timeout=self._timeout,
                 reasoning_effort=reasoning,
                 extra_body=extra_body,
@@ -125,6 +135,7 @@ class OpenAINarratorModel:
                 messages=messages,
                 max_tokens=self._max_tokens,
                 temperature=0.4,
+                frequency_penalty=0.5,
                 timeout=self._timeout,
                 reasoning_effort=reasoning,
                 extra_body=extra_body,
@@ -205,7 +216,7 @@ def parse_reply(text: str) -> tuple[str, list[str], list[Any]]:
     """(headline, bullets, raw highlights) from the model's reply; tolerates plain text."""
     data = _extract_json(text)
     if isinstance(data, dict):
-        headline = str(data.get("headline") or "").strip()
+        headline = _tidy_headline(str(data.get("headline") or ""))
         raw_bullets = data.get("bullets")
         bullets = (
             [str(b).strip() for b in raw_bullets if str(b).strip()]
@@ -217,26 +228,41 @@ def parse_reply(text: str) -> tuple[str, list[str], list[Any]]:
             return headline, bullets[:4], highlights if isinstance(highlights, list) else []
     salvaged = _salvage_json(text)
     if salvaged is not None:
-        return salvaged
-    lines = [ln.strip(" -*•\t") for ln in text.splitlines() if ln.strip(" -*•\t")]
+        headline = _tidy_headline(salvaged[0])
+        if headline:
+            return headline, salvaged[1], salvaged[2]
+    if text.strip().startswith("{"):
+        return "(no response)", [], []
+    lines: list[str] = []
+    for line in text.splitlines():
+        cleaned = line.strip(" -*•\t")
+        if cleaned and not re.fullmatch(r'[\s{}\[\],"]+', cleaned):
+            lines.append(cleaned)
     if not lines:
         return "(no response)", [], []
-    return lines[0], lines[1:5], []
+    headline = _tidy_headline(lines[0])
+    return (headline, lines[1:5], []) if headline else ("(no response)", [], [])
 
 
-_JSON_STRING = r'"((?:[^"\\]|\\.)*)"'
+def _tidy_headline(h: str) -> str:
+    headline = next((part.strip() for part in h.split(" | ") if part.strip()), "")
+    headline = " ".join(headline.split())
+    if len(headline) > 160:
+        boundary = headline.rfind(" ", 0, 160)
+        headline = headline[: boundary if boundary > 0 else 160].rstrip() + "…"
+    return headline
 
 
 def _salvage_json(text: str) -> tuple[str, list[str], list[Any]] | None:
     """Pull headline/bullets out of JSON the model truncated or mangled."""
-    m = re.search(r'"headline"\s*:\s*' + _JSON_STRING, text)
+    m = re.search(r'"headline"\s*:\s*"((?:[^"\\]|\\.)*)"?', text)
     if not m:
         return None
     headline = _unescape(m.group(1))
     bullets: list[str] = []
     bm = re.search(r'"bullets"\s*:\s*\[(.*?)(?:\]|$)', text, re.S)
     if bm:
-        for raw in re.findall(_JSON_STRING, bm.group(1)):
+        for raw in re.findall(r'"((?:[^"\\]|\\.)*)"?', bm.group(1)):
             bullet = _unescape(raw).strip()
             if bullet and bullet not in bullets:
                 bullets.append(bullet)
@@ -605,7 +631,8 @@ class Narrator:
         else:
             lines.append("No new posts.")
         if d["previous_headlines"]:
-            lines.append("Your previous headlines: " + " | ".join(d["previous_headlines"]))
+            lines.append("Your previous headlines (do not repeat):")
+            lines += [f"- {headline}" for headline in d["previous_headlines"]]
         return "\n".join(lines)
 
     # -- composing updates -----------------------------------------------------------------
@@ -714,10 +741,11 @@ class Narrator:
                 headline, bullets, raw = parse_reply(reply)
             except Exception as e:  # network / API errors are not fatal for the run
                 self.stats["failures"] += 1
-                log.warning("narrator model call failed: %s", e)
+                where = describe_endpoint(e)
+                log.warning("narrator model call failed via %s: %s", where, e)
                 if kind == "answer":
-                    raise NarratorUnavailable(f"{type(e).__name__}: {e}") from e
-                source, error = "fallback", f"model call failed: {type(e).__name__}"
+                    raise NarratorUnavailable(f"via {where}: {type(e).__name__}: {e}") from e
+                source, error = "fallback", f"model call failed via {where}: {type(e).__name__}"
                 headline, bullets, raw = self.fallback_update(digest)
         highlights = self.clean_highlights(raw)
         if not highlights and kind == "update":

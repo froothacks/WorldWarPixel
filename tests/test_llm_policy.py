@@ -3,9 +3,11 @@ import json
 import random
 from typing import Any, Literal
 
+import httpx2 as httpx
 import pytest
-from openai import NOT_GIVEN
+from openai import NOT_GIVEN, AuthenticationError
 
+from worldwarpixel.routing import Endpoint, EndpointPool
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
@@ -41,6 +43,11 @@ def _response(content: str | None, calls: list[tuple[str, dict[str, Any]]]) -> A
         for i, (n, a) in enumerate(calls)
     ]
     return _Obj(choices=[_Obj(message=_Obj(content=content, tool_calls=tool_calls or None))])
+
+
+def _unauthorized() -> AuthenticationError:
+    request = httpx.Request("POST", "https://x/v1/chat/completions")
+    return AuthenticationError("401", response=httpx.Response(401, request=request), body=None)
 
 
 class FakeCompletions:
@@ -273,11 +280,41 @@ def test_follow_up_failure_keeps_completed_actions() -> None:
     policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
     thought = asyncio.run(policy.act(agent, tools, obs))
     assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
-    assert "model call failed: RuntimeError" in thought
+    assert "model call failed via default: RuntimeError" in thought
     assert len(events) == 1 and policy.stats["failures"] == 1
     client.chat.completions = FakeCompletions([_response("Back.", [])])
     asyncio.run(policy.act(agent, tools, obs))
     assert "last_error" not in policy.stats
+
+
+def test_failed_model_call_names_routed_endpoint() -> None:
+    agent, tools, obs, _ = _setup()
+    clients = [FakeClient([]), FakeClient([])]
+    endpoints = [
+        Endpoint("endpoint-a", "https://a/v1", "m", "bearer", ()),
+        Endpoint("endpoint-b", "https://b/v1", "m", "bearer", ()),
+    ]
+    pool = EndpointPool(list(zip(endpoints, clients, strict=True)))
+    policy = LLMPolicy(pool, "m", vision=False)
+    route_key = f"{policy._route_prefix}:{agent.id}"
+    routed_endpoint = pool.route(route_key)
+    routed_client_index = next(
+        i for i, endpoint in enumerate(endpoints) if endpoint.name == routed_endpoint
+    )
+    routed_client = clients[routed_client_index]
+
+    class Unauthorized(FakeCompletions):
+        async def create(self, **kw: Any) -> Any:
+            self.requests.append(kw)
+            raise _unauthorized()
+
+    routed_client.chat.completions = Unauthorized([])
+    thought = asyncio.run(policy.act(agent, tools, obs))
+
+    assert f"via {routed_endpoint}" in policy.stats["last_error"]
+    assert f"via {routed_endpoint}" in thought
+    assert len(routed_client.chat.completions.requests) == 1
+    assert sum(len(client.chat.completions.requests) for client in clients) == 1
 
 
 def test_out_of_range_arguments_are_clamped() -> None:
@@ -363,6 +400,62 @@ def test_pixel_shorthand_and_missing_colour() -> None:
     asyncio.run(policy.act(agent, tools, obs))
     assert [e[1]["color"] for e in events] == [3, agent.color, agent.color]
     assert policy.stats["tool_errors"] == 0
+
+
+def test_max_concurrency_limits_in_flight_model_calls() -> None:
+    active = 0
+    peak = 0
+
+    class Completions:
+        async def create(self, **kw: Any) -> Any:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return _response(None, [])
+
+    class Client:
+        chat = _Obj(completions=Completions())
+
+    agent, tools, obs, _events = _setup()
+    policy = LLMPolicy(Client(), "m", vision=False, max_concurrency=1)  # type: ignore[arg-type]
+
+    async def main() -> None:
+        await asyncio.gather(*(policy.act(agent, tools, obs) for _ in range(4)))
+
+    asyncio.run(main())
+    assert peak == 1
+
+
+def test_shared_semaphore_caps_multiple_policies_on_one_endpoint() -> None:
+    active = 0
+    peak = 0
+
+    class Completions:
+        async def create(self, **kw: Any) -> Any:
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return _response(None, [])
+
+    class Client:
+        chat = _Obj(completions=Completions())
+
+    agent, tools, obs, _events = _setup()
+    shared = asyncio.Semaphore(1)
+    policies = [
+        LLMPolicy(Client(), "m", vision=False, semaphore=shared)  # type: ignore[arg-type]
+        for _ in range(3)
+    ]
+
+    async def main() -> None:
+        await asyncio.gather(*(p.act(agent, tools, obs) for p in policies for _ in range(2)))
+
+    asyncio.run(main())
+    assert peak == 1
 
 
 def test_regions_report_busiest_tiles_with_dominant_colour() -> None:

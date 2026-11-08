@@ -36,6 +36,7 @@ APP_SECRETS=(
   MODAL_KEY MODAL_SECRET
   CHRYZTOPH_MODAL_KEY CHRYZTOPH_MODAL_SECRET
   MEGANWCHUN_MODAL_KEY MEGANWCHUN_MODAL_SECRET
+  LEONFATTAKHOV_MODAL_KEY LEONFATTAKHOV_MODAL_SECRET
   GOD_TOKEN DATABASE_URL DEVICE_TOKENS
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 )
@@ -108,7 +109,7 @@ while :; do
     SUCCESS) break ;;
     FAILURE|CANCELLED|TIMEOUT|INTERNAL_ERROR) echo "Cloud Build $BUILD_ID ended $STATUS" >&2; exit 1 ;;
   esac
-  sleep 15
+  sleep 5
 done
 
 DATA_VOLUME="name=data,type=cloud-storage,bucket=$BUCKET"
@@ -116,7 +117,7 @@ DATA_VOLUME_MOUNT="volume=data,mount-path=/data"
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
   --port 8080 --cpu 4 --memory 8Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
-  --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
+  --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2 --cpu-boost
   --add-volume "$DATA_VOLUME"
   --add-volume-mount "$DATA_VOLUME_MOUNT" --service-account "$RUNTIME_SA"
 )

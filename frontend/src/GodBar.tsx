@@ -14,10 +14,18 @@ interface Props {
   tool: GodTool | null;
   onTool: (tool: GodTool | null) => void;
   onRun: (run: RunSummary) => void;
+  onError: (title: string, detail?: string) => void;
   onClose: () => void;
 }
 
 const SIZES = [1, 2, 4, 8, 16];
+
+const ACTION_ERRORS: Record<string, string> = {
+  announce: "Announcement failed",
+  pace: "Couldn't change the pace",
+  model: "Couldn't switch the model",
+  clear: "Clear failed",
+};
 
 export default function GodBar({
   runId,
@@ -26,6 +34,7 @@ export default function GodBar({
   tool,
   onTool,
   onRun,
+  onError,
   onClose,
 }: Props) {
   const [color, setColor] = useState(5);
@@ -47,7 +56,7 @@ export default function GodBar({
     try {
       await fn();
     } catch (e) {
-      alert((e as Error).message);
+      onError(ACTION_ERRORS[label] ?? "God mode action failed", (e as Error).message);
     } finally {
       setBusy(null);
     }

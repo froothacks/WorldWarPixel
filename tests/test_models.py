@@ -11,6 +11,8 @@ SECRETS = (
     "CHRYZTOPH_MODAL_SECRET",
     "MEGANWCHUN_MODAL_KEY",
     "MEGANWCHUN_MODAL_SECRET",
+    "LEONFATTAKHOV_MODAL_KEY",
+    "LEONFATTAKHOV_MODAL_SECRET",
 )
 
 
@@ -42,6 +44,13 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert qwen.reasoning_effort is None
     assert qwen.max_tokens is None  # falls back to AGENT_MAX_TOKENS
 
+    deepseek = specs["deepseek"]
+    assert deepseek.max_tokens == 3000
+    # The shared DeepSeek endpoint 429s above ~16 concurrent calls; the preset caps it.
+    assert deepseek.concurrency == 16
+    assert specs["gpt-6-luna"].concurrency is None
+    assert specs["qwen"].concurrency is None
+
     glm = specs["glm"]
     assert glm.model == "nvidia/GLM-5.3-Flash-NVFP4"
     assert not glm.vision and not glm.chat_template_kwargs
@@ -62,7 +71,12 @@ def test_modal_endpoints_pair_secrets_with_their_workspace() -> None:
             assert e.secrets == (f"{prefix}MODAL_KEY", f"{prefix}MODAL_SECRET")
     glm = find_model("glm")
     assert glm is not None
-    assert {e.name for e in glm.endpoints} == {"advait-m", "chryztoph", "meganwchun"}
+    assert {e.name for e in glm.endpoints} == {
+        "advait-m",
+        "chryztoph",
+        "meganwchun",
+        "leonfattakhov",
+    }
     assert {e.model for e in glm.endpoints} == {glm.model}
     qwen = find_model("qwen")
     assert qwen is not None
@@ -72,6 +86,17 @@ def test_modal_endpoints_pair_secrets_with_their_workspace() -> None:
         ("CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"),
     ]
     assert [e.model for e in qwen.endpoints] == ["world-war-pixel", "qwen"]
+    deepseek = find_model("deepseek")
+    assert deepseek is not None
+    assert [e.name for e in deepseek.endpoints] == ["advait-m", "leonfattakhov"]
+    assert [e.secrets for e in deepseek.endpoints] == [
+        ("MODAL_KEY", "MODAL_SECRET"),
+        ("LEONFATTAKHOV_MODAL_KEY", "LEONFATTAKHOV_MODAL_SECRET"),
+    ]
+    assert [e.model for e in deepseek.endpoints] == [
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+    ]
 
 
 def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> None:

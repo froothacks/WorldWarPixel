@@ -223,7 +223,7 @@ def render_video(
     run_id: str,
     out: Path,
     *,
-    duration: float = 20.0,
+    duration: float | None = None,
     fps: int = FPS,
     ffmpeg: str = "ffmpeg",
 ) -> dict[str, Any]:
@@ -236,7 +236,13 @@ def render_video(
     if not ffmpeg_available(ffmpeg):
         raise VideoError(f"{ffmpeg} not found")
     width, height = int(tl.config["width"]), int(tl.config["height"])
-    frames = max(1, min(int(duration * fps), MAX_FRAMES))
+    t0, t1 = tl.t0, tl.t1
+    if duration is None:
+        run_seconds = max(t1 - t0, 1e-6)
+        fps = max(1, min(fps, int(MAX_FRAMES / run_seconds)))
+        frames = max(1, min(int(run_seconds * fps), MAX_FRAMES))
+    else:
+        frames = max(1, min(int(duration * fps), MAX_FRAMES))
     composer = FrameComposer(tl, width, height)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp.mp4")
@@ -250,11 +256,14 @@ def render_video(
     started = time.monotonic()
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     assert proc.stdin is not None
-    t0, t1 = tl.t0, tl.t1
     step = (t1 - t0) / frames if t1 > t0 else 0.0
     state = bytearray(width * height)
     pixels_so_far = 0
-    relevant = (e for e in iter_events(log, run_id) if e.kind in ("pixel", "god.clear_canvas"))
+    relevant = (
+        e
+        for e in iter_events(log, run_id, canvas_only=True)
+        if e.kind in ("pixel", "god.clear_canvas")
+    )
     events = takewhile(lambda e: e.id <= tl.last_id, relevant)
     nxt = next(events, None)
     posts_sorted = sorted(tl.posts, key=lambda p: p["ts"])

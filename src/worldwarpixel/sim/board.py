@@ -145,6 +145,10 @@ class Board:
     def votes(self, thread_id: int) -> int:
         return self._votes.get(thread_id, 0)
 
+    def set_votes(self, thread_id: int, votes: int) -> None:
+        if thread_id in self._replies:
+            self._votes[thread_id] = votes
+
     def rank(self, thread_id: int) -> float:
         """Most recent activity first; each net vote counts as VOTE_BOOST seconds newer/older."""
         return self.last_activity(thread_id) + self.votes(thread_id) * VOTE_BOOST

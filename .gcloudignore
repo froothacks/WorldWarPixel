@@ -11,3 +11,5 @@ timelapses
 *.env
 .env*
 /data
+firmware
+scripts

@@ -205,7 +205,8 @@ void mic_ptt_task(void *arg)
 
         char start[112];
         STATE_LOCK();
-        bool interview = g_state.mode == MODE_INTERVIEW;
+        bool interview = g_state.mode == MODE_INTERVIEW ||
+                         (g_state.run_active && g_state.n_societies == 0);
         int agent = g_state.iv_agent.id;
         STATE_UNLOCK();
         if (interview && agent >= 0)

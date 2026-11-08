@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { InlineError } from "./Errors";
 
 interface Frame {
   ts: number;
@@ -203,10 +204,11 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
         <header>
           <strong>Timelapse</strong>
           <span className="muted small">
-            {error ??
-              (data
+            {error ? (
+              <InlineError message={error} />
+            ) : data
                 ? `${data.frames.length} frames · ${Math.round((data.frames.at(-1)?.ts ?? t0) - t0)} s of history`
-                : "loading…")}
+                : "loading…"}
           </span>
           <span className="spacer" />
           <button className="ghost" onClick={onClose}>

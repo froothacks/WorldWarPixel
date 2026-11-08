@@ -226,6 +226,10 @@ static void handle_state(const cJSON *root)
         g_state.members = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(soc, "members"));
         g_state.joined  = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(soc, "joined"));
         g_state.left    = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(soc, "left"));
+    } else {   /* no society here (none chosen, or an interview-only run) */
+        g_state.society_name[0] = 0;
+        g_state.society_color = 0;
+        g_state.members = g_state.joined = g_state.left = 0;
     }
 
     const cJSON *arr = cJSON_GetObjectItem(root, "societies");

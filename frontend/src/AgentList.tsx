@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Agent, Society } from "./api";
+import { errorHint } from "./errorUtils";
 
 interface Props {
   agents: Agent[];
@@ -63,7 +64,7 @@ export default function AgentList({ agents, societies = [], palette, selected, l
                   </span>
                 )}
               </span>
-              <span className="agent-thought">{lastThought.get(a.id) ?? a.last_thought?.thought ?? "no turn yet"}</span>
+              <Thought text={lastThought.get(a.id) ?? a.last_thought?.thought ?? "no turn yet"} />
             </span>
             <span className={`status status-${a.status}`}>{a.status}</span>
           </button>
@@ -76,5 +77,15 @@ export default function AgentList({ agents, societies = [], palette, selected, l
         )}
       </div>
     </aside>
+  );
+}
+
+function Thought({ text }: { text: string }) {
+  if (!text.startsWith("(model call failed")) return <span className="agent-thought">{text}</span>;
+  const hint = errorHint(text);
+  return (
+    <span className="agent-thought failed" title={text}>
+      Model call failed{hint ? ` · ${hint}` : ""}
+    </span>
   );
 }

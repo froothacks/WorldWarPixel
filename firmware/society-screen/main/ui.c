@@ -110,15 +110,24 @@ static void draw_status(const app_state_t *st)
     gfx_draw_text(8, 5, txt, 1, col);
 }
 
+/* the session on screen has no societies: interview only */
+static bool interview_only(const app_state_t *st)
+{
+    return st->conn == CONN_WS && st->run_active && st->n_societies == 0;
+}
+
 static void draw_tabs(const app_state_t *st)
 {
     const char *lbl[2] = {"SOCIETY", "INTERVIEW"};
     const int xs[2] = {TAB1_X, TAB2_X};
+    bool no_soc = interview_only(st);
     for (int i = 0; i < 2; i++) {
         bool on = (int)st->mode == i;
-        gfx_fill_rect(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : C_PANEL);
+        bool off = no_soc && i == MODE_SOCIETY;
+        gfx_fill_rect(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : off ? C_BG : C_PANEL);
         gfx_draw_rect_outline(xs[i], TAB_Y, TAB_W, TAB_H, on ? C_TEXT : C_LINE);
-        gfx_draw_text_centered(xs[i] + TAB_W / 2, TAB_Y + 7, lbl[i], 1, on ? C_BG : C_DIM);
+        gfx_draw_text_centered(xs[i] + TAB_W / 2, TAB_Y + 7, lbl[i], 1,
+                               on ? C_BG : off ? C_LINE : C_DIM);
     }
 }
 
@@ -350,7 +359,7 @@ static void draw_session_picker(const app_state_t *st, bool flash)
     if (st->n_runs == 0) {
         gfx_draw_text_centered(LCD_W / 2, 170, "NO LIVE SESSIONS", 2, C_YELLOW);
         draw_wrapped(24, 200, LCD_W - 48,
-                     "Start a run with societies on the website; it shows up here.", 1, C_DIM, 3);
+                     "Start a run on the website; it shows up here.", 1, C_DIM, 3);
     }
     if (st->n_runs > 0) {
         bool cur = !st->run_pinned;
@@ -370,7 +379,8 @@ static void draw_session_picker(const app_state_t *st, bool flash)
         ellipsize(l1, LCD_W - 32, 2);
         gfx_draw_text(16, y + 4, l1, 2, C_TEXT);
         char l2[96];
-        snprintf(l2, sizeof(l2), "%s - %s", ri->model, ri->soc_names);
+        snprintf(l2, sizeof(l2), "%s - %s", ri->model,
+                 ri->soc_names[0] ? ri->soc_names : "no societies, interview only");
         ellipsize(l2, LCD_W - 32, 1);
         gfx_draw_text(16, y + 22, l2, 1, C_DIM);
     }
@@ -552,6 +562,9 @@ void ui_task(void *arg)
         STATE_LOCK();
         st = g_state;                  /* shallow copy incl. pointers */
         STATE_UNLOCK();
+        bool no_soc = interview_only(&st);
+        if (no_soc)
+            st.mode = MODE_INTERVIEW;  /* shown as interview; the saved mode is kept */
         if (st.conn == CONN_WS && prev_conn != CONN_WS)
             picking = true;            /* every new connection starts at the session list */
         prev_conn = st.conn;
@@ -578,7 +591,7 @@ void ui_task(void *arg)
         /* mode tabs (top right) */
         if (tap && ty < TAB_Y + TAB_H + 4 && tx >= TAB1_X) {
             int mode = tx >= TAB2_X ? MODE_INTERVIEW : MODE_SOCIETY;
-            if (mode != (int)st.mode) {
+            if (mode != (int)st.mode && !(no_soc && mode == MODE_SOCIETY)) {
                 net_set_mode(mode);
                 spk_stop();
                 page = 0;
@@ -659,7 +672,7 @@ void ui_task(void *arg)
             } else if (r >= 1 && r - 1 < st.n_runs && r < SP_ROWS) {
                 net_run_select(st.runs[r - 1].id);
                 picking = false;
-                if (interview)
+                if (interview || !st.runs[r - 1].soc_names[0])
                     net_agents_list();
             }
         }

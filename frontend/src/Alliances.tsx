@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { InlineError } from "./Errors";
 import { api, type Agent, type WorldEdge, type WorldGraph } from "./api";
 
 interface Props {
@@ -157,7 +158,11 @@ export default function Alliances({ runId, running, agents, palette, highlight, 
         )}
       </header>
       <div className="graph" ref={wrap}>
-        {error && <p className="muted small pad">{error}</p>}
+        {error && (
+          <p className="pad">
+            <InlineError message={error} />
+          </p>
+        )}
         {graph && graph.edges.length === 0 && <p className="muted small pad empty">No cross-border replies or raids yet.</p>}
         <svg width={size.w} height={size.h}>
           {shown.edges.map((e) => {

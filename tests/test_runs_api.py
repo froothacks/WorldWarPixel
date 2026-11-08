@@ -76,7 +76,12 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
     }
     assert all(set(m) == {"id", "label", "model", "available", "endpoints"} for m in models)
     glm = next(m for m in models if m["id"] == "glm")
-    assert [e["name"] for e in glm["endpoints"]] == ["advait-m", "chryztoph", "meganwchun"]
+    assert [e["name"] for e in glm["endpoints"]] == [
+        "advait-m",
+        "chryztoph",
+        "meganwchun",
+        "leonfattakhov",
+    ]
     assert glm["endpoints"][1]["secrets"] == ["CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"]
     assert glm["endpoints"][0]["calls"] == 0 and glm["endpoints"][0]["cooling"] is False
 
@@ -120,7 +125,8 @@ def test_random_runs_ignore_the_model_field(client: TestClient) -> None:
 
 
 def test_active_run_cap(client: TestClient) -> None:
-    ids = [client.post("/runs", json=SMALL).json()["id"] for _ in range(4)]
+    cap = get_settings().max_active_runs
+    ids = [client.post("/runs", json=SMALL).json()["id"] for _ in range(cap)]
     assert client.post("/runs", json=SMALL).status_code == 409
     client.post(f"/runs/{ids[0]}/stop")
     assert client.post("/runs", json=SMALL).status_code == 201
