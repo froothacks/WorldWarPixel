@@ -16,6 +16,7 @@
 #include "esp_websocket_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 #include "cJSON.h"
 
@@ -40,6 +41,14 @@ static uint8_t s_last_op;          /* opcode of the frame being received */
 static char *s_txt;                /* reassembly buffer for text frames split across events */
 static int s_txt_len;
 #define TXT_MAX (24 * 1024)
+
+/* cJSON makes a small allocation per value; a 100-agent list would otherwise eat the internal
+ * RAM that WiFi and TLS need, so its nodes live in PSRAM */
+static void *json_malloc(size_t n)
+{
+    void *p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+    return p ? p : malloc(n);
+}
 
 static void ws_task(void *arg);
 static void canvas_task(void *arg);
@@ -366,7 +375,9 @@ static void handle_agents(const cJSON *root)
         }
     }
     STATE_UNLOCK();
-    ESP_LOGI(TAG, "agents: %d in run %s", g_state.n_agents, run ? run : "-");
+    ESP_LOGI(TAG, "agents: %d in run %s (internal free %u, ws stack left %u)", g_state.n_agents,
+             run ? run : "-", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
 }
 
 static void handle_interview(const char *type, const cJSON *root)
@@ -561,6 +572,7 @@ static void ws_task(void *arg)
         esp_websocket_client_config_t cfg = {
             .uri = uri,
             .buffer_size = 8192,
+            .task_stack = 8192,            /* frames are parsed in this task's event handler */
             .disable_auto_reconnect = true,
             .network_timeout_ms = 30000,   /* cold starts can be slow */
             .ping_interval_sec = 15,
@@ -891,6 +903,8 @@ void net_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    cJSON_Hooks hooks = {.malloc_fn = json_malloc, .free_fn = free};
+    cJSON_InitHooks(&hooks);
     xTaskCreate(ws_task, "ws", 6144, NULL, 5, &s_ws_task);
     xTaskCreate(canvas_task, "canvas", 6144, NULL, 4, NULL);
 }
