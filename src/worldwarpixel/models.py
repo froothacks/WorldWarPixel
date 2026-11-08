@@ -75,6 +75,17 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),
+        ModelSpec(
+            id="glm",
+            label="GLM 5.3 Flash NVFP4 (advait-m)",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url=settings.glm_base_url,
+            auth="modal",
+            # Reasons (reasoning_content) before the tool call, so it needs the large budget.
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
+        ),
         # chryztoph workspace endpoints: proxy auth comes from CHRYZTOPH_MODAL_KEY/_SECRET.
         ModelSpec(
             id="qwen-c",
@@ -86,7 +97,7 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
         ),
         ModelSpec(
             id="glm-5.3-flash",
-            label="GLM 5.3 Flash NVFP4",
+            label="GLM 5.3 Flash NVFP4 (chryztoph)",
             model="nvidia/GLM-5.3-Flash-NVFP4",
             base_url="https://chryztoph--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1",
             auth="modal",
