@@ -194,6 +194,7 @@ async def voice(run: Run, agent: AgentSpec, text: str) -> AsyncGenerator[bytes, 
         return
     # Resample whole src:dst sample blocks so chunk edges land on output samples.
     block = 2 * (synth.sample_rate // math.gcd(synth.sample_rate, RATE))
+    block *= max(1, 2400 // block)  # resample() passes clips under 2 samples through as-is
     pending = b""
     async for chunk in stream(text, voice, instructions):
         pending += chunk
