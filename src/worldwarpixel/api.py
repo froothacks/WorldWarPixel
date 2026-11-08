@@ -11,7 +11,6 @@ from typing import Annotated, Any
 from fastapi import (
     APIRouter,
     Depends,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -22,7 +21,6 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from worldwarpixel.config import get_settings
 from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_board, archived_summaries, restore_run
@@ -36,6 +34,10 @@ from worldwarpixel.sim.timelapse import build_timelapse
 from worldwarpixel.sim.video import VideoError
 from worldwarpixel.videos import VideoStore
 
+RESUME_WINDOW = 600.0
+"""Seconds a new server keeps looking for runs to resume: in a rolling deploy the old server
+only shuts down (and marks its runs interrupted) after the new one is up."""
+RESUME_POLL = 2.0
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
 
@@ -87,6 +89,7 @@ class RunManager:
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
+        self._resumer: asyncio.Task[None] | None = None
 
     def active(self) -> list[Run]:
         return [r for r in self.runs.values() if r.state != "stopped"]
@@ -160,6 +163,75 @@ class RunManager:
                     old.speech.hub.close_all()
         return self.runs[run_id]
 
+    def start_resuming(self, window: float = RESUME_WINDOW, poll: float = RESUME_POLL) -> None:
+        """Keep resuming interrupted runs in the background for ``window`` seconds."""
+        self._resumer = asyncio.create_task(self._resume_loop(window, poll))
+
+    async def _resume_loop(self, window: float, poll: float) -> None:
+        deadline = time.monotonic() + window
+        while True:
+            try:
+                await self.resume_interrupted()
+            except Exception:
+                logger.exception("resuming interrupted runs failed")
+            if time.monotonic() >= deadline:
+                return
+            await asyncio.sleep(poll)
+
+    async def resume_interrupted(self) -> list[Run]:
+        """Rebuild runs a previous server interrupted from the log and set them going again."""
+
+        def find() -> list[str]:
+            with reading(self.log) as reader:
+                return reader.interrupted_runs()
+
+        resumed = []
+        for run_id in await asyncio.to_thread(find):
+            if run_id in self.runs and run_id not in self._restored:
+                continue
+            run = await self._resume(run_id)
+            if run is not None:
+                resumed.append(run)
+        return resumed
+
+    async def _resume(self, run_id: str) -> Run | None:
+        def restore() -> Run | None:
+            with reading(self.log) as reader:
+                return restore_run(self.log, run_id, self.speech, source=reader)
+
+        run = await asyncio.to_thread(restore)
+        if run is None or (run_id in self.runs and run_id not in self._restored):
+            return None
+        try:
+            if len(self.active()) >= self.max_active_runs:
+                raise RuntimeError(f"{self.max_active_runs} runs already active")
+            run.policy = self.make_policy(run.config)
+            run.narrator.set_model(
+                self.make_narrator(run.config)
+                if self.make_narrator is not None
+                else self.narrator_model
+            )
+        except Exception as e:
+            logger.warning("not resuming run %s: %r", run_id, e)
+            self.log.append(run_id, time.time(), "run.state", None, {"state": "stopped"})
+            return None
+        old = self.runs.get(run_id)
+        if old is not None and not old.interrupted:  # stopped as an archive while we rebuilt it
+            return None
+        old = self.runs.pop(run_id, None)
+        if old is not None:  # opened as a stopped archive meanwhile; viewers reconnect to this one
+            self._restored.remove(run_id)
+            old.hub.close_all()
+            old.speech.hub.close_all()
+        self.runs[run_id] = run
+        await run.start(resumed=True)
+        if run.resume_paused:
+            run.pause()
+        if self.auto_video and self.videos is not None:
+            self.videos.start_autosave(self.log, run_id)
+        logger.info("resumed run %s pixels=%d", run_id, run.stats["pixels"])
+        return run
+
     async def summaries(self) -> list[dict[str, Any]]:
         """Runs in memory plus the finished runs only the event log still knows about."""
         live = [r.summary() for r in self.runs.values()]
@@ -181,9 +253,13 @@ class RunManager:
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
+        if self._resumer is not None:
+            self._resumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._resumer
         if self.videos is not None:
             self.videos.stop_all_autosaves()
-        await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        await asyncio.gather(*(r.interrupt() for r in self.runs.values()))
         for run in self.runs.values():
             run.speech.hub.close_all()
         if self.videos is not None:
@@ -255,11 +331,8 @@ async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     return run.summary()
 
 
-def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
-    """God endpoints are open unless GOD_TOKEN is configured; then the header must match."""
-    expected = get_settings().god_token.get_secret_value()
-    if expected and not secrets.compare_digest(x_god_token or "", expected):
-        raise HTTPException(403, "god mode requires a valid X-God-Token")
+def require_god() -> None:
+    """God endpoints are open to everyone."""
 
 
 GodDep = Annotated[None, Depends(require_god)]

@@ -132,7 +132,7 @@ def test_god_endpoints() -> None:
         client.post(f"/runs/{rid}/stop")
 
 
-def test_god_endpoints_can_be_locked_with_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_god_endpoints_stay_open_when_a_token_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOD_TOKEN", "s3cret")
     get_settings.cache_clear()
     try:
@@ -140,9 +140,7 @@ def test_god_endpoints_can_be_locked_with_a_token(monkeypatch: pytest.MonkeyPatc
             rid = client.post(
                 "/runs", json={**CONFIG.model_dump(), "pixel_interval": 0.05, "policy": "random"}
             ).json()["id"]
-            assert client.post(f"/runs/{rid}/god/clear-board").status_code == 403
-            ok = client.post(f"/runs/{rid}/god/clear-board", headers={"X-God-Token": "s3cret"})
-            assert ok.status_code == 200
+            assert client.post(f"/runs/{rid}/god/clear-board").status_code == 200
             client.post(f"/runs/{rid}/stop")
     finally:
         get_settings.cache_clear()

@@ -195,6 +195,12 @@ MIGRATIONS = (
     ),
     Migration(
         version=3,
+        name="run_state",
+        sqlite_statements=("ALTER TABLE runs ADD COLUMN state TEXT",),
+        postgres_statements=("ALTER TABLE runs ADD COLUMN IF NOT EXISTS state TEXT",),
+    ),
+    Migration(
+        version=4,
         name="posts",
         sqlite_statements=(
             """
@@ -281,7 +287,7 @@ MIGRATIONS = (
         ),
     ),
     Migration(
-        version=4,
+        version=5,
         name="events_run_canvas",
         sqlite_statements=(
             f"CREATE INDEX IF NOT EXISTS events_run_canvas ON events (run_id, id) "
