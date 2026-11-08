@@ -59,7 +59,10 @@ def restore_run(
         elif e.kind == "god.clear_board":
             run.board.clear()
         elif e.kind == "board.vote":
-            run.board.set_votes(int(p["thread_id"]), int(p["votes"]))
+            if "voter" in p:
+                run.board.vote(int(p["thread_id"]), str(p["voter"]), int(p["value"]))
+            else:
+                run.board.set_votes(int(p["thread_id"]), int(p["votes"]))
         elif e.kind == "agent.thought":
             stats["turns"] += 1
             stats["errors"] += str(p.get("thought", "")).startswith(REJECTED)

@@ -320,7 +320,11 @@ class Run:
     def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
         """A viewer's up/down click on a thread; it shifts where the board ranks it."""
         votes = self.board.vote(thread_id, voter, value)
-        self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
+        self._record(
+            "board.vote",
+            None,
+            {"thread_id": thread_id, "voter": voter, "value": value, "votes": votes},
+        )
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 
@@ -338,7 +342,12 @@ class Run:
         self._record(
             "board.vote",
             agent_id,
-            {"thread_id": thread_id, "value": 1 if up else -1, "votes": votes},
+            {
+                "thread_id": thread_id,
+                "voter": f"agent:{agent_id}",
+                "value": 1 if up else -1,
+                "votes": votes,
+            },
         )
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
