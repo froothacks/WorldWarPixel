@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 import secrets
 import time
 from collections.abc import Awaitable, Callable, Iterator
@@ -36,6 +37,8 @@ from worldwarpixel.videos import VideoStore
 
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -118,8 +121,20 @@ class RunManager:
         if task is None:
 
             def restore() -> Run | None:
+                started = time.perf_counter()
                 with reading(self.log) as reader:
-                    return restore_run(self.log, run_id, self.speech, source=reader)
+                    restored = restore_run(self.log, run_id, self.speech, source=reader)
+                elapsed = time.perf_counter() - started
+                if restored is None:
+                    logger.info("run %s not found in log", run_id)
+                else:
+                    logger.info(
+                        "restored run %s pixels=%d in %.1fs",
+                        run_id,
+                        restored.stats["pixels"],
+                        elapsed,
+                    )
+                return restored
 
             task = asyncio.create_task(asyncio.to_thread(restore))
             self._loading[run_id] = task
