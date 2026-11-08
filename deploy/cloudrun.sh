@@ -26,7 +26,7 @@ CACHE_REPO="$REGION-docker.pkg.dev/$PROJECT/$REPO/cache"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 # Cloud SQL instance the app connects to via DATABASE_URL (Unix socket at /cloudsql/...);
 # set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
-CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE-worldwarpixel-pg}"
 
 # App secrets Cloud Run reads from Secret Manager (secret name = env var name). Anything else in
 # the project stays out. Model endpoint secrets must match models.py (tests/test_deploy_secrets.py).
