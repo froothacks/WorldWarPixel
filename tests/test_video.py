@@ -78,6 +78,24 @@ def test_render_video_writes_mp4_and_metadata(tmp_path: Path) -> None:
     assert store.meta("missing") is None
 
 
+def test_narrator_headline_after_last_pixel_extends_the_span() -> None:
+    log = EventLog()
+    _run(log)
+    tl = load_timeline(log, "v")
+    assert tl is not None
+    last_activity = max(e.ts for e in log.read("v", limit=100_000) if e.kind in ("pixel", "post"))
+    assert tl.t1 is not None and tl.t1 >= tl.headlines[-1][0] > last_activity
+
+
+def test_reader_opens_a_second_connection_for_file_logs(tmp_path: Path) -> None:
+    log = EventLog(tmp_path / "e.db")
+    _run(log)
+    reader = log.reader()
+    assert reader is not log and len(reader.read("v", limit=10)) == 10
+    reader.close()
+    assert EventLog().reader() is not None
+
+
 def test_render_without_activity_raises(tmp_path: Path) -> None:
     log = EventLog()
     log.append("empty", 1.0, "run.created", None, {"config": CONFIG.model_dump(), "agents": []})
@@ -105,6 +123,43 @@ def test_s3_mirror_uploads_video_and_sidecar(
         ("clips", "wwp/v.mp4", "video/mp4"),
         ("clips", "wwp/v.json", "application/json"),
     ]
+
+
+@needs_ffmpeg
+def test_s3_failure_keeps_the_local_video_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenS3:
+        def upload_file(self, *a: Any, **kw: Any) -> None:
+            raise RuntimeError("bucket unreachable")
+
+    monkeypatch.setattr(VideoStore, "_client", lambda self: BrokenS3())
+    log = EventLog()
+    _run(log)
+    store = VideoStore(tmp_path, s3_bucket="clips", duration=2)
+    meta = store.render_sync(log, "v")
+    assert "s3" not in meta and store.meta("v") is not None and len(store.list()) == 1
+
+
+@needs_ffmpeg
+def test_scheduled_render_after_stop_is_fresh_and_drained(tmp_path: Path) -> None:
+    async def main() -> None:
+        log = EventLog()
+        run = Run("v", CONFIG, log, RandomWalkPolicy(seed=5))
+        await run.start()
+        await asyncio.sleep(0.2)
+        store = VideoStore(tmp_path, duration=2)
+        early = asyncio.ensure_future(store.render(log, "v"))
+        await asyncio.sleep(0.05)
+        await run.stop()
+        store.schedule(log, "v")
+        snapshot = await early
+        await store.drain()
+        final = store.meta("v")
+        assert final is not None and final["pixels"] == run.stats["pixels"] >= snapshot["pixels"]
+        assert final["rendered_at"] > snapshot["rendered_at"]
+
+    asyncio.run(main())
 
 
 @pytest.fixture
