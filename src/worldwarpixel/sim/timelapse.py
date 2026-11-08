@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import struct
+import time
 from collections.abc import Iterable, Iterator
 
 from worldwarpixel.sim.events import Event, EventStore
@@ -18,6 +19,7 @@ from worldwarpixel.sim.events import Event, EventStore
 MAX_FRAMES = 0xFFFF
 PAGE = 10_000
 CHUNK_SIZE = 64 * 1024
+CHUNK_FLUSH_INTERVAL = 0.25
 
 
 def iter_events(log: EventStore, run_id: str, *, canvas_only: bool = False) -> Iterable[Event]:
@@ -51,6 +53,17 @@ def iter_timelapse(
     pending: dict[int, int] = {}
     written = 0
     chunk = bytearray()
+    last_yield_at = time.monotonic()
+
+    def flush_due_chunk() -> bytes | None:
+        nonlocal last_yield_at
+        now = time.monotonic()
+        if chunk and now - last_yield_at >= CHUNK_FLUSH_INTERVAL:
+            data = bytes(chunk)
+            chunk.clear()
+            last_yield_at = now
+            return data
+        return None
 
     def canvas_events() -> Iterator[tuple[int, float, str, int | None, int | None, int | None]]:
         after_id = 0
@@ -70,7 +83,7 @@ def iter_timelapse(
     nxt = next(events, None)
 
     def flush(ts: float) -> Iterator[bytes]:
-        nonlocal written
+        nonlocal last_yield_at, written
         frame = bytearray(struct.pack("<dI", ts, len(pending)))
         for idx in sorted(pending):
             frame.extend(struct.pack("<IB", idx, pending[idx]))
@@ -84,12 +97,17 @@ def iter_timelapse(
             chunk.extend(view[offset : offset + size])
             offset += size
             if len(chunk) == CHUNK_SIZE:
-                yield bytes(chunk)
+                data = bytes(chunk)
                 chunk.clear()
+                last_yield_at = time.monotonic()
+                yield data
 
     for f in range(frames):
         cutoff = t1 if f == frames - 1 else t0 + step * (f + 1)
         while nxt is not None and (nxt[1] <= cutoff or f == frames - 1):
+            data = flush_due_chunk()
+            if data is not None:
+                yield data
             e = nxt
             nxt = next(events, None)
             if e[2] == "god.clear_canvas":
@@ -107,6 +125,9 @@ def iter_timelapse(
                     state[idx] = color
                     pending[idx] = color
         yield from flush(cutoff)
+        data = flush_due_chunk()
+        if data is not None:
+            yield data
     assert written == frames
     if chunk:
         yield bytes(chunk)

@@ -111,6 +111,19 @@ def test_iter_timelapse_yields_header_first() -> None:
     assert header + b"".join(stream) == build_timelapse(log, "r", 2, 3, frames=1)
 
 
+def test_iter_timelapse_flushes_small_chunks_on_timer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("worldwarpixel.sim.timelapse.CHUNK_FLUSH_INTERVAL", 0.0)
+    log = EventLog()
+    for ts in range(5):
+        log.append("r", float(ts), "pixel", 1, {"x": 0, "y": 0, "color": 2})
+
+    chunks = list(iter_timelapse(log, "r", 1, 1, frames=4))
+
+    assert chunks[0] == struct.pack("<HHH", 4, 1, 1)
+    assert len(chunks) > 2
+    assert b"".join(chunks) == build_timelapse(log, "r", 1, 1, frames=4)
+
+
 def test_events_appended_after_the_span_was_measured_are_ignored() -> None:
     class GrowingLog(EventLog):
         """Appends a late pixel after the canvas span has been measured."""
