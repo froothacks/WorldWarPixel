@@ -163,6 +163,10 @@ Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the UR
 
 **Continuous deploy.** `.github/workflows/deploy.yml` runs the legacy-Sandbox `retire` step and then `modal deploy deploy/modal_app.py` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the container, so a running simulation stops.
 
+### Cloud Run (GCP)
+
+The same app also deploys to one always-on [Cloud Run](https://cloud.google.com/run) instance (`min=max=1`, CPU always allocated) in project `world-war-pixel-514101`. `Dockerfile` mirrors the Modal image (frontend built in, Whisper weights baked, ffmpeg) and `deploy/cloudrun.sh` builds it with Cloud Build and deploys it with the `world-war-pixel-timelapses-514101` bucket mounted at `/data`, so the SQLite backup and the rendered timelapses land directly in GCS with no extra credentials. The app runs as the `worldwarpixel-run` service account, which gets `Storage Object Admin` on that bucket only. One-time setup with the gcloud CLI authenticated: `APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh`, where the file holds the `KEY=value` app settings (`OPENAI_API_KEY`, `MODAL_KEY`, ... and a required `GOD_TOKEN`, since the service is public); it prints the service URL. `deploy.yml` runs the same script after CI on `main` when the `GCP_SA_KEY` repository secret (a deployer service-account JSON key with Cloud Run Admin, Artifact Registry Admin, Storage Admin, Service Account Admin, Service Account User, Cloud Build Editor, Service Usage Admin) is set; the `GCP_APP_ENV` secret holds the `KEY=value` lines for the app settings (deploy fails without it).
+
 ## Development
 
 ```sh
