@@ -1,8 +1,10 @@
 name: Deploy
 
-# After CI passes for a push to main (or on demand), retire the legacy Modal sandbox and deploy the
-# always-on web container. Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo secrets; app settings
-# live in the `worldwarpixel` Modal secret, not here.
+# After CI passes for a push to main (or on demand), deploy the always-on web container to Modal
+# (retiring the legacy Sandbox) and to Cloud Run. Each target is skipped while its repo secrets are
+# unset: MODAL_TOKEN_ID / MODAL_TOKEN_SECRET for Modal (app settings live in the `worldwarpixel`
+# Modal secret), GCP_SA_KEY (deployer service-account JSON) + optional GCP_APP_ENV (KEY=value lines)
+# for Cloud Run.
 on:
   workflow_run:
     workflows: [CI]
@@ -15,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  modal:
     # Only pushes to this repo's main: a fork PR from a branch named main also matches `branches`.
     if: >-
       github.event_name == 'workflow_dispatch' || (
@@ -48,3 +50,43 @@ jobs:
         run: uv run --with modal==1.6.3 python deploy/modal_app.py retire
       - if: steps.gate.outputs.go == 'true'
         run: uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
+
+  cloudrun:
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - id: gate
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "::notice::GCP_SA_KEY not set; skipping Cloud Run deploy"
+          elif [ -n "$TESTED_SHA" ] && [ "$TESTED_SHA" != "$(git rev-parse HEAD)" ]; then
+            echo "::notice::$TESTED_SHA is no longer main's head; skipping deploy"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.go == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - if: steps.gate.outputs.go == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+      - if: steps.gate.outputs.go == 'true'
+        env:
+          GCP_APP_ENV: ${{ secrets.GCP_APP_ENV }}
+        run: |
+          if [ -n "$GCP_APP_ENV" ]; then
+            printf '%s\n' "$GCP_APP_ENV" > app.env
+            export APP_ENV_FILE=app.env
+          fi
+          deploy/cloudrun.sh
