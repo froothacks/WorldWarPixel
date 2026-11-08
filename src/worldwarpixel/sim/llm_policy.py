@@ -357,12 +357,14 @@ def budget_line(agent: AgentSpec, obs: Observation) -> str:
     )
 
 
-def availability_lines(agent: AgentSpec, obs: Observation) -> str:
+def availability_lines(agent: AgentSpec, obs: Observation, guided: bool = False) -> str:
     societies = (
         "Society tools are available."
         if obs.society is not None
         else "Society tools are unavailable: there are no societies in this world."
     )
+    if guided:
+        societies = "Society tools are unavailable in this mode."
     return (
         f"{budget_line(agent, obs)}"
         "Last painting position (initial position before painting): "
@@ -395,7 +397,7 @@ def guided_user_prompt(
         "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
         "you are pursuing. If a thread above matters to you, answer it with "
         "reply(thread_id=..., body=...) rather than starting a new one.\n\n"
-        f"{availability_lines(agent, obs)}"
+        f"{availability_lines(agent, obs, guided=True)}"
     )
 
 
@@ -660,6 +662,8 @@ class LLMPolicy:
     def _dispatch(
         self, agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]
     ) -> dict[str, Any]:
+        if self._guided and any(t["function"]["name"] == name for t in SOCIETY_TOOLS):
+            raise ToolError("society tools are not available in this mode")
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
 

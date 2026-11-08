@@ -13,6 +13,7 @@ from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.llm_policy import (
+    SOCIETY_TOOLS,
     LLMPolicy,
     _canonical_tool,
     _parse_pixel_list,
@@ -573,6 +574,23 @@ def test_unavailable_tools_return_error_results(
     messages = client.chat.completions.requests[0]["messages"]
     results = [m["content"] for m in messages if m["role"] == "tool"]
     assert results and results[0].startswith("error:") and error in results[0]
+    assert policy.stats["tool_errors"] == 1
+
+
+@pytest.mark.parametrize("name", [t["function"]["name"] for t in SOCIETY_TOOLS])
+@pytest.mark.parametrize("has_society", (False, True))
+def test_guided_society_tools_are_rejected(name: str, has_society: bool) -> None:
+    agent, tools, obs, _ = _setup()
+    if has_society:
+        obs.society = {"id": 1, "name": "Group", "members": 1}
+    client = FakeClient([_response("Trying", [(name, {})])])
+    policy = LLMPolicy(client, "m", vision=False, guided=True)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    request = client.chat.completions.requests[0]
+    text = request["messages"][1]["content"][0]["text"]
+    assert "Society tools are unavailable in this mode." in text
+    results = [m["content"] for m in request["messages"] if m["role"] == "tool"]
+    assert results == ["error: society tools are not available in this mode"]
     assert policy.stats["tool_errors"] == 1
 
 
