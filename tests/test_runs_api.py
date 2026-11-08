@@ -68,7 +68,13 @@ def test_run_lifecycle(client: TestClient) -> None:
 
 def test_models_endpoint_lists_presets(client: TestClient) -> None:
     models = client.get("/models").json()
-    assert {m["id"] for m in models} == {"gpt-6-luna", "qwen", "deepseek"}
+    assert {m["id"] for m in models} == {
+        "gpt-6-luna",
+        "qwen",
+        "deepseek",
+        "qwen-c",
+        "glm-5.3-flash",
+    }
     assert all(set(m) == {"id", "label", "model", "available"} for m in models)
 
 
