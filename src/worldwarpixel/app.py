@@ -17,7 +17,14 @@ from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.devices import router as devices_router
 from worldwarpixel.interview import InterviewError
 from worldwarpixel.llm import ChatService
-from worldwarpixel.models import ModelSpec, find_model, model_available, model_registry
+from worldwarpixel.models import (
+    ModelSpec,
+    available_endpoints,
+    find_model,
+    model_available,
+    model_registry,
+)
+from worldwarpixel.routing import EndpointPool, endpoint_client
 from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
@@ -74,35 +81,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     speech: SpeechSynth | None = (
         OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
     )
-    specs = model_registry(settings)
+    specs = model_registry()
     app.state.model_specs = specs
-    # One client per model preset, created lazily and shared by every run using it.
-    clients: dict[str, AsyncOpenAI] = {}
+    # One pool per model preset over the endpoints this server has secrets for, created
+    # lazily and shared by every run using it (so rate-limit cooldowns are shared too).
+    pools: dict[str, EndpointPool] = {}
+    app.state.model_pools = pools
+    clients: list[AsyncOpenAI] = []
 
-    def client_for(spec: ModelSpec) -> AsyncOpenAI:
-        client = clients.get(spec.id)
-        if client is None:
-            if spec.auth == "modal":
-                client = AsyncOpenAI(
-                    api_key="none",
-                    base_url=spec.base_url,
-                    timeout=settings.request_timeout,
-                    # Modal presets authenticate with their own headers, scoped to Modal
-                    # hosts so an overridden preset URL never receives the credentials.
-                    default_headers=settings.modal_headers_for(spec.base_url, spec.auth_workspace)
-                    or None,
-                )
-            else:
-                client = AsyncOpenAI(
-                    api_key=settings.openai_api_key.get_secret_value() or "none",
-                    base_url=spec.base_url,
-                    timeout=settings.request_timeout,
-                )
-            clients[spec.id] = client
-        return client
+    def pool_for(spec: ModelSpec) -> EndpointPool:
+        pool = pools.get(spec.id)
+        if pool is None:
+            members = []
+            for endpoint in available_endpoints(settings, spec):
+                client = endpoint_client(endpoint, settings.secret, settings.request_timeout)
+                clients.append(client)
+                members.append((endpoint, client))
+            pool = pools[spec.id] = EndpointPool(members)
+        return pool
 
     def resolve_model(config: RunConfig) -> ModelSpec:
-        spec = find_model(settings, config.model)
+        spec = find_model(config.model)
         if spec is None:
             known = ", ".join(s.id for s in specs)
             raise HTTPException(422, f"unknown model {config.model!r}; choose one of: {known}")
@@ -126,7 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             if config.policy in ("llm", "llm-guided"):
                 spec = resolve_model(config)
                 return LLMPolicy(
-                    client_for(spec),
+                    pool_for(spec),
                     spec.model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision and spec.vision,
@@ -182,7 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 return None
             spec = resolve_model(config)
             return OpenAINarratorModel(
-                client_for(spec),
+                pool_for(spec),
                 spec.model,
                 settings.request_timeout,
                 max_tokens=(
@@ -209,6 +208,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 s3_prefix=settings.timelapse_s3_prefix,
                 duration=settings.timelapse_duration,
                 ffmpeg=settings.ffmpeg_path,
+                autosave_interval=settings.timelapse_autosave_interval,
             ),
             auto_video=settings.timelapse_auto,
         )
@@ -216,7 +216,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             yield
         finally:
             await app.state.runs.shutdown()
-            for model_client in clients.values():
+            for model_client in clients:
                 await model_client.close()
             if tts is not None:
                 await tts.close()
@@ -244,17 +244,35 @@ async def health() -> dict[str, str]:
 
 @app.get("/models")
 async def list_models() -> list[dict[str, Any]]:
-    """The model presets runs can pick, with whether this server has their credentials."""
+    """The model presets runs can pick, with whether this server has their credentials, and
+    per endpoint whether its secrets are present plus call/error/failover counts so far."""
     settings = get_settings()
-    return [
-        {
-            "id": spec.id,
-            "label": spec.label,
-            "model": spec.model,
-            "available": model_available(settings, spec),
-        }
-        for spec in app.state.model_specs
-    ]
+    out: list[dict[str, Any]] = []
+    for spec in app.state.model_specs:
+        pool: EndpointPool | None = app.state.model_pools.get(spec.id)
+        usage = pool.public_stats() if pool is not None else {}
+        ready = {e.name for e in available_endpoints(settings, spec)}
+        out.append(
+            {
+                "id": spec.id,
+                "label": spec.label,
+                "model": spec.model,
+                "available": bool(ready),
+                "endpoints": [
+                    {
+                        "name": e.name,
+                        "base_url": e.base_url,
+                        "secrets": list(e.secrets),
+                        "available": e.name in ready,
+                        **usage.get(
+                            e.name, {"calls": 0, "errors": 0, "failovers": 0, "cooling": False}
+                        ),
+                    }
+                    for e in spec.endpoints
+                ],
+            }
+        )
+    return out
 
 
 @app.get("/health/config")
@@ -269,6 +287,12 @@ async def health_config() -> dict[str, object]:
         "modal_key": bool(s.modal_key.get_secret_value()),
         "modal_secret": bool(s.modal_secret.get_secret_value()),
         "god_token": bool(s.god_token.get_secret_value()),
+        "model_secrets": {
+            name: bool(s.secret(name))
+            for spec in app.state.model_specs
+            for e in spec.endpoints
+            for name in e.secrets
+        },
         "env_keys": sorted(k for k in os.environ if k.startswith(("OPENAI_", "MODAL_", "GOD_"))),
     }
 

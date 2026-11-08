@@ -170,6 +170,35 @@ def test_scheduled_render_after_stop_is_fresh_and_drained(tmp_path: Path) -> Non
     asyncio.run(main())
 
 
+def test_autosave_rerenders_the_same_path_until_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    async def main() -> None:
+        log = EventLog()
+        run = Run("v", CONFIG, log, RandomWalkPolicy(seed=5))
+        await run.start()
+        await asyncio.sleep(0.1)
+        await run.stop()
+        store = VideoStore(tmp_path, duration=2, autosave_interval=0.05)
+
+        def fake_render(log_: EventLog, run_id: str) -> dict[str, Any]:
+            calls.append(run_id)
+            return {"run_id": run_id, "bytes": 1}
+
+        monkeypatch.setattr(store, "render_sync", fake_render)
+        store.start_autosave(log, "v")
+        await asyncio.sleep(0.2)
+        store.stop_autosave("v")
+        count = len(calls)
+        await asyncio.sleep(0.12)
+        assert count >= 2 and len(calls) == count  # cancelled: no more renders
+        assert set(calls) == {"v"}  # every autosave targets the same video path
+
+    asyncio.run(main())
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("EVENT_LOG_PATH", ":memory:")

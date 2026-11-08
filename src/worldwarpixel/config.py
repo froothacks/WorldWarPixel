@@ -21,18 +21,14 @@ class Settings(BaseSettings):
     """Max output tokens per narrator update; reasoning models need more to finish the JSON."""
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
-    qwen_base_url: str = "https://advait-m--ep-world-war-pixel-server.us-west.modal.direct/v1"
-    """Endpoint of the 'qwen' model preset (see models.py); override for another deployment."""
-    deepseek_base_url: str = (
-        "https://advait-m--ep-deepseek-v4-1-flash-server.us-west.modal.direct/v1"
-    )
-    """Endpoint of the 'deepseek' model preset (see models.py); override for another deployment."""
-    glm_base_url: str = "https://advait-m--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1"
-    """Endpoint of the 'glm' model preset (see models.py); override for another deployment."""
     timelapse_dir: str = "timelapses"
     """Where rendered run videos ({run_id}.mp4 + .json) are written; on Modal a Volume path."""
     timelapse_auto: bool = True
     """Render a video automatically when a run is stopped."""
+    timelapse_autosave_interval: float = Field(default=30.0, ge=0, le=3600)
+    """Seconds between autosaves of the in-progress video while a run is live (0 disables).
+    Each autosave overwrites the same {run_id}.mp4, so the archive keeps one growing video per
+    run instead of a prefix per snapshot."""
     timelapse_duration: float = Field(default=20.0, ge=2, le=120)
     """Length of the rendered timelapse in seconds (plus short holds at both ends)."""
     timelapse_s3_bucket: str | None = None
@@ -75,27 +71,15 @@ class Settings(BaseSettings):
         key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
         return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
 
-    def modal_headers_for(self, url: str | None, workspace: str | None = None) -> dict[str, str]:
-        """Modal headers only when the destination is a Modal host, so an overridden
-        preset base URL can never receive the Modal credentials. ``workspace`` selects
-        another workspace's proxy-auth pair from ``<WORKSPACE>_MODAL_KEY`` and
-        ``<WORKSPACE>_MODAL_SECRET`` (for endpoints in a different Modal workspace)."""
-        if not is_modal_url(url):
-            return {}
-        if workspace is None:
-            return self.modal_headers()
-        prefix = workspace.upper().replace("-", "_")
-        # Workspace pairs are not Settings fields, so pydantic never maps them out of .env;
-        # read the file directly (os.environ wins, matching pydantic-settings precedence).
-        file_env = dotenv_values(".env")
-        key_name, secret_name = f"{prefix}_MODAL_KEY", f"{prefix}_MODAL_SECRET"
+    def secret(self, name: str) -> str:
+        """A credential named by a model endpoint (models.py), from os.environ or .env.
 
-        def pick(name: str) -> str:
-            # An env var that is set (even to "") wins over .env, like pydantic-settings.
-            return os.environ[name] if name in os.environ else file_env.get(name) or ""
-
-        key, secret = pick(key_name), pick(secret_name)
-        return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
+        Endpoint secrets are not Settings fields, so pydantic never maps them out of .env;
+        read the file directly. An env var that is set (even to "") wins over .env, matching
+        pydantic-settings precedence."""
+        if name in os.environ:
+            return os.environ[name]
+        return dotenv_values(".env").get(name) or ""
 
     def default_headers(self) -> dict[str, str]:
         """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""

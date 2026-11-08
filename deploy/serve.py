@@ -133,6 +133,8 @@ def serve() -> int:
         backup()
     except Exception as exc:
         print(f"final backup failed: {exc!r}", flush=True)
+        if server.returncode == 0:
+            return 1
     return server.returncode or 0
 
 
