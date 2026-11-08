@@ -296,7 +296,7 @@ async def device_socket(websocket: WebSocket) -> None:
             "runs": runs,
         }
     )
-    listed = [r["id"] for r in runs]
+    listed = runs
     voice: dict[str, Any] = {"status": "idle", "transcript": None, "error": None}
     clip: bytearray | None = None
     rate = RATE
@@ -308,8 +308,8 @@ async def device_socket(websocket: WebSocket) -> None:
     async def push() -> None:
         nonlocal seen, listed
         runs = run_choices(app.state.runs)
-        if [r["id"] for r in runs] != listed:
-            listed = [r["id"] for r in runs]
+        if runs != listed:
+            listed = runs
             await websocket.send_json({"type": "runs", "runs": runs})
         run = current_run(app.state.runs, run_id)
         if run is None or run.societies is None or me.society >= run.societies.count:

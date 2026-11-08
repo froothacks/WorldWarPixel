@@ -30,11 +30,13 @@ const THUMB_H = 80;
 const MAX_SECONDS = 20;
 
 /** Browser stand-in for one ESP32 society screen: same /devices protocol, laptop mic. */
-export default function Screen({ society }: { society: number }) {
+export default function Screen({ society: wanted }: { society: number }) {
   const params = new URLSearchParams(location.search);
   const token = params.get("token");
   const [run, setRun] = useState(params.get("run") ?? "");
   const [runs, setRuns] = useState<RunChoice[]>([]);
+  const shown = runs.find((r) => r.id === run) ?? (run ? undefined : runs[0]);
+  const society = shown && wanted >= shown.societies.length ? 0 : wanted;
   const auth = `society=${society}${token ? `&token=${encodeURIComponent(token)}` : ""}${run ? `&run=${encodeURIComponent(run)}` : ""}`;
   const [state, setState] = useState<DeviceState | null>(null);
   const [palette, setPalette] = useState<string[]>([]);
