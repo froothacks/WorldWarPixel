@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import time
 from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
@@ -14,6 +16,8 @@ if TYPE_CHECKING:
     from worldwarpixel.config import Settings
 
 REJECTED = "Tool call rejected"
+SLOW_READ_SECONDS = 1.0
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,12 +163,24 @@ class EventLog:
             self._conn.commit()
 
     def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+        started = time.perf_counter()
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
             " WHERE run_id = ? AND id > ? ORDER BY run_id, id LIMIT ?",
             (run_id, after_id, limit),
         ).fetchall()
-        return [Event(r[0], r[1], r[2], r[3], r[4], json.loads(r[5])) for r in rows]
+        events = [Event(r[0], r[1], r[2], r[3], r[4], json.loads(r[5])) for r in rows]
+        elapsed = time.perf_counter() - started
+        if elapsed >= SLOW_READ_SECONDS:
+            logger.warning(
+                "slow event read run=%s after=%d limit=%d rows=%d in %.2fs",
+                run_id,
+                after_id,
+                limit,
+                len(events),
+                elapsed,
+            )
+        return events
 
     def count(self, run_id: str) -> int:
         row = self._conn.execute(

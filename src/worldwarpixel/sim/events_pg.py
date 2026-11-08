@@ -11,7 +11,7 @@ from typing import Any
 
 import psycopg
 
-from worldwarpixel.sim.events import Event, EventStore, run_deltas
+from worldwarpixel.sim.events import SLOW_READ_SECONDS, Event, EventStore, run_deltas
 from worldwarpixel.sim.migrations import migrate_postgres
 
 logger = logging.getLogger(__name__)
@@ -114,12 +114,13 @@ class PostgresEventLog(EventStore):
             self._batch_depth -= 1
 
     def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+        started = time.perf_counter()
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
             " WHERE run_id = %s AND id > %s ORDER BY run_id, id LIMIT %s",
             (run_id, after_id, limit),
         ).fetchall()
-        return [
+        events = [
             Event(
                 id=int(r[0]),
                 run_id=str(r[1]),
@@ -130,6 +131,17 @@ class PostgresEventLog(EventStore):
             )
             for r in rows
         ]
+        elapsed = time.perf_counter() - started
+        if elapsed >= SLOW_READ_SECONDS:
+            logger.warning(
+                "slow event read run=%s after=%d limit=%d rows=%d in %.2fs",
+                run_id,
+                after_id,
+                limit,
+                len(events),
+                elapsed,
+            )
+        return events
 
     def count(self, run_id: str) -> int:
         row = self._conn.execute(

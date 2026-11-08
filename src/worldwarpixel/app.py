@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import NOT_GIVEN, AsyncOpenAI, omit
@@ -36,6 +37,14 @@ from worldwarpixel.sim.societies import naming_messages, parse_names
 from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+SLOW_REQUEST_MS = 1000
+http_logger = logging.getLogger("worldwarpixel.http")
 
 
 class Message(BaseModel):
@@ -245,6 +254,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_http_request(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        http_logger.error(
+            "%s %s -> error in %.0f ms", request.method, request.url.path, elapsed_ms, exc_info=True
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    level = logging.WARNING if elapsed_ms >= SLOW_REQUEST_MS else logging.INFO
+    if request.url.path != "/health" or level == logging.WARNING:
+        http_logger.log(
+            level,
+            "%s %s -> %d in %.0f ms",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
+
+
 app.include_router(runs_router)
 app.include_router(devices_router)
 app.include_router(rosters_router)

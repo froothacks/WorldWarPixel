@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,29 @@ def test_append_and_read_in_order() -> None:
     assert log.read("r1", after_id=a) == [events[1]]
     assert log.count("r1") == 2
     assert log.run_ids() == ["r1", "r2"]
+    log.close()
+
+
+def test_slow_event_read_warning_obeys_threshold(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    log = EventLog()
+    log.append("r", 1.0, "pixel", 1, {"x": 1, "y": 2, "color": 3})
+    logger_name = "worldwarpixel.sim.events"
+
+    monkeypatch.setattr("worldwarpixel.sim.events.SLOW_READ_SECONDS", 0)
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        assert len(log.read("r")) == 1
+    assert any(
+        record.name == logger_name and "slow event read run=r" in record.getMessage()
+        for record in caplog.records
+    )
+
+    caplog.clear()
+    monkeypatch.setattr("worldwarpixel.sim.events.SLOW_READ_SECONDS", float("inf"))
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        log.read("r")
+    assert not caplog.records
     log.close()
 
 
