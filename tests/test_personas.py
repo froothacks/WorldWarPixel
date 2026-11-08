@@ -301,3 +301,27 @@ def test_roster_persona_uses_the_personality_read() -> None:
     text = persona_text_roster(person, "an event")
     assert person.personality["summary"] in text and person.personality["canvas_approach"] in text
     assert "_" not in text.split("Style:")[1].split(".")[0]
+
+
+@pytest.mark.parametrize(
+    ("name", "project", "slug"),
+    [
+        ("Leon Fattakhov", "World War Pixel", "world-war-pixel"),
+        ("Gino Chiaranaipanich", "I Patched The Pixels Myself", "i-patched-the-pixels-myself"),
+        ("Leah Vashevko", "Warped", "warped"),
+        ("Nick Del Aguila", "Flaid", "flaid"),
+    ],
+)
+def test_roster_project_context_reaches_personas_and_profile_cards(
+    name: str, project: str, slug: str
+) -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == name)
+    highlight = next(
+        h for h in person.highlights if h.startswith(f"Neo Hackathon 2026 — {project}: ")
+    )
+    url = f"https://devpost.com/software/{slug}"
+    assert url in person.links
+    assert highlight in persona_text_roster(person, roster.event)
+    card = roster_card(person, roster.event)
+    assert highlight in card["highlights"] and url in card["links"]
