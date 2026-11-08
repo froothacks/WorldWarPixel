@@ -19,7 +19,9 @@ pytestmark = pytest.mark.skipif(PG_URL is None, reason="DATABASE_URL_TEST is not
 def pg_url() -> str:
     assert PG_URL is not None
     with psycopg.connect(PG_URL) as conn:
-        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+        conn.execute(
+            "DROP TABLE IF EXISTS posts, thread_votes, events, runs, schema_migrations CASCADE"
+        )
     PostgresEventLog(PG_URL).close()
     return PG_URL
 
@@ -35,7 +37,21 @@ def pg_log(pg_url: str) -> Iterator[PostgresEventLog]:
 
 def test_append_read_count_and_run_ids(pg_log: PostgresEventLog) -> None:
     a = pg_log.append("r1", 1.0, "pixel", 3, {"x": 1, "y": 2, "color": 4})
-    b = pg_log.append("r1", 2.0, "post", 3, {"body": "hi"})
+    b = pg_log.append(
+        "r1",
+        2.0,
+        "post",
+        3,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 3,
+            "title": "hello",
+            "body": "hi",
+            "created_at": 2.0,
+        },
+    )
     pg_log.append("r2", 3.0, "pixel", 1, {})
 
     events = pg_log.read("r1")
@@ -45,6 +61,60 @@ def test_append_read_count_and_run_ids(pg_log: PostgresEventLog) -> None:
     assert pg_log.read("r1", after_id=a) == [events[1]]
     assert pg_log.count("r1") == 2
     assert pg_log.run_ids() == ["r1", "r2"]
+
+
+def test_repeated_reads_do_not_create_prepared_statements(pg_log: PostgresEventLog) -> None:
+    pg_log.append("r", 1.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+
+    for _ in range(20):
+        assert len(pg_log.read("r")) == 1
+
+    result = pg_log._conn.execute("SELECT count(*) FROM pg_prepared_statements").fetchone()
+    assert result is not None and result[0] == 0
+
+
+def test_postgres_projections_run_meta_and_canvas_reads(pg_log: PostgresEventLog) -> None:
+    config = {"width": 16, "height": 12}
+    pg_log.append("r", 1.0, "run.created", None, {"config": config})
+    post = {
+        "id": 1,
+        "thread_id": 1,
+        "parent_id": None,
+        "author_id": 1,
+        "title": "title",
+        "body": "body",
+        "created_at": 2.0,
+        "society": 2,
+    }
+    pg_log.append("r", 2.0, "post", 1, post)
+    pg_log.append("r", 3.0, "board.vote", 1, {"thread_id": 1, "value": 1, "votes": 1})
+    pg_log.append("r", 4.0, "board.vote", 1, {"thread_id": 1, "value": -1, "votes": 0})
+    pg_log.append("r", 5.0, "agent.status", 1, {})
+    pg_log.append("r", 6.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+    pg_log.append("r", 7.0, "god.clear_canvas", None, {})
+
+    meta = pg_log.run_meta("r")
+    assert meta is not None
+    assert meta.created_at == 1.0 and not meta.deleted
+    assert meta.config is not None and json.loads(meta.config) == config
+    assert pg_log.run_meta("missing") is None
+    assert [entry[0].id for entry in pg_log.posts("r")] == [1]
+    assert pg_log.posts("r", thread_id=1)[0][1] == 2
+    assert pg_log.thread_votes("r") == {1: 0}
+    assert [event.kind for event in pg_log.read("r", canvas_only=True)] == [
+        "pixel",
+        "god.clear_canvas",
+    ]
+    assert [event.kind for event in pg_log.read("r", limit=1, canvas_only=True)] == ["pixel"]
+    assert [event.kind for event in pg_log.read("r", after_id=6, limit=1, canvas_only=True)] == [
+        "god.clear_canvas"
+    ]
+
+    pg_log.append("r", 8.0, "god.clear_board", None, {})
+    assert pg_log.posts("r") == []
+    assert pg_log.thread_votes("r") == {}
+    pg_log.append("r", 9.0, "run.deleted", None, {})
+    assert pg_log.run_meta("r").deleted  # type: ignore[union-attr]
 
 
 def test_batch_is_a_transaction_visible_to_other_connections(pg_log: PostgresEventLog) -> None:
@@ -80,7 +150,21 @@ def test_run_totals_match_the_sqlite_shape(pg_log: PostgresEventLog) -> None:
     config = {"width": 16, "height": 16, "agents": 2}
     pg_log.append("r", 1.0, "run.created", None, {"config": config, "agents": []})
     pg_log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 1, "color": 2})
-    pg_log.append("r", 3.0, "post", 1, {"body": "hi"})
+    pg_log.append(
+        "r",
+        3.0,
+        "post",
+        1,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 1,
+            "title": "hello",
+            "body": "hi",
+            "created_at": 3.0,
+        },
+    )
     pg_log.append("r", 4.0, "agent.thought", 1, {"thought": "Tool call rejected: bad json"})
     pg_log.append("r", 5.0, "agent.thought", 1, {"thought": "Painting a sun"})
     pg_log.append("r", 6.0, "narrator.update", None, {"kind": "update", "text": "Hi"})
@@ -98,19 +182,56 @@ def test_migrate_sqlite_to_pg_is_idempotent(pg_url: str, tmp_path: Path) -> None
     source = EventLog(sqlite_path)
     source.append("m", 1.0, "run.created", None, {"config": {"width": 16}})
     source.append("m", 2.0, "pixel", 1, {"x": 1, "y": 2, "color": 3})
+    source.append(
+        "m",
+        3.0,
+        "post",
+        1,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 1,
+            "title": "before clear",
+            "body": "discarded",
+            "created_at": 3.0,
+        },
+    )
+    source.append("m", 4.0, "board.vote", 1, {"thread_id": 1, "votes": 1})
+    source.append("m", 5.0, "god.clear_board", None, {})
+    source.append(
+        "m",
+        6.0,
+        "post",
+        2,
+        {
+            "id": 2,
+            "thread_id": 2,
+            "parent_id": None,
+            "author_id": 2,
+            "title": "after clear",
+            "body": "kept",
+            "created_at": 6.0,
+            "society": 1,
+        },
+    )
+    source.append("m", 7.0, "board.vote", 2, {"thread_id": 2, "votes": 1})
+    source.append("m", 8.0, "board.vote", 2, {"thread_id": 2, "votes": 3})
     source.close()
 
-    assert migrate(sqlite_path, pg_url) == 2
-    assert migrate(sqlite_path, pg_url) == 2
+    assert migrate(sqlite_path, pg_url) == 8
+    assert migrate(sqlite_path, pg_url) == 8
 
     target = PostgresEventLog(pg_url)
     try:
-        assert [e.id for e in target.read("m")] == [1, 2]
-        assert target.count("m") == 2
+        assert [e.id for e in target.read("m")] == list(range(1, 9))
+        assert target.count("m") == 8
         [row] = target.run_totals()
-        assert row[:9] == ("m", 1.0, 1, 0, 0, 0, 0, 0, False)
+        assert row[:9] == ("m", 1.0, 1, 2, 0, 0, 0, 0, False)
         assert row[9] is not None and json.loads(row[9]) == {"width": 16}
-        assert target.append("m", 3.0, "post", 1, {}) == 3
+        assert [post.id for post, _ in target.posts("m")] == [2]
+        assert target.thread_votes("m") == {2: 3}
+        assert target.append("m", 9.0, "pixel", 1, {}) == 9
     finally:
         target.close()
 
@@ -149,7 +270,9 @@ def test_events_reject_unknown_run_ids(pg_url: str) -> None:
 def test_legacy_postgres_events_are_backfilled_and_constrained(pg_url: str) -> None:
     config = {"width": 16, "height": 16, "agents": 2}
     with psycopg.connect(pg_url) as conn:
-        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+        conn.execute(
+            "DROP TABLE IF EXISTS posts, thread_votes, events, runs, schema_migrations CASCADE"
+        )
         conn.execute(
             """
             CREATE TABLE events (
@@ -193,7 +316,9 @@ def test_legacy_postgres_events_are_backfilled_and_constrained(pg_url: str) -> N
 
 def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
     with psycopg.connect(pg_url) as conn:
-        conn.execute("DROP TABLE IF EXISTS events, runs, schema_migrations CASCADE")
+        conn.execute(
+            "DROP TABLE IF EXISTS posts, thread_votes, events, runs, schema_migrations CASCADE"
+        )
 
     def construct_and_close(_: int) -> list[str]:
         log = PostgresEventLog(pg_url)
@@ -208,7 +333,7 @@ def test_concurrent_postgres_migrations_are_applied_once(pg_url: str) -> None:
     with psycopg.connect(pg_url) as conn:
         assert conn.execute(
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
-        ).fetchall() == [(1, 1), (2, 1), (3, 1)]
+        ).fetchall() == [(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)]
 
 
 def test_buffered_writes_flush_in_order(pg_url: str) -> None:
@@ -230,7 +355,21 @@ def test_buffered_batch_still_flushes_in_order(pg_url: str) -> None:
     log = BufferedPostgresEventLog(pg_url, flush_interval=0.05, batch_size=100)
     with log.batch():
         for i in range(4):
-            log.append("c", float(i), "post", 2, {"body": str(i)})
+            log.append(
+                "c",
+                float(i),
+                "post",
+                2,
+                {
+                    "id": i + 1,
+                    "thread_id": i + 1,
+                    "parent_id": None,
+                    "author_id": 2,
+                    "title": str(i),
+                    "body": str(i),
+                    "created_at": float(i),
+                },
+            )
     log.close()
 
     check = PostgresEventLog(pg_url)

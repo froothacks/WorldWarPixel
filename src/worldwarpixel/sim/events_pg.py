@@ -7,12 +7,19 @@ import threading
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 
-from worldwarpixel.sim.events import SLOW_READ_SECONDS, Event, EventStore, run_deltas
-from worldwarpixel.sim.migrations import migrate_postgres
+from worldwarpixel.sim.board import Post
+from worldwarpixel.sim.events import (
+    SLOW_READ_SECONDS,
+    Event,
+    EventStore,
+    RunMeta,
+    run_deltas,
+)
+from worldwarpixel.sim.migrations import CANVAS_KINDS_SQL, migrate_postgres
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +29,12 @@ class PostgresEventLog(EventStore):
 
     def __init__(self, database_url: str, *, initialize_schema: bool = True) -> None:
         self.database_url = database_url
+        # Server-side prepared statements can switch to generic plans that scan events_pkey
+        # for run-scoped reads.
         self._conn: psycopg.Connection[tuple[Any, ...]] = psycopg.connect(
-            database_url, autocommit=True
+            database_url,
+            autocommit=True,
+            prepare_threshold=None,
         )
         self._batch_depth = 0
         try:
@@ -86,6 +97,40 @@ class PostgresEventLog(EventStore):
             ).fetchone()
             if row is None:
                 raise RuntimeError("event insert did not return an id")
+            if kind == "post":
+                self._conn.execute(
+                    """
+                    INSERT INTO posts (
+                        run_id, id, thread_id, parent_id, author_id, title, body, created_at,
+                        society
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (run_id, id) DO NOTHING
+                    """,
+                    (
+                        run_id,
+                        cast(int, payload["id"]),
+                        cast(int, payload["thread_id"]),
+                        None
+                        if payload.get("parent_id") is None
+                        else cast(int, payload["parent_id"]),
+                        cast(int, payload["author_id"]),
+                        None if payload.get("title") is None else str(payload["title"]),
+                        str(payload["body"]),
+                        cast(float, payload["created_at"]),
+                        None if payload.get("society") is None else cast(int, payload["society"]),
+                    ),
+                )
+            elif kind == "board.vote":
+                self._conn.execute(
+                    """
+                    INSERT INTO thread_votes (run_id, thread_id, votes) VALUES (%s, %s, %s)
+                    ON CONFLICT (run_id, thread_id) DO UPDATE SET votes = EXCLUDED.votes
+                    """,
+                    (run_id, cast(int, payload["thread_id"]), cast(int, payload["votes"])),
+                )
+            elif kind == "god.clear_board":
+                self._conn.execute("DELETE FROM posts WHERE run_id = %s", (run_id,))
+                self._conn.execute("DELETE FROM thread_votes WHERE run_id = %s", (run_id,))
             return int(row[0])
 
         try:
@@ -115,11 +160,14 @@ class PostgresEventLog(EventStore):
         finally:
             self._batch_depth -= 1
 
-    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+    def read(
+        self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+    ) -> list[Event]:
         started = time.perf_counter()
+        kind_filter = f" AND kind IN ({CANVAS_KINDS_SQL})" if canvas_only else ""
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
-            " WHERE run_id = %s AND id > %s ORDER BY run_id, id LIMIT %s",
+            f" WHERE run_id = %s AND id > %s{kind_filter} ORDER BY run_id, id LIMIT %s",
             (run_id, after_id, limit),
         ).fetchall()
         events = [
@@ -150,6 +198,50 @@ class PostgresEventLog(EventStore):
             "SELECT COUNT(*) FROM events WHERE run_id = %s", (run_id,)
         ).fetchone()
         return int(row[0]) if row is not None else 0
+
+    def run_meta(self, run_id: str) -> RunMeta | None:
+        row = self._conn.execute(
+            "SELECT created_at, config, deleted FROM runs WHERE id = %s", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return RunMeta(
+            created_at=float(row[0]),
+            config=None if row[1] is None else str(row[1]),
+            deleted=bool(row[2]),
+        )
+
+    def posts(self, run_id: str, thread_id: int | None = None) -> list[tuple[Post, int | None]]:
+        query = (
+            "SELECT id, author_id, thread_id, parent_id, title, body, created_at, society"
+            " FROM posts WHERE run_id = %s"
+        )
+        params: tuple[object, ...] = (run_id,)
+        if thread_id is not None:
+            query += " AND thread_id = %s"
+            params += (thread_id,)
+        rows = self._conn.execute(query + " ORDER BY id", params).fetchall()
+        return [
+            (
+                Post(
+                    id=int(row[0]),
+                    author_id=int(row[1]),
+                    thread_id=int(row[2]),
+                    parent_id=None if row[3] is None else int(row[3]),
+                    title=None if row[4] is None else str(row[4]),
+                    body=str(row[5]),
+                    created_at=float(row[6]),
+                ),
+                None if row[7] is None else int(row[7]),
+            )
+            for row in rows
+        ]
+
+    def thread_votes(self, run_id: str) -> dict[int, int]:
+        rows = self._conn.execute(
+            "SELECT thread_id, votes FROM thread_votes WHERE run_id = %s", (run_id,)
+        ).fetchall()
+        return {int(row[0]): int(row[1]) for row in rows}
 
     def run_ids(self) -> list[str]:
         rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
@@ -235,11 +327,22 @@ class BufferedPostgresEventLog(EventStore):
         # The writer already groups each flush into one transaction.
         return nullcontext()
 
-    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
-        return self._reader.read(run_id, after_id=after_id, limit=limit)
+    def read(
+        self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+    ) -> list[Event]:
+        return self._reader.read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
 
     def count(self, run_id: str) -> int:
         return self._reader.count(run_id)
+
+    def run_meta(self, run_id: str) -> RunMeta | None:
+        return self._reader.run_meta(run_id)
+
+    def posts(self, run_id: str, thread_id: int | None = None) -> list[tuple[Post, int | None]]:
+        return self._reader.posts(run_id, thread_id)
+
+    def thread_votes(self, run_id: str) -> dict[int, int]:
+        return self._reader.thread_votes(run_id)
 
     def run_ids(self) -> list[str]:
         return self._reader.run_ids()

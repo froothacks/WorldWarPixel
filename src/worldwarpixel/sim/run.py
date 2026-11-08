@@ -335,6 +335,11 @@ class Run:
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._agent_votes[(agent_id, thread_id)] = now
+        self._record(
+            "board.vote",
+            agent_id,
+            {"thread_id": thread_id, "value": 1 if up else -1, "votes": votes},
+        )
         self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
         return votes
 

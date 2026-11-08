@@ -74,3 +74,12 @@ def test_votes_shift_recency_order_and_reset_on_clear() -> None:
     b.clear()
     again = b.post_thread(1, "again", "z", now=40.0)
     assert b.votes(again.id) == 0
+
+
+def test_set_votes_restores_known_thread_scores() -> None:
+    board = Board()
+    thread = board.post_thread(1, "thread", "body", now=1.0)
+    board.set_votes(thread.id, 4)
+    board.set_votes(999, 2)
+    assert board.votes(thread.id) == 4
+    assert board.votes(999) == 0
