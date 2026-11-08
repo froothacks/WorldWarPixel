@@ -8,7 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 from worldwarpixel.api import RunManager
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
-from worldwarpixel.devices import parse_tokens
+from worldwarpixel.devices import parse_tokens, screen_name
 from worldwarpixel.sim.agents import AgentSpec, Observation, RandomWalkPolicy
 from worldwarpixel.sim.archive import restore_run
 from worldwarpixel.sim.board import Board
@@ -480,3 +480,8 @@ def test_manager_asks_the_namer_with_the_theme() -> None:
 
     assert asyncio.run(go()) == ["Anglers", "Vents"]
     assert asked[0].society_theme == "deep sea"
+
+
+def test_screen_name_is_ascii_with_a_placeholder() -> None:
+    assert screen_name({"id": 0, "name": "Café 🐟 Owls"}) == "Cafe Owls"
+    assert screen_name({"id": 1, "name": "海洋"}) == "Society 2"

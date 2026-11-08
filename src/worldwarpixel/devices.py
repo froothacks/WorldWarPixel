@@ -117,7 +117,7 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
             "started_at": r.started_at,
             "agents": len(r.agents),
             "model": r.config.model,
-            "societies": [interview.ascii_text(s["name"]) for s in r.society_summary()],
+            "societies": [screen_name(s) for s in r.society_summary()],
         }
         for r in live
     ]
@@ -132,6 +132,11 @@ def _run_for(request: Request, device: Device) -> Run:
     return run
 
 
+def screen_name(society: dict[str, Any]) -> str:
+    """The society's name in the screens' ASCII font (a placeholder if nothing survives)."""
+    return " ".join(interview.ascii_text(society["name"]).split()) or f"Society {society['id'] + 1}"
+
+
 def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, Any]:
     societies = run.society_summary()
     mine = societies[device.society]
@@ -140,12 +145,12 @@ def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, A
         "run": run.id,
         "society": {
             **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
-            "name": interview.ascii_text(mine["name"]),
+            "name": screen_name(mine),
         },
         "societies": [
             {
                 "id": s["id"],
-                "name": interview.ascii_text(s["name"]),
+                "name": screen_name(s),
                 "color": s["color"],
                 "members": s["members"],
             }
