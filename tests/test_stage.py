@@ -81,6 +81,28 @@ def make_run(
     return run
 
 
+def test_swap_model_updates_stage_fallback_but_keeps_explicit_override() -> None:
+    original = FakeModel()
+    replacement = FakeModel()
+    run = make_run(model=original)
+    assert run.stage._model is original
+
+    run.swap_model(RandomWalkPolicy(seed=2), replacement, "deepseek")
+    assert run.stage._model is replacement
+
+    override = FakeModel()
+    run = Run(
+        "override",
+        CONFIG.model_copy(update={"policy": "llm"}),
+        EventLog(),
+        RandomWalkPolicy(seed=1),
+        narrator_model=original,
+        stage_model=override,
+    )
+    run.swap_model(RandomWalkPolicy(seed=3), replacement, "deepseek")
+    assert run.stage._model is override
+
+
 async def wait_for(cond: Any, timeout: float = 3.0) -> None:
     deadline = time.monotonic() + timeout
     while not cond():

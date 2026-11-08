@@ -269,6 +269,29 @@ async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep
     return run.summary()
 
 
+class GodModel(BaseModel):
+    model: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/{run_id}/god/model")
+async def god_model(
+    run_id: str, body: GodModel, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
+    """Switch a running LLM run to another model preset; agents use it from their next turn."""
+    run = await manager.fetch(run_id)
+    if run.config.policy != "llm":
+        raise HTTPException(409, "model switching only applies to LLM runs")
+    new_config = run.config.model_copy(update={"model": body.model})
+    policy = manager.make_policy(new_config)  # raises 400/422 for unknown or unavailable presets
+    narrator = (
+        manager.make_narrator(new_config)
+        if manager.make_narrator is not None
+        else manager.narrator_model
+    )
+    run.swap_model(policy, narrator, body.model)
+    return run.summary()
+
+
 @router.delete("/{run_id}", status_code=204)
 async def delete_run(run_id: str, manager: ManagerDep) -> None:
     """Stop the run (if needed) and drop it from memory; its event log is kept."""

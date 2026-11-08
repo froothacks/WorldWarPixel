@@ -211,6 +211,9 @@ class Stage:
         self._rng = random.Random(run.config.seed)
         self._task: asyncio.Task[None] | None = None
 
+    def set_model(self, model: NarratorModel | None) -> None:
+        self._model = model
+
     # -- lifecycle -------------------------------------------------------------------------
 
     def start(self) -> None:

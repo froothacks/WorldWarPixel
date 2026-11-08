@@ -145,6 +145,7 @@ class Run:
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
+        self._stage_model = stage_model
         self.narrator = Narrator(
             self,
             narrator_model if config.policy == "llm" else None,
@@ -214,6 +215,15 @@ class Run:
         self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
+
+    def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
+        """Switch models for agents and narrator; Stage follows unless explicitly overridden."""
+        self.policy = policy
+        self.narrator.set_model(narrator_model)
+        if self._stage_model is None:
+            self.stage.set_model(narrator_model)
+        self.config = self.config.model_copy(update={"model": model})
+        self._record("god.model_changed", GOD_ID, {"model": model})
 
     def god_announce(self, title: str, body: str) -> dict[str, Any]:
         """Post a thread as the human; agents see it on the board like any other thread."""

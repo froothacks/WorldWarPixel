@@ -365,6 +365,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, name: name || null, announce }),
     }),
+  godModel: (id: string, model: string) =>
+    request<RunSummary>(`/runs/${id}/god/model`, {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    }),
 };
 
 export const stageAudioUrl = (id: string, lineId: number) => `/runs/${id}/stage/lines/${lineId}/audio`;
