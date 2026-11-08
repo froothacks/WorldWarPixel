@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from worldwarpixel.config import Settings
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -26,6 +32,30 @@ class Event:
     kind: str
     agent_id: int | None
     payload: dict[str, object]
+
+
+class EventStore(Protocol):
+    """The append-only event log interface used by runs, replay and rendering."""
+
+    def append(
+        self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
+    ) -> int: ...
+
+    def batch(self) -> AbstractContextManager[None]: ...
+
+    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]: ...
+
+    def count(self, run_id: str) -> int: ...
+
+    def run_ids(self) -> list[str]: ...
+
+    def run_totals(
+        self, rejected_prefix: str
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]: ...
+
+    def reader(self) -> EventStore: ...
+
+    def close(self) -> None: ...
 
 
 class EventLog:
@@ -99,10 +129,19 @@ class EventLog:
         ).fetchall()
         return [(*r[:8], bool(r[8]), r[9]) for r in rows]
 
-    def reader(self) -> "EventLog":
+    def reader(self) -> EventLog:
         """A log on the same database for use from another thread; ``close`` it when done.
         In-memory logs have no second connection, so the shared one is returned."""
         return self if self.path == ":memory:" else EventLog(self.path)
 
     def close(self) -> None:
         self._conn.close()
+
+
+def open_event_log(settings: Settings) -> EventStore:
+    """Open the configured event store: Postgres when DATABASE_URL is set, else SQLite."""
+    if settings.database_url:
+        from worldwarpixel.sim.events_pg import PostgresEventLog
+
+        return PostgresEventLog(settings.database_url)
+    return EventLog(settings.event_log_path)

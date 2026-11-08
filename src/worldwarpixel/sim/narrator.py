@@ -9,6 +9,7 @@ import math
 import re
 import struct
 import time
+import uuid
 import zlib
 from collections import Counter, deque
 from collections.abc import Awaitable, Callable
@@ -18,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
+from worldwarpixel.routing import EndpointPool, as_pool
 from worldwarpixel.sim.canvas import PALETTE, Canvas
 
 if TYPE_CHECKING:
@@ -78,7 +80,7 @@ class NarratorModel(Protocol):
 class OpenAINarratorModel:
     def __init__(
         self,
-        client: AsyncOpenAI,
+        client: AsyncOpenAI | EndpointPool,
         model: str,
         timeout: float = 60.0,
         max_tokens: int = 700,
@@ -87,8 +89,9 @@ class OpenAINarratorModel:
         reasoning_effort: str | None = None,
         vision: bool = True,
     ) -> None:
-        self._client = client
+        self._pool = as_pool(client, model)
         self.model = model
+        self._route_key = f"narrator:{uuid.uuid4().hex}"
         self._vision = vision
         self._timeout = timeout
         self._max_tokens = max_tokens
@@ -107,8 +110,8 @@ class OpenAINarratorModel:
         )
         reasoning: Any = self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
         if self._token_param == "max_completion_tokens":
-            response = await self._client.chat.completions.create(
-                model=self.model,
+            response = await self._pool.create(
+                self._route_key,
                 messages=messages,
                 max_completion_tokens=self._max_tokens,
                 temperature=0.4,
@@ -117,8 +120,8 @@ class OpenAINarratorModel:
                 extra_body=extra_body,
             )
         else:
-            response = await self._client.chat.completions.create(
-                model=self.model,
+            response = await self._pool.create(
+                self._route_key,
                 messages=messages,
                 max_tokens=self._max_tokens,
                 temperature=0.4,

@@ -5,9 +5,9 @@
 #
 #   APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh
 #
-# APP_ENV_FILE holds the app settings (KEY=value lines, same as the Modal secret) and must set
-# GOD_TOKEN: the service is public, and without it god mode is open to anyone with the URL. Keep
-# the file outside the repo so `gcloud builds submit` never uploads it with the build context.
+# APP_ENV_FILE holds the app settings (KEY=value lines, same as the Modal secret). Keep the file
+# outside the repo so `gcloud builds submit` never uploads it with the build context. GOD_TOKEN is
+# optional: without it god mode is open to anyone with the URL, same as the Modal deploy.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,10 +17,14 @@ SERVICE="${CLOUD_RUN_SERVICE:-worldwarpixel}"
 BUCKET="${TIMELAPSE_BUCKET:-world-war-pixel-timelapses-514101}"
 REPO="${ARTIFACT_REPO:-worldwarpixel}"
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$(git rev-parse --short HEAD)"
+CACHE_REPO="$REGION-docker.pkg.dev/$PROJECT/$REPO/cache"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
+# Cloud SQL instance the app connects to via DATABASE_URL (Unix socket at /cloudsql/...);
+# set CLOUDSQL_INSTANCE="" to deploy without it (SQLite event log).
+CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-worldwarpixel-pg}"
 
-if [ -z "${APP_ENV_FILE:-}" ] || ! grep -q '^GOD_TOKEN=.\+' "$APP_ENV_FILE"; then
-  echo "APP_ENV_FILE must point to a KEY=value file that sets GOD_TOKEN" >&2
+if [ -z "${APP_ENV_FILE:-}" ]; then
+  echo "APP_ENV_FILE must point to a KEY=value file with the app settings" >&2
   exit 1
 fi
 case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
@@ -39,15 +43,31 @@ gcloud iam service-accounts describe "$RUNTIME_SA" >/dev/null 2>&1 \
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member "serviceAccount:$RUNTIME_SA" --role roles/storage.objectAdmin >/dev/null
 
-gcloud builds submit --tag "$IMAGE" --quiet .
+# Submit async and poll: `gcloud builds submit`'s log streaming needs project Viewer, which the
+# deployer SA need not have; the build itself only needs Cloud Build Editor.
+BUILD_ID="$(gcloud builds submit --config cloudbuild.yaml \
+  --substitutions="_IMAGE=$IMAGE,_CACHE_REPO=$CACHE_REPO" \
+  --quiet --async --format="value(id)" .)"
+echo "Cloud Build $BUILD_ID"
+while :; do
+  STATUS="$(gcloud builds describe "$BUILD_ID" --format="value(status)")"
+  case "$STATUS" in
+    SUCCESS) break ;;
+    FAILURE|CANCELLED|TIMEOUT|INTERNAL_ERROR) echo "Cloud Build $BUILD_ID ended $STATUS" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
 
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
   --port 8080 --cpu 1 --memory 2Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
-  --concurrency 250 --timeout 3600 --session-affinity --execution-environment gen2
+  --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
   --add-volume "name=data,type=cloud-storage,bucket=$BUCKET"
   --add-volume-mount volume=data,mount-path=/data --service-account "$RUNTIME_SA"
 )
+if [ -n "$CLOUDSQL_INSTANCE" ]; then
+  args+=(--add-cloudsql-instances "$PROJECT:$REGION:$CLOUDSQL_INSTANCE")
+fi
 # KEY=value lines -> the YAML gcloud expects; keeps the values out of the command line.
 yaml="$(mktemp)"
 trap 'rm -f "$yaml"' EXIT
