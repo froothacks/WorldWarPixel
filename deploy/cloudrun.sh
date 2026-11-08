@@ -107,7 +107,7 @@ DATA_VOLUME="name=data,type=cloud-storage,bucket=$BUCKET"
 DATA_VOLUME_MOUNT="volume=data,mount-path=/data"
 args=(
   --image "$IMAGE" --region "$REGION" --platform managed --allow-unauthenticated
-  --port 8080 --cpu 2 --memory 4Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
+  --port 8080 --cpu 4 --memory 8Gi --min-instances 1 --max-instances 1 --no-cpu-throttling
   --concurrency 1000 --timeout 3600 --session-affinity --execution-environment gen2
   --add-volume "$DATA_VOLUME"
   --add-volume-mount "$DATA_VOLUME_MOUNT" --service-account "$RUNTIME_SA"
