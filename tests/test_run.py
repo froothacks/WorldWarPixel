@@ -1,6 +1,9 @@
 import asyncio
 
-from worldwarpixel.sim.agents import RandomWalkPolicy
+import pytest
+from pydantic import ValidationError
+
+from worldwarpixel.sim.agents import AgentSpec, RandomWalkPolicy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import FRAME_PIXELS, PIXEL_STRUCT, RESYNC, Hub
 from worldwarpixel.sim.run import Run, RunConfig
@@ -13,8 +16,13 @@ CONFIG = RunConfig(
     jitter=0,
     pixels_per_turn=4,
     seed=1,
-    pixel_interval=0,
-)
+).model_copy(update={"pixel_interval": 0})
+
+
+def test_pixel_interval_has_a_50_ms_minimum_and_default() -> None:
+    assert RunConfig().pixel_interval == 0.01
+    with pytest.raises(ValidationError):
+        RunConfig(pixel_interval=0.005)
 
 
 async def _settle() -> None:
@@ -109,3 +117,96 @@ def test_pixels_drip_out_at_the_pixel_interval() -> None:
         await run.stop()
 
     asyncio.run(main())
+
+
+def test_post_cooldown_allows_posts_on_turns_one_five_and_nine() -> None:
+    class AlwaysReply:
+        def __init__(self) -> None:
+            self.turn = 0
+            self.budgets: list[int] = []
+
+        async def act(self, _agent: AgentSpec, tools: object, obs: object) -> str:
+            self.turn += 1
+            budget = obs.budget  # type: ignore[attr-defined]
+            self.budgets.append(budget.posts)
+            tools.reply(1, f"reply on turn {self.turn}")  # type: ignore[attr-defined]
+            return "replied"
+
+    async def main() -> None:
+        agent = AgentSpec(1, "Priya Raman", "India", 2, 0, 0, 1.0)
+        policy = AlwaysReply()
+        config = CONFIG.model_copy(update={"agents": 1, "dispatch_interval": 0})
+        run = Run("cooldown", config, EventLog(), policy, agents=[agent])
+        run.board.post_thread(agent.id, "First thread", "Start here.", 0)
+        for _ in range(9):
+            await run._turn(agent, 1.0)
+        replies = run.board.thread(1)[1:]
+        assert [post.body for post in replies] == [
+            "reply on turn 1",
+            "reply on turn 5",
+            "reply on turn 9",
+        ]
+        assert policy.budgets == [1, 0, 0, 0, 1, 0, 0, 0, 1]
+
+    asyncio.run(main())
+
+
+def test_zero_post_cooldown_keeps_posting_each_turn() -> None:
+    class AlwaysReply:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def act(self, _agent: AgentSpec, tools: object, _obs: object) -> str:
+            self.turn += 1
+            tools.reply(1, f"reply on turn {self.turn}")  # type: ignore[attr-defined]
+            return "replied"
+
+    async def main() -> None:
+        agent = AgentSpec(1, "Priya Raman", "India", 2, 0, 0, 1.0)
+        config = CONFIG.model_copy(
+            update={"agents": 1, "dispatch_interval": 0, "post_cooldown_turns": 0}
+        )
+        run = Run("no-cooldown", config, EventLog(), AlwaysReply(), agents=[agent])
+        run.board.post_thread(agent.id, "First thread", "Start here.", 0)
+        for _ in range(3):
+            await run._turn(agent, 1.0)
+        assert run.board.reply_count(1) == 3
+
+    asyncio.run(main())
+
+
+def test_feed_orders_announcements_dispatch_mentions_then_hot_threads() -> None:
+    agents = [
+        AgentSpec(1, "Priya Raman", "India", 2, 0, 0, 1.0),
+        AgentSpec(2, "Kenji Sato", "Japan", 3, 1, 0, 1.0),
+        AgentSpec(3, "Ana Silva", "Brazil", 4, 2, 0, 1.0),
+    ]
+    config = CONFIG.model_copy(update={"agents": 3, "dispatch_interval": 0})
+    run = Run(
+        "feed",
+        config,
+        EventLog(),
+        RandomWalkPolicy(1),
+        clock=lambda: 30.0,
+        agents=agents,
+    )
+    run.god_announce("Announcement", "A shared update")
+    for _ in range(50):
+        run.world.observe_pixel(1, 2, 3, 4)
+    run.dispatcher.tick(30.0)
+    mention = run.board.post_thread(3, "Question", "Where are you?", 10.0)
+    run.board.reply(2, mention.id, "@Priya can you help?", 20.0)
+    hot = run.board.post_thread(2, "Busy discussion", "Let's coordinate", 11.0)
+    run.board.reply(1, hot.id, "First reply", 12.0)
+    run.board.reply(3, hot.id, "Second reply", 13.0)
+
+    entries = run._feed(agents[0], 30.0)
+    assert [entry.get("tag") for entry in entries] == [
+        "announcement",
+        "dispatch",
+        "mention",
+        None,
+    ]
+    assert entries[2]["thread_id"] == mention.id
+    assert entries[3]["thread_id"] == hot.id
+    assert run.agent_name(65534) == "World News"

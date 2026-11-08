@@ -80,5 +80,24 @@ class EventLog:
         rows = self._conn.execute("SELECT DISTINCT run_id FROM events ORDER BY run_id").fetchall()
         return [str(r[0]) for r in rows]
 
+    def run_totals(
+        self, rejected_prefix: str
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+        """Per run: id, first ts, counts of pixels/posts/turns/rejected turns/narrator updates/
+        narrator answers, deleted?, config JSON (if created). Rejected turns are thoughts
+        starting with ``rejected_prefix``."""
+        narrated = "kind = 'narrator.update' AND json_extract(payload, '$.kind')"
+        rows = self._conn.execute(
+            "SELECT run_id, MIN(ts), SUM(kind = 'pixel'), SUM(kind = 'post'),"
+            " SUM(kind = 'agent.thought'),"
+            " SUM(kind = 'agent.thought' AND substr(json_extract(payload, '$.thought'), 1, ?) = ?),"
+            f" SUM({narrated} IS NOT 'answer'), SUM({narrated} = 'answer'),"
+            " MAX(kind = 'run.deleted'),"
+            " MAX(CASE WHEN kind = 'run.created' THEN json_extract(payload, '$.config') END)"
+            " FROM events GROUP BY run_id ORDER BY run_id",
+            (len(rejected_prefix), rejected_prefix),
+        ).fetchall()
+        return [(*r[:8], bool(r[8]), r[9]) for r in rows]
+
     def close(self) -> None:
         self._conn.close()

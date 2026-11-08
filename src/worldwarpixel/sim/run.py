@@ -4,13 +4,14 @@ import random
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
 from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
+from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
@@ -19,6 +20,7 @@ from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
+MIN_PIXEL_INTERVAL = 0.01
 MAX_AGENTS = 10_000
 """Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
@@ -37,17 +39,32 @@ class RunConfig(BaseModel):
         description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
-        default=0.03,
-        ge=0,
+        default=0.01,
+        ge=MIN_PIXEL_INTERVAL,
         le=5,
-        description="Seconds between an agent's successive pixels; 0 paints a whole turn at once",
+        description=(
+            "Seconds between an agent's successive pixels (at least 10 ms so batches animate in)"
+        ),
     )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=16, ge=1, le=1000, description="Turns in flight at once")
+    dispatch_interval: float = Field(
+        default=30.0,
+        ge=0,
+        le=3600,
+        description="Seconds between World News dispatches (0 = off)",
+    )
+    post_cooldown_turns: int = Field(
+        default=3, ge=0, le=100, description="Turns an agent sits out posting after it posts"
+    )
+    max_concurrency: int = Field(default=1000, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
+    model: str = Field(
+        default="gpt-6-luna",
+        description="Model preset id from GET /models (qwen, deepseek, gpt-6-luna)",
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )
@@ -78,6 +95,7 @@ class Run:
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
+        agents: list[AgentSpec] | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -93,10 +111,20 @@ class Run:
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
-        self.agents = seed_agents(
+        self.agents = agents or seed_agents(
             config.agents, config.width, config.height, config.cooldown, self.rng
         )
         self.world = World(self.agents, self.board)
+        self.dispatcher = Dispatcher(
+            self.board,
+            self.world,
+            self.canvas,
+            self.agents,
+            publish=lambda post: self._on_write(DISPATCH_ID, "post", post.to_dict()),
+            interval=config.dispatch_interval,
+        )
+        self._agent_turns: dict[int, int] = dict.fromkeys(self.by_id, 0)
+        self._last_post_turn: dict[int, int] = {}
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
@@ -120,6 +148,8 @@ class Run:
         return {a.id: a for a in self.agents}
 
     def agent_name(self, agent_id: int) -> str:
+        if agent_id == DISPATCH_ID:
+            return DISPATCH_NAME
         if agent_id == GOD_ID:
             return GOD_NAME
         agent = self.by_id.get(agent_id)
@@ -156,6 +186,7 @@ class Run:
 
     def god_clear_board(self) -> None:
         self.board.clear()
+        self.dispatcher.reset_threads()
         self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
@@ -166,6 +197,22 @@ class Run:
         self._on_write(GOD_ID, "post", post.to_dict())
         self._announcements.append(
             {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
+        )
+        return post.to_dict()
+
+    def god_reply(self, thread_id: int, body: str) -> dict[str, Any]:
+        """Reply in an existing thread as the human; pinned for agents like an announcement."""
+        post = self.board.reply(GOD_ID, thread_id, body, self._clock())
+        self._on_write(GOD_ID, "post", post.to_dict())
+        root = self.board.thread(thread_id)[0]
+        self._announcements.append(
+            {
+                "thread_id": thread_id,
+                "title": root.title,
+                "body": body,
+                "ts": post.created_at,
+                "reply": True,
+            }
         )
         return post.to_dict()
 
@@ -183,19 +230,54 @@ class Run:
                 replies = len(self.board.thread(a["thread_id"])) - 1
             except (KeyError, IndexError):
                 continue
+            if a.get("reply"):
+                title = (
+                    f'📢 {GOD_NAME} replied in "{a["title"]}": {a["body"]} '
+                    "(answer this in that thread before anything else)"
+                )
+            else:
+                title = (
+                    f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
+                    "(everyone sees this; react however your persona would)"
+                )
             out.append(
                 {
                     "thread_id": a["thread_id"],
-                    "title": (
-                        f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
-                        "(everyone sees this; react however your persona would)"
-                    ),
+                    "title": title,
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,
+                    "tag": "announcement",
                 }
             )
         return out
+
+    def _feed(self, agent: AgentSpec, now: float) -> list[dict[str, Any]]:
+        announcements = self._announcement_digest()
+        dispatches = self.dispatcher.feed_entries(now)
+        excluded = {cast(int, entry["thread_id"]) for entry in [*announcements, *dispatches]}
+        digest = [
+            entry
+            for entry in self.board.digest(limit=40, name_of=self.agent_name)
+            if cast(int, entry["thread_id"]) not in excluded and entry["author"] != DISPATCH_NAME
+        ]
+        first_name = agent.name.split()[0].casefold()
+        mentions = []
+        hot = []
+        for order, entry in enumerate(digest):
+            latest = entry.get("latest")
+            latest_body = latest.get("body", "") if isinstance(latest, dict) else ""
+            text = f"{entry.get('title') or ''} {latest_body}".casefold()
+            if (
+                agent.country.casefold() in text
+                or f"@{first_name}" in text
+                or (entry["author"] == agent.name and cast(int, entry["replies"]) > 0)
+            ):
+                mentions.append({**entry, "tag": "mention"})
+            else:
+                hot.append((order, entry))
+        hot.sort(key=lambda item: (-cast(int, item[1]["replies"]), item[0]))
+        return [*announcements, *dispatches, *mentions[:3], *[entry for _, entry in hot[:6]]]
 
     def god_set_pace(
         self,
@@ -230,7 +312,8 @@ class Run:
         if self.state != "created":
             raise RuntimeError(f"run is {self.state}")
         self.started_at = self._clock()
-        self._record("run.created", None, {"config": self.config.model_dump()})
+        roster = [a.to_dict() for a in self.agents]
+        self._record("run.created", None, {"config": self.config.model_dump(), "agents": roster})
         self._set_state("running")
         self._running.set()
         self.hub.start()
@@ -316,7 +399,16 @@ class Run:
         queue: asyncio.Queue[PixelWrite] | None = None,
         pending: dict[tuple[int, int], tuple[int, int]] | None = None,
     ) -> None:
-        budget = TurnBudget(self.config.pixels_per_turn, self.config.posts_per_turn)
+        self.dispatcher.maybe_tick(self._clock())
+        turn = self._agent_turns[agent.id] + 1
+        self._agent_turns[agent.id] = turn
+        posts = self.config.posts_per_turn
+        if turn <= self._last_post_turn.get(agent.id, -self.config.post_cooldown_turns - 1) + (
+            self.config.post_cooldown_turns
+        ):
+            posts = 0
+        budget = TurnBudget(self.config.pixels_per_turn, posts)
+        initial_posts = budget.posts
         sink = lambda kind, payload: self._on_write(agent.id, kind, payload)  # noqa: E731
 
         def writer(writes: list[PixelWrite]) -> None:
@@ -328,15 +420,13 @@ class Run:
                 if pending is not None:
                     pending[(w.x, w.y)] = (w.color, w.agent_id)
 
-        tools = ToolSet(
-            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
-        )
+        tools = ToolSet(self.canvas, self.board, agent.id, budget, sink, self._clock, writer)
         obs = Observation(
             elapsed=elapsed,
             budget=budget,
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
-            board=self._announcement_digest() + self.board.digest(name_of=self.agent_name),
+            board=self._feed(agent, self._clock()),
         )
         self._set_status(agent.id, "thinking")
         async with self._sem:
@@ -345,6 +435,8 @@ class Run:
             except ToolError as e:
                 thought = f"Tool call rejected: {e}"
                 self.stats["errors"] += 1
+        if budget.posts < initial_posts:
+            self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
         entry = {"ts": self._clock(), "thought": thought}
@@ -362,7 +454,12 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
-            self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
+            self.world.observe_pixel(
+                agent_id,
+                int(payload.get("prev_owner", 0)),
+                int(payload["x"]),
+                int(payload["y"]),
+            )
             owner = int(payload.get("owner", agent_id))
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":

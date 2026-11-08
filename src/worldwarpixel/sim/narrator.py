@@ -41,19 +41,19 @@ SYSTEM_PROMPT = (
     "many countries paint one shared pixel canvas and argue, scheme and team up on a public "
     "message board. Every minute you brief the human audience like a sports or war commentator: "
     "what changed, who did it to whom, and why it matters.\n\n"
-    "Lead with the most dramatic development in the 'Notable events' list: a drawing that just "
-    "appeared or was finished, a raid that wrecked someone's flag, a repair or counter-attack, "
-    "a group forming around one project, a fresh argument or alliance on the board, someone "
-    "abandoning their corner to invade another. Quote agents' own words from the board when "
-    "they are juicy. Give coordinates so viewers can find things. Keep storylines going from "
-    "your previous headlines but never repeat one. Skip raw statistics unless they are the "
-    "story. Be concrete, vivid and short; only name agents, countries, drawings and threads "
+    "Lead with the most dramatic development in the 'Notable events' list: a raid that wiped "
+    "92 px of Antoine Moreau's mural, a repair or counter-attack, a fresh argument or alliance "
+    "on the board, someone abandoning their corner to invade another. Quote agents' own words "
+    "from the board when they are juicy. Give coordinates so viewers can find things. Keep "
+    "storylines going from your previous headlines but never repeat one. Skip raw statistics "
+    "unless they are the story. Be concrete, vivid and short; only name agents, countries, "
+    "regions and threads "
     "that appear in the digest, never invent any, and copy pixel counts and coordinates "
     "exactly as given (never make up numbers). Each bullet must cover a different event; do "
     "not reuse a phrase from one bullet in another or from your previous headlines.\n\n"
-    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64) while India's "
-    "flag is finished', bullets like 'Qiang Li wiped 92 px of Antoine Moreau's Brazil flag; "
-    "Moreau hit back for 80 px and the corner is a mess of red and green.'\n\n"
+    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64)', bullets like "
+    "'Qiang Li wiped 92 px of Antoine Moreau's mural; Moreau hit back for 80 px and the corner "
+    "is a mess of red and green.'\n\n"
     "Reply with JSON only, in this shape:\n"
     '{"headline": "one punchy line", "bullets": ["2 to 4 short bullets, each a different '
     'storyline"], '
@@ -63,10 +63,9 @@ SYSTEM_PROMPT = (
     "Highlights are links for the viewer: only use thread ids, agent ids and regions that appear "
     "in the digest."
 )
-DRAW_TOOLS = ("draw_flag", "draw_text", "draw_shape")
 MAX_ACTIONS = 600
 MOVE_DISTANCE = 120
-"""An agent whose drawing position jumps this far between windows 'moved'."""
+"""An agent whose painting position jumps this far between windows 'moved'."""
 
 
 class NarratorModel(Protocol):
@@ -76,21 +75,54 @@ class NarratorModel(Protocol):
 
 
 class OpenAINarratorModel:
-    def __init__(self, client: AsyncOpenAI, model: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 60.0,
+        max_tokens: int = 700,
+        token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
+        chat_template_kwargs: bool = True,
+        reasoning_effort: str | None = None,
+    ) -> None:
         self._client = client
         self.model = model
         self._timeout = timeout
+        self._max_tokens = max_tokens
+        self._token_param = token_param
+        self._chat_template_kwargs = chat_template_kwargs
+        self._reasoning_effort = reasoning_effort
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=700,
-            temperature=0.4,
-            frequency_penalty=0.5,
-            timeout=self._timeout,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        # Same endpoint quirks as the agent policy; see models.py.
+        extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._chat_template_kwargs
+            else None
         )
+        reasoning = cast(Any, self._reasoning_effort)
+        if self._token_param == "max_completion_tokens":
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=self._max_tokens,
+                temperature=0.4,
+                frequency_penalty=0.5,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
+        else:
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self._max_tokens,
+                temperature=0.4,
+                frequency_penalty=0.5,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
         return response.choices[0].message.content or ""
 
 
@@ -112,10 +144,8 @@ class Window:
     claimed_blank: int = 0
     new_posts: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_NEW_POSTS))
     actions: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=MAX_ACTIONS))
-    raids: Counter[tuple[int, int]] = field(default_factory=Counter)
-    """(raider, victim) -> pixels painted inside the victim's current drawing."""
     repairs: Counter[int] = field(default_factory=Counter)
-    """agent -> pixels of its own drawing taken back from someone else."""
+    """agent -> pixels of its previous ownership reclaimed from another agent."""
 
 
 def canvas_png(canvas: Canvas, max_side: int = MAX_IMAGE_SIDE) -> bytes:
@@ -233,24 +263,6 @@ def _int(value: Any) -> int | None:
         return None
 
 
-def _project_bbox(tool: str, args: dict[str, Any]) -> tuple[int, int, int, int]:
-    """Approximate footprint of a draw_* call as (x0, y0, x1, y1), inclusive."""
-    x, y = int(args.get("x", 0)), int(args.get("y", 0))
-    scale = max(1, int(args.get("scale") or 1))
-    if tool == "draw_flag":
-        w = int(args.get("width") or 24)
-        return x, y, x + w - 1, y + max(3, round(w * 2 / 3)) - 1
-    if tool == "draw_text":
-        n = max(1, len(str(args.get("text") or "?")))
-        return x, y, x + n * 4 * scale - 2, y + 5 * scale - 1
-    return x, y, x + 9 * scale - 1, y + 9 * scale - 1
-
-
-def _inside(bbox: tuple[int, int, int, int], x: int, y: int) -> bool:
-    x0, y0, x1, y1 = bbox
-    return x0 <= x <= x1 and y0 <= y <= y1
-
-
 class Narrator:
     """Watches one run and every `interval` seconds asks a model for a digest of what happened."""
 
@@ -275,10 +287,8 @@ class Narrator:
         self.stats = {"updates": 0, "answers": 0, "failures": 0}
         self.next_update_at: float | None = None
         self._window = Window(clock())
-        self._projects: dict[int, dict[str, Any]] = {}
-        """agent -> its current drawing (last draw_* action), kept across windows."""
-        self._announced: set[str] = set()
-        """Drawing keys already reported as started, so 'started' fires once."""
+        self._displaced: dict[tuple[int, int], int] = {}
+        """(x, y) -> previous owner displaced by the latest overwrite."""
         self._last_pos: dict[int, tuple[int, int]] = {}
         self._next_id = 1
         self._task: asyncio.Task[None] | None = None
@@ -328,12 +338,12 @@ class Narrator:
                 w.claimed_blank += 1
             elif prev != agent_id:
                 w.overwrites[(agent_id, prev)] += 1
-                victim = self._projects.get(prev)
-                if victim and _inside(victim["bbox"], x, y):
-                    w.raids[(agent_id, prev)] += 1
-                mine = self._projects.get(agent_id)
-                if mine and _inside(mine["bbox"], x, y):
-                    w.repairs[agent_id] += 1
+            if self._displaced.get((x, y)) == agent_id:
+                w.repairs[agent_id] += 1
+            if prev != 0 and prev != agent_id:
+                self._displaced[(x, y)] = prev
+            else:
+                self._displaced.pop((x, y), None)
         elif kind == "action":
             self._observe_action(agent_id, payload)
         elif kind == "post":
@@ -342,29 +352,14 @@ class Narrator:
             w.new_posts.append(payload)
 
     def _observe_action(self, agent_id: int, payload: dict[str, Any]) -> None:
-        """Track what each agent is drawing (from the LLM policy's structured action events)."""
+        """Track painting positions from structured action events."""
         tool, args = str(payload.get("tool")), dict(payload.get("args") or {})
         result = dict(payload.get("result") or {})
         if "x" not in args or "y" not in args:
             return
-        x, y = int(args["x"]), int(args["y"])
+        args["x"], args["y"] = int(args["x"]), int(args["y"])
         entry = {"ts": self._clock(), "agent_id": agent_id, "tool": tool, "args": args, **result}
         self._window.actions.append(entry)
-        if tool not in DRAW_TOOLS:
-            return
-        what = str(args.get("country") or args.get("text") or args.get("shape") or "?")
-        key = f"{agent_id}:{tool}:{what}:{x}:{y}"
-        self._projects[agent_id] = {
-            "key": key,
-            "tool": tool,
-            "what": what,
-            "x": x,
-            "y": y,
-            "bbox": _project_bbox(tool, args),
-            "remaining": int(result.get("remaining") or 0),
-            "done": bool(result.get("done")),
-            "ts": self._clock(),
-        }
 
     # -- digest ----------------------------------------------------------------------------
 
@@ -377,8 +372,7 @@ class Narrator:
     def build_digest(self, window: Window | None = None, commit: bool = False) -> dict[str, Any]:
         """Structured summary of the window; also what gets rendered into the prompt.
 
-        commit=True marks the window's started/finished drawings as announced (used by tick);
-        a plain look (ask, API) leaves them to be reported in the next scheduled update.
+        commit=True advances the painting-position baseline used to detect movement.
         """
         run, w = self._run, window if window is not None else self._window
         by_id = run.by_id
@@ -441,7 +435,7 @@ class Narrator:
             }
             for (aid, victim), n in w.overwrites.most_common(TOP_N)
         ]
-        events, drawings = self._notable(w, top_agents, threads, overwrites, commit)
+        events = self._notable(w, threads, overwrites, commit)
         conversations: list[dict[str, Any]] = []
         for x in threads[:6]:
             recent = [p for p in w.new_posts if int(p["thread_id"]) == x["thread_id"]][-3:]
@@ -457,7 +451,6 @@ class Narrator:
             )
         return {
             "events": events,
-            "drawings": drawings,
             "conversations": conversations,
             "run_id": run.id,
             "state": run.state,
@@ -483,117 +476,30 @@ class Narrator:
     def _notable(
         self,
         w: Window,
-        top_agents: list[dict[str, Any]],
         threads: list[dict[str, Any]],
         overwrites: list[dict[str, Any]],
         commit: bool,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Deterministic storylines for this window: finished/started drawings, teams, raids,
-        repairs, moves and board activity. Each event carries a highlight the UI can link."""
+    ) -> list[dict[str, Any]]:
+        """Deterministic storylines from pixel ownership, movement and board activity."""
         run = self._run
         name = run.agent_name
         events: list[dict[str, Any]] = []
-        announce: set[str] = set()
 
         def ev(kind: str, text: str, hl: dict[str, Any] | None = None) -> None:
             events.append({"kind": kind, "text": text, "highlight": hl})
 
-        def region(p: dict[str, Any]) -> dict[str, Any]:
-            x0, y0, x1, y1 = p["bbox"]
-            return {"type": "region", "x": x0, "y": y0, "w": x1 - x0 + 1, "h": y1 - y0 + 1}
-
-        def label(p: dict[str, Any]) -> str:
-            match p["tool"]:
-                case "draw_flag":
-                    w = p["what"]
-                    pretty = (
-                        w.upper() if w in ("usa", "uk", "eu", "un") else w.replace("_", " ").title()
-                    )
-                    return f"{pretty} flag"
-                case "draw_text":
-                    return f"the words '{p['what']}'"
-            return f"a {p['what']}"
-
-        window_ids = {a["agent_id"] for a in w.actions}
-        touched = [self._projects[a] for a in window_ids if a in self._projects]
-        touched.sort(key=lambda p: p["ts"], reverse=True)
-        drawings = [
-            {
-                "agent_id": aid,
-                "name": name(aid),
-                "tool": p["tool"],
-                "what": p["what"],
-                "x": p["x"],
-                "y": p["y"],
-                "remaining": p["remaining"],
-                "done": p["done"],
-            }
-            for aid, p in self._projects.items()
-            if aid in window_ids
-        ]
-        # finished
-        for aid in window_ids:
-            p = self._projects.get(aid)
-            if p and p["done"] and p["key"] not in self._announced:
-                announce.add(p["key"])
-                ev(
-                    "finished",
-                    f"{name(aid)} finished {label(p)} at ({p['x']}, {p['y']}).",
-                    region(p),
-                )
-        # teams: several agents on the same kind of drawing close together
-        groups: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = {}
-        for aid in window_ids:
-            p = self._projects.get(aid)
-            if p and not p["done"]:
-                groups.setdefault((p["tool"], p["what"]), []).append((aid, p))
-        for members in groups.values():
-            members.sort(key=lambda m: (m[1]["x"], m[1]["y"]))
-            cluster: list[tuple[int, dict[str, Any]]] = []
-            for m in members:
-                if cluster and (
-                    abs(m[1]["x"] - cluster[-1][1]["x"]) > 96
-                    or abs(m[1]["y"] - cluster[-1][1]["y"]) > 96
-                ):
-                    cluster = []
-                cluster.append(m)
-                if len(cluster) == 3:
-                    who = ", ".join(name(a) for a, _ in cluster)
-                    p0 = cluster[0][1]
-                    ev(
-                        "team",
-                        f"{len(members)} agents are building {label(p0)} together around "
-                        f"({p0['x']}, {p0['y']}): {who}…",
-                        region(p0),
-                    )
-                    break
-        # raids and repairs
-        for (raider, victim), n in w.raids.most_common(3):
-            p = self._projects.get(victim)
-            where = f" at ({p['x']}, {p['y']})" if p else ""
-            target = label(p) if p else "their drawing"
+        for o in overwrites[:3]:
             ev(
                 "raid",
-                f"{name(raider)} painted over {n} px of {name(victim)}'s {target}{where}.",
-                region(p) if p else {"type": "agent", "id": raider},
-            )
-        for aid, n in w.repairs.most_common(2):
-            p = self._projects.get(aid)
-            if p:
-                ev("repair", f"{name(aid)} repaired {n} px of {label(p)}.", region(p))
-        plain = [o for o in overwrites if (o["by"], o["over"]) not in w.raids][:2]
-        for o in plain:
-            ev(
-                "overwrite",
-                f"{o['by_name']} painted over {o['pixels']} px of {o['over_name']}'s work.",
+                f"{o['by_name']} wiped {o['pixels']} px of {o['over_name']}'s mural.",
                 {"type": "agent", "id": o["by"]},
             )
-        # started
-        for p in touched:
-            aid = next(a for a, q in self._projects.items() if q is p)
-            if not p["done"] and p["key"] not in self._announced:
-                announce.add(p["key"])
-                ev("started", f"{name(aid)} started {label(p)} at ({p['x']}, {p['y']}).", region(p))
+        for aid, n in w.repairs.most_common(2):
+            ev(
+                "repair",
+                f"{name(aid)} repaired {n} px of their mural.",
+                {"type": "agent", "id": aid},
+            )
         # moves (compared with where each agent worked before this window)
         moved: set[int] = set()
         last = dict(self._last_pos)
@@ -609,7 +515,6 @@ class Narrator:
                 )
             last[aid] = (x, y)
         if commit:
-            self._announced |= announce
             self._last_pos = last
         # board
         roots = [p for p in w.new_posts if p.get("title")]
@@ -627,18 +532,14 @@ class Narrator:
                     {"type": "thread", "id": t["thread_id"]},
                 )
         order = {
-            "finished": 0,
-            "team": 1,
-            "raid": 2,
-            "repair": 3,
-            "started": 4,
-            "move": 5,
-            "hot_thread": 6,
-            "overwrite": 7,
-            "thread": 8,
+            "raid": 0,
+            "repair": 1,
+            "move": 2,
+            "hot_thread": 3,
+            "thread": 4,
         }
         events.sort(key=lambda e: order.get(e["kind"], 9))
-        return events[:12], drawings[:15]
+        return events[:12]
 
     @staticmethod
     def render_digest(d: dict[str, Any]) -> str:
@@ -654,14 +555,6 @@ class Narrator:
         if d.get("events"):
             lines.append("Notable events since the last update (most important first):")
             lines += [f"- {e['text']}" for e in d["events"]]
-        if d.get("drawings"):
-            lines.append("Drawings in progress (agent, what, top-left, pixels left):")
-            lines += [
-                f"- agent {x['agent_id']} {x['name']}: {x['tool'].removeprefix('draw_')} "
-                f"'{x['what']}' at ({x['x']}, {x['y']}), "
-                + ("done" if x["done"] else f"{x['remaining']} px left")
-                for x in d["drawings"]
-            ]
         if d.get("conversations"):
             lines.append("Conversations (newest posts):")
             for c in d["conversations"]:

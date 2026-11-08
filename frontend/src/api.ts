@@ -10,6 +10,7 @@ export interface RunConfig {
   max_concurrency: number;
   seed: number | null;
   policy: "llm" | "random";
+  model: string;
   narrator_interval: number;
   narrator_canvas_image: boolean;
 }
@@ -21,14 +22,22 @@ export const DEFAULT_CONFIG: RunConfig = {
   cooldown: 0.5,
   jitter: 0.3,
   pixels_per_turn: 200,
-  pixel_interval: 0.03,
+  pixel_interval: 0.01,
   posts_per_turn: 1,
-  max_concurrency: 16,
+  max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  model: "gpt-6-luna",
   narrator_interval: 60,
   narrator_canvas_image: true,
 };
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  model: string;
+  available: boolean;
+}
 
 export type RunState = "created" | "running" | "paused" | "stopped";
 
@@ -52,6 +61,7 @@ export interface LLMStats {
   tool_errors: number;
   no_tools: number;
   failures: number;
+  last_error?: string;
   latency?: { model: LatencySummary | null; turn: LatencySummary | null };
 }
 
@@ -208,11 +218,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export const DISPATCH_ID = 65534;
+export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
 export const api = {
   listRuns: () => request<RunSummary[]>("/runs"),
+  listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {
       method: "POST",
@@ -250,6 +263,11 @@ export const api = {
     request<Post>(`/runs/${id}/god/announce`, {
       method: "POST",
       body: JSON.stringify({ title, body }),
+    }),
+  godReply: (id: string, threadId: number, body: string) =>
+    request<Post>(`/runs/${id}/god/reply`, {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, body }),
     }),
   godPace: (
     id: string,

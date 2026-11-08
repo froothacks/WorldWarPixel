@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DEFAULT_CONFIG, type RunConfig, type RunSummary } from "./api";
+import { api, DEFAULT_CONFIG, type ModelInfo, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
 
 interface Props {
@@ -38,9 +38,24 @@ export default function StartScreen({ onStarted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<RunSummary[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
+    api
+      .listModels()
+      .then((ms) => {
+        setModels(ms);
+        // Fall back to the first available preset when the current choice is unusable
+        // (e.g. a Modal-only server where the gpt-6-luna default has no OpenAI key).
+        setCfg((c) => {
+          if (c.policy !== "llm" || ms.length === 0) return c;
+          if (ms.some((m) => m.id === c.model && m.available)) return c;
+          const first = ms.find((m) => m.available);
+          return first ? { ...c, model: first.id } : c;
+        });
+      })
+      .catch(() => setModels([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
@@ -117,6 +132,24 @@ export default function StartScreen({ onStarted }: Props) {
             <span className="hint">{brain.hint}</span>
           </div>
 
+          {cfg.policy === "llm" && models.length > 0 && (
+            <div className="field">
+              <span className="field-label">Model</span>
+              <select value={cfg.model} onChange={(e) => set("model", e.target.value)}>
+                {cfg.model && !models.some((m) => m.id === cfg.model) && (
+                  <option value={cfg.model}>{cfg.model}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id} disabled={!m.available}>
+                    {m.label}
+                    {m.available ? "" : " — unavailable"}
+                  </option>
+                ))}
+              </select>
+              <span className="hint">Every agent and the narrator use this model for the whole run.</span>
+            </div>
+          )}
+
           <label className="field">
             <span className="field-label agent-label">
               Agents
@@ -186,9 +219,9 @@ export default function StartScreen({ onStarted }: Props) {
                 Pixels per turn
                 <input type="number" min={1} max={1024} value={cfg.pixels_per_turn} onChange={(e) => set("pixels_per_turn", +e.target.value)} />
               </label>
-              <label title="Milliseconds between an agent's successive pixels; 0 paints a whole turn at once">
+              <label title="Milliseconds between an agent's successive pixels; minimum 10 ms">
                 Pixel gap (ms)
-                <input type="number" min={0} max={5000} step={10} value={Math.round(cfg.pixel_interval * 1000)} onChange={(e) => set("pixel_interval", +e.target.value / 1000)} />
+                <input type="number" min={10} max={5000} step={5} value={Math.round(cfg.pixel_interval * 1000)} onChange={(e) => set("pixel_interval", +e.target.value / 1000)} />
               </label>
               <label>
                 Posts per turn
@@ -196,7 +229,7 @@ export default function StartScreen({ onStarted }: Props) {
               </label>
               <label>
                 Turns in flight
-                <input type="number" min={1} max={500} value={cfg.max_concurrency} onChange={(e) => set("max_concurrency", +e.target.value)} />
+                <input type="number" min={1} max={1000} value={cfg.max_concurrency} onChange={(e) => set("max_concurrency", +e.target.value)} />
               </label>
               <label>
                 Narrator every (s)
@@ -235,7 +268,7 @@ export default function StartScreen({ onStarted }: Props) {
                     <span className={`state state-${r.state}`}>{r.state}</span>
                     <span className="mono run-id">{r.id}</span>
                     <span className="run-meta">
-                      {r.agents} {r.config.policy === "random" ? "random" : "LLM"} agents · {r.config.width}×{r.config.height} ·{" "}
+                      {r.agents} {r.config.policy === "random" ? "random" : (r.config.model ?? "LLM")} agents · {r.config.width}×{r.config.height} ·{" "}
                       {r.stats.pixels.toLocaleString()} px
                     </span>
                     <span className="run-when">{ago(r.created_at)}</span>

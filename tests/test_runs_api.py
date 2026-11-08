@@ -25,7 +25,6 @@ SMALL = {
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("EVENT_LOG_PATH", ":memory:")
     get_settings.cache_clear()
     with TestClient(app) as c:
@@ -64,6 +63,25 @@ def test_run_lifecycle(client: TestClient) -> None:
     assert client.delete(f"/runs/{run_id}").status_code == 204
     assert client.get("/runs").json() == []
     assert client.delete(f"/runs/{run_id}").status_code == 404
+
+
+def test_models_endpoint_lists_presets(client: TestClient) -> None:
+    models = client.get("/models").json()
+    assert {m["id"] for m in models} == {"gpt-6-luna", "qwen", "deepseek"}
+    assert all(set(m) == {"id", "label", "model", "available"} for m in models)
+
+
+def test_unknown_model_is_rejected_before_the_run_starts(client: TestClient) -> None:
+    body = {**SMALL, "policy": "llm", "model": "no-such-model"}
+    response = client.post("/runs", json=body)
+    assert response.status_code == 422
+    assert "no-such-model" in response.json()["detail"]
+    assert client.get("/runs").json() == []
+
+
+def test_random_runs_ignore_the_model_field(client: TestClient) -> None:
+    body = {**SMALL, "model": "no-such-model"}
+    assert client.post("/runs", json=body).status_code == 201
 
 
 def test_active_run_cap(client: TestClient) -> None:

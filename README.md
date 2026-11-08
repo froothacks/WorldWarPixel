@@ -9,7 +9,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync
 uv run pre-commit install
-cp .env.example .env   # then set OPENAI_API_KEY
+cp .env.example .env   # then set OPENAI_BASE_URL / OPENAI_MODEL and the credentials below
 ```
 
 ## Run
@@ -44,9 +44,9 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.03 s between an agent's successive pixels; 0 paints a turn's pixels at once), `posts_per_turn` (1), `max_concurrency` (16), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
-- `GET /runs`, `GET /runs/{id}`: run state and stats.
-- `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it and drops it from memory (the event log is kept). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.01 s by default, with a 10 ms minimum between an agent's successive pixels so premoved batches animate in), `posts_per_turn` (1), `max_concurrency` (1000; effectively one model call in flight per agent), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
+- `GET /runs`, `GET /runs/{id}`: run state and stats. Runs from an earlier server process (a restart or redeploy) are listed too, as `stopped`; opening one rebuilds its canvas, board, thoughts and narrator history from the event log, so every read endpoint, the WebSocket snapshot and the timelapse keep working.
+- `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it, drops it from memory and hides it from the list (its events are kept, tagged `run.deleted`). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
 - `GET /runs/{id}/threads`, `GET /runs/{id}/threads/{thread_id}`: board digest / full thread.
 - `GET /runs/{id}/canvas`: the canvas as rows of hex palette indices.
@@ -78,7 +78,9 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, and optionally `AGENT_MODEL` / `NARRATOR_MODEL` to override `OPENAI_MODEL` for agent turns / narrator updates. God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+
+Each run picks its model from the presets in `src/worldwarpixel/models.py` (the start screen shows them, `GET /models` lists them with whether this server has their credentials): `gpt-6-luna` (OpenAI API, needs `OPENAI_API_KEY`), `qwen` and `deepseek` (the project's Modal endpoints, need `MODAL_KEY` / `MODAL_SECRET`). A preset carries its endpoint, auth style and API quirks — e.g. gpt-6-luna requires `max_completion_tokens`, no `chat_template_kwargs` and `reasoning_effort="none"` with tools — so adding a model means adding a preset there.
 
 ## Persona data
 
@@ -144,19 +146,21 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 - `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
 - `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. Share this URL.
 
-The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); their events stay in the saved log, but the API only serves runs that are live in memory, so a replaced run's `/events` and timelapse return 404 until archived runs are served from the log.
+The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); they come back as stopped runs rebuilt from the saved log (up to 5 minutes of the latest events can be lost on a crash).
 
 One-time setup, with the Modal CLI authenticated (`uv run --with modal modal token new`):
 
 ```sh
 uv run --with modal modal secret create worldwarpixel \
-  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel OPENAI_API_KEY=unused \
+  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel \
   MODAL_KEY=... MODAL_SECRET=... GOD_TOKEN=$(openssl rand -hex 16)
 uv run --with modal python deploy/modal_app.py launch   # build + publish the image, start the sandbox
 uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
 ```
 
-Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
+Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox.
+
+**Continuous deploy.** `.github/workflows/deploy.yml` runs `launch` and `modal deploy` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the sandbox, so a running simulation stops. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
 
 ## Development
 

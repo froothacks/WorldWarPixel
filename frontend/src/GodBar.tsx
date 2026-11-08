@@ -194,12 +194,12 @@ export default function GodBar({
       </label>
       <label
         className="small"
-        title="Milliseconds between an agent's successive pixels (0 = paint a whole turn at once)"
+        title="Milliseconds between an agent's successive pixels (minimum 10 ms)"
       >
         px gap {Math.round(run.config.pixel_interval * 1000)}ms
         <input
           type="range"
-          min={0}
+          min={10}
           max={1000}
           step={10}
           value={Math.round(run.config.pixel_interval * 1000)}
