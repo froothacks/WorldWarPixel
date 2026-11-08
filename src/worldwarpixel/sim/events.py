@@ -99,5 +99,10 @@ class EventLog:
         ).fetchall()
         return [(*r[:8], bool(r[8]), r[9]) for r in rows]
 
+    def reader(self) -> "EventLog":
+        """A log on the same database for use from another thread; ``close`` it when done.
+        In-memory logs have no second connection, so the shared one is returned."""
+        return self if self.path == ":memory:" else EventLog(self.path)
+
     def close(self) -> None:
         self._conn.close()

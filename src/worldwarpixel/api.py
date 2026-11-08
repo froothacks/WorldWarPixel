@@ -16,6 +16,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
@@ -28,6 +29,8 @@ from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
 from worldwarpixel.sim.timelapse import build_timelapse
+from worldwarpixel.sim.video import VideoError
+from worldwarpixel.videos import VideoStore
 
 MAX_RESTORED = 8
 """Finished runs rebuilt from the log that are kept in memory at once (oldest dropped first)."""
@@ -43,8 +46,12 @@ class RunManager:
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
+        videos: VideoStore | None = None,
+        auto_video: bool = False,
     ) -> None:
         self.log = log
+        self.videos = videos
+        self.auto_video = auto_video and videos is not None
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
@@ -116,6 +123,8 @@ class RunManager:
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        if self.videos is not None:
+            await self.videos.drain()
         self.log.close()
 
 
@@ -132,6 +141,7 @@ ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+videos_router = APIRouter(prefix="/videos", tags=["runs"])
 
 
 @rosters_router.get("")
@@ -173,7 +183,10 @@ async def resume_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
 @router.post("/{run_id}/stop")
 async def stop_run(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     run = await manager.fetch(run_id)
+    was_live = run.state != "stopped"
     await run.stop()
+    if was_live and manager.auto_video and manager.videos is not None:
+        manager.videos.schedule(manager.log, run_id)
     return run.summary()
 
 
@@ -374,6 +387,51 @@ async def get_timelapse(
         build_timelapse, manager.log, run_id, run.canvas.width, run.canvas.height, frames
     )
     return Response(content=data, media_type="application/octet-stream")
+
+
+def _videos(manager: RunManager) -> VideoStore:
+    if manager.videos is None:
+        raise HTTPException(503, "video rendering is not configured on this server")
+    return manager.videos
+
+
+@router.post("/{run_id}/video", status_code=201)
+async def render_run_video(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    """Render (or re-render) the run's timelapse video from its event log so far."""
+    await manager.fetch(run_id)
+    try:
+        return await _videos(manager).render(manager.log, run_id)
+    except VideoError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.get("/{run_id}/video")
+async def get_run_video(run_id: str, manager: ManagerDep) -> Response:
+    """The rendered mp4 (see ``POST`` to render); 202 while a render is in progress."""
+    store = _videos(manager)
+    meta = store.meta(run_id)
+    if meta is None:
+        if store.rendering(run_id):
+            return Response(status_code=202, content="rendering", media_type="text/plain")
+        raise HTTPException(404, "no video rendered for this run yet; POST to render one")
+    return FileResponse(
+        store.video_path(run_id), media_type="video/mp4", filename=f"worldwarpixel-{run_id}.mp4"
+    )
+
+
+@router.get("/{run_id}/video/meta")
+async def get_run_video_meta(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    store = _videos(manager)
+    meta = store.meta(run_id)
+    if meta is None:
+        return {"run_id": run_id, "rendered": False, "rendering": store.rendering(run_id)}
+    return {**meta, "rendered": True, "rendering": False}
+
+
+@videos_router.get("")
+async def list_videos(manager: ManagerDep) -> list[dict[str, Any]]:
+    """Every rendered run video with its metadata sidecar, newest first."""
+    return _videos(manager).list()
 
 
 class NarratorQuestion(BaseModel):
