@@ -3,8 +3,9 @@
 Each caller passes a sticky ``key`` (one per agent, one per narrator). Keys are mapped to
 endpoints with rendezvous hashing, so an agent keeps talking to the same server and its
 growing prompt prefix stays in that server's KV cache; adding or losing an endpoint only
-moves the keys that hashed to it. When the chosen endpoint is rate-limited or down, the
-call fails over to the key's next endpoint and the bad one cools down for a while.
+moves the keys that hashed to it. When the chosen endpoint is rate-limited, down or rejects
+its credentials, the call fails over to the key's next endpoint and the bad one cools down for a
+while (longer for bad credentials).
 """
 
 import hashlib
@@ -18,7 +19,9 @@ from openai import (
     APIConnectionError,
     APITimeoutError,
     AsyncOpenAI,
+    AuthenticationError,
     InternalServerError,
+    PermissionDeniedError,
     RateLimitError,
 )
 from openai.types.chat import ChatCompletion
@@ -92,6 +95,10 @@ def _score(key: str, endpoint: str) -> int:
 
 RETRYABLE = (RateLimitError, InternalServerError, APIConnectionError)
 """Errors worth trying another endpoint for (429, 5xx such as Modal's cold 503, unreachable)."""
+BAD_CREDENTIALS = (AuthenticationError, PermissionDeniedError)
+"""401/403: this endpoint's secrets are wrong (e.g. a rotated Modal token). That will not fix
+itself in seconds, so the endpoint is skipped for ``auth_cooldown`` instead of failing every
+call pinned to it."""
 
 
 class EndpointPool:
@@ -101,12 +108,14 @@ class EndpointPool:
         self,
         endpoints: Sequence[tuple[Endpoint, Any]],
         cooldown: float = 15.0,
+        auth_cooldown: float = 300.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not endpoints:
             raise ValueError("an endpoint pool needs at least one endpoint")
         self._endpoints = list(endpoints)
         self._cooldown = cooldown
+        self._auth_cooldown = auth_cooldown
         self._clock = clock
         self._cooling_until: dict[str, float] = {}
         self.stats: dict[str, dict[str, int]] = {
@@ -139,7 +148,8 @@ class EndpointPool:
         return healthy + [ec for ec in ranked if ec not in healthy]
 
     async def create(self, key: str, **kwargs: Any) -> ChatCompletion:
-        """``chat.completions.create`` on the key's endpoint, failing over on 429/5xx/connect."""
+        """``chat.completions.create`` on the key's endpoint, failing over on 429/5xx/connect
+        and on 401/403 (bad credentials for that endpoint)."""
         candidates = self._candidates(key)
         for i, (endpoint, client) in enumerate(candidates):
             stats = self.stats[endpoint.name]
@@ -153,11 +163,13 @@ class EndpointPool:
                 stats["errors"] += 1
                 endpoint_attribute = "endpoint"
                 setattr(e, endpoint_attribute, endpoint)
-                if not isinstance(e, RETRYABLE):
+                bad_credentials = isinstance(e, BAD_CREDENTIALS)
+                if not bad_credentials and not isinstance(e, RETRYABLE):
                     raise
                 if isinstance(e, APITimeoutError):
                     raise  # slow, not down: retrying elsewhere would only double the wait
-                self._cooling_until[endpoint.name] = self._clock() + self._cooldown
+                cooldown = self._auth_cooldown if bad_credentials else self._cooldown
+                self._cooling_until[endpoint.name] = self._clock() + cooldown
                 if i == len(candidates) - 1:
                     raise
                 next_endpoint = candidates[i + 1][0]

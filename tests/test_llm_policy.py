@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import httpx2 as httpx
 import pytest
-from openai import NOT_GIVEN, AuthenticationError
+from openai import NOT_GIVEN, AuthenticationError, BadRequestError
 
 from worldwarpixel.routing import Endpoint, EndpointPool
 from worldwarpixel.sim.agents import AgentSpec, Observation
@@ -48,6 +48,11 @@ def _response(content: str | None, calls: list[tuple[str, dict[str, Any]]]) -> A
 def _unauthorized() -> AuthenticationError:
     request = httpx.Request("POST", "https://x/v1/chat/completions")
     return AuthenticationError("401", response=httpx.Response(401, request=request), body=None)
+
+
+def _bad_request() -> BadRequestError:
+    request = httpx.Request("POST", "https://x/v1/chat/completions")
+    return BadRequestError("400", response=httpx.Response(400, request=request), body=None)
 
 
 class FakeCompletions:
@@ -303,12 +308,12 @@ def test_failed_model_call_names_routed_endpoint() -> None:
     )
     routed_client = clients[routed_client_index]
 
-    class Unauthorized(FakeCompletions):
+    class Rejected(FakeCompletions):
         async def create(self, **kw: Any) -> Any:
             self.requests.append(kw)
-            raise _unauthorized()
+            raise _bad_request()  # not retryable: stays on the routed endpoint
 
-    routed_client.chat.completions = Unauthorized([])
+    routed_client.chat.completions = Rejected([])
     thought = asyncio.run(policy.act(agent, tools, obs))
 
     assert f"via {routed_endpoint}" in policy.stats["last_error"]

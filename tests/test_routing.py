@@ -104,23 +104,30 @@ def test_all_endpoints_failing_raises_the_last_error() -> None:
     assert cast(Any, exc.value).endpoint == last_endpoint
 
 
-def test_authentication_error_is_attributed_without_failing_over() -> None:
-    pool, _ = _pool(2)
-    first_endpoint, first_client = pool.order("a")[0]
-    first_client.fail = _unauthorized()
-    other_endpoint, other_client = next(
-        (endpoint, client) for endpoint, client in pool.order("a") if endpoint != first_endpoint
-    )
+def test_bad_credentials_fail_over_and_cool_the_endpoint_for_longer() -> None:
+    clock = [0.0]
+    pool, clients = _pool(2, clock)
+    first = pool.route("a")
+    clients[int(first[-1])].fail = _unauthorized()
+    other = "ws1" if first == "ws0" else "ws0"
+    assert cast(Any, asyncio.run(pool.create("a"))) == "m" + other[-1]
+    assert pool.stats[first] == {"calls": 1, "errors": 1, "failovers": 1}
+    # A rate-limit cooldown (15 s) would be over by now; bad credentials keep it out longer.
+    clock[0] = 100.0
+    assert pool.route("a") == other
+    clock[0] = 400.0
+    assert pool.route("a") == first
 
+
+def test_bad_credentials_everywhere_raise_attributed_to_the_last_endpoint() -> None:
+    pool, clients = _pool(2)
+    for c in clients:
+        c.fail = _unauthorized()
+    last_endpoint = pool.order("a")[-1][0]
     with pytest.raises(AuthenticationError) as exc:
         asyncio.run(pool.create("a"))
-
-    assert cast(Any, exc.value).endpoint == first_endpoint
-    assert pool.stats[first_endpoint.name] == {"calls": 1, "errors": 1, "failovers": 0}
-    assert pool.stats[other_endpoint.name] == {"calls": 0, "errors": 0, "failovers": 0}
-    assert not pool.public_stats()[other_endpoint.name]["cooling"]
-    assert not other_client.calls
-    assert describe_endpoint(exc.value) == f"{first_endpoint.name} ({first_endpoint.base_url})"
+    assert cast(Any, exc.value).endpoint == last_endpoint
+    assert describe_endpoint(exc.value) == f"{last_endpoint.name} ({last_endpoint.base_url})"
 
 
 def test_describe_endpoint_returns_unknown_for_unattributed_error() -> None:
