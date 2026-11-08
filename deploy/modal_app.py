@@ -2,9 +2,9 @@
 
 Sandboxes are capped at 24h and get a new tunnel URL each time, so this module also deploys an
 hourly ``keep_alive`` job (restarts the sandbox if it died, replaces it before the cap) and a
-``home`` web endpoint with a stable URL that redirects to whichever sandbox is current, plus the
-``worldwarpixel.com`` custom domains (Modal terminates their TLS; DNS must CNAME to
-``cname.modal.domains``). The event
+``home`` web endpoint with a stable URL that redirects to whichever sandbox is current. For a
+custom domain, run ``cloudflared`` inside the sandbox (see ``serve.py`` and the README): it
+tunnels out to Cloudflare, which terminates TLS — no Modal custom domain needed. The event
 log is SQLite on the sandbox disk, backed up to a Volume (see ``serve.py``). Live runs are held
 in memory, so they end whenever the sandbox is replaced; they reopen as stopped runs from the log.
 
@@ -43,6 +43,13 @@ def build_image() -> modal.Image:
         .run_commands(
             f"curl -fsSL https://nodejs.org/dist/v{NODE_VERSION}/{node}.tar.xz"
             " | tar -xJ -C /usr/local --strip-components=1"
+        )
+        # Cloudflare Tunnel client; the sandbox dials out, so no inbound ports or Modal
+        # custom domains (a paid feature) are needed to serve worldwarpixel.com.
+        .run_commands(
+            "curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/"
+            "cloudflared-linux-amd64 -o /usr/local/bin/cloudflared"
+            " && chmod +x /usr/local/bin/cloudflared"
         )
         .add_local_dir(
             ROOT / "frontend", "/app/frontend", copy=True, ignore=["node_modules", "dist"]
@@ -131,7 +138,7 @@ def keep_alive() -> None:
 
 @app.function(image=control_image)
 @modal.concurrent(max_inputs=100)
-@modal.asgi_app(custom_domains=["worldwarpixel.com", "www.worldwarpixel.com"])
+@modal.asgi_app()
 def home() -> Any:
     from fastapi import FastAPI, Request
     from fastapi.responses import PlainTextResponse, RedirectResponse, Response
