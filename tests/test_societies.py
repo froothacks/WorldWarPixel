@@ -1,4 +1,5 @@
 import asyncio
+import struct
 from collections.abc import Iterator
 
 import pytest
@@ -510,3 +511,18 @@ def test_openai_transcriber_sends_a_wav() -> None:
     assert text == "more blue" and sent["model"] == "gpt-4o-mini-transcribe"
     with wave.open(io.BytesIO(sent["file"][1])) as w:
         assert (w.getframerate(), w.getnchannels(), w.getnframes()) == (16000, 1, 160)
+
+
+def test_stereo_wav_is_downmixed_to_mono() -> None:
+    import io
+    import wave
+
+    from worldwarpixel.voice import wav_to_pcm
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(struct.pack("<4h", 100, 300, -101, -300))
+    assert wav_to_pcm(buf.getvalue()) == (struct.pack("<2h", 200, -200), 8000)

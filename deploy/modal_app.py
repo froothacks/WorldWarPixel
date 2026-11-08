@@ -32,12 +32,7 @@ def build_image() -> modal.Image:
     node = f"node-v{NODE_VERSION}-linux-x64"
     return (
         modal.Image.debian_slim(python_version="3.12")
-        .uv_sync(str(ROOT), extra_options="--no-dev --extra voice")
-        # Society screens' voice clips are transcribed in-process; bake the Whisper weights in.
-        .run_commands(
-            'python -c "from faster_whisper import WhisperModel;'
-            " WhisperModel('base', device='cpu', compute_type='int8')\""
-        )
+        .uv_sync(str(ROOT), extra_options="--no-dev")
         .apt_install("curl", "ca-certificates", "xz-utils", "ffmpeg", "fonts-dejavu-core")
         .run_commands(
             f"curl -fsSL https://nodejs.org/dist/v{NODE_VERSION}/{node}.tar.xz"
