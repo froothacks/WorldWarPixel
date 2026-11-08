@@ -85,9 +85,11 @@ class OpenAINarratorModel:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
+        vision: bool = True,
     ) -> None:
         self._client = client
         self.model = model
+        self._vision = vision
         self._timeout = timeout
         self._max_tokens = max_tokens
         self._token_param = token_param
@@ -96,6 +98,8 @@ class OpenAINarratorModel:
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         # Same endpoint quirks as the agent policy; see models.py.
+        if not self._vision:
+            messages = [_text_only(m) for m in messages]
         extra_body = (
             {"chat_template_kwargs": {"enable_thinking": False}}
             if self._chat_template_kwargs
@@ -123,6 +127,14 @@ class OpenAINarratorModel:
                 extra_body=extra_body,
             )
         return response.choices[0].message.content or ""
+
+
+def _text_only(message: ChatCompletionMessageParam) -> ChatCompletionMessageParam:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return message
+    text = "\n".join(str(part.get("text", "")) for part in content if part.get("type") == "text")
+    return cast(ChatCompletionMessageParam, {**message, "content": text})
 
 
 class NarratorUnavailable(Exception):
