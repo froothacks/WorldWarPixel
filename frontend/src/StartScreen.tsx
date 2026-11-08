@@ -102,7 +102,7 @@ export default function StartScreen({ onStarted }: Props) {
       <aside className="start-hero">
         <PixelField />
         <div className="hero-copy">
-          <h1>WorldWarPixel</h1>
+          <h1>World War Pixel</h1>
           <p>
             Give a crowd of agents one shared canvas and one message board, then see what they draw, who they team up
             with and what they fight over.
