@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -38,6 +40,46 @@ def test_modal_headers_for_only_on_modal_hosts(monkeypatch: pytest.MonkeyPatch) 
     }
     assert settings.modal_headers_for("https://evil.example.com/v1") == {}
     assert settings.modal_headers_for(None) == {}
+
+
+def test_modal_headers_for_workspace_uses_its_own_env_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = "https://chryztoph--ep-x-server.us-west.modal.direct/v1"
+    monkeypatch.setenv("MODAL_KEY", "default-k")
+    monkeypatch.setenv("MODAL_SECRET", "default-s")
+    monkeypatch.setenv("CHRYZTOPH_MODAL_KEY", "ck")
+    monkeypatch.setenv("CHRYZTOPH_MODAL_SECRET", "cs")
+    settings = Settings()
+    assert settings.modal_headers_for(url, "chryztoph") == {"Modal-Key": "ck", "Modal-Secret": "cs"}
+    assert settings.modal_headers_for(url) == {
+        "Modal-Key": "default-k",
+        "Modal-Secret": "default-s",
+    }
+    # A workspace without credentials gets no headers rather than another workspace's.
+    assert settings.modal_headers_for(url, "other") == {}
+    # Credentials never leave Modal hosts, whatever the workspace.
+    assert settings.modal_headers_for("https://evil.example.com/v1", "chryztoph") == {}
+    monkeypatch.delenv("CHRYZTOPH_MODAL_SECRET")
+    assert Settings().modal_headers_for(url, "chryztoph") == {}
+
+
+def test_modal_headers_for_workspace_reads_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Workspace pairs are not Settings fields, so they only reach us via os.environ or .env.
+    monkeypatch.delenv("CHRYZTOPH_MODAL_KEY", raising=False)
+    monkeypatch.delenv("CHRYZTOPH_MODAL_SECRET", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("CHRYZTOPH_MODAL_KEY=dk\nCHRYZTOPH_MODAL_SECRET=ds\n")
+    url = "https://chryztoph--ep-x-server.us-west.modal.direct/v1"
+    assert Settings().modal_headers_for(url, "chryztoph") == {
+        "Modal-Key": "dk",
+        "Modal-Secret": "ds",
+    }
+    # An env var set to "" (operator cleared it) wins over .env: no credentials are sent.
+    monkeypatch.setenv("CHRYZTOPH_MODAL_KEY", "")
+    assert Settings().modal_headers_for(url, "chryztoph") == {}
 
 
 @pytest.mark.parametrize("var", ["AGENT_MAX_TOKENS", "NARRATOR_MAX_TOKENS"])

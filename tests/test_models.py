@@ -5,7 +5,13 @@ from worldwarpixel.models import find_model, model_available, model_registry
 
 
 def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
-    for var in ("OPENAI_API_KEY", "MODAL_KEY", "MODAL_SECRET"):
+    for var in (
+        "OPENAI_API_KEY",
+        "MODAL_KEY",
+        "MODAL_SECRET",
+        "CHRYZTOPH_MODAL_KEY",
+        "CHRYZTOPH_MODAL_SECRET",
+    ):
         monkeypatch.delenv(var, raising=False)
     for var, value in env.items():
         monkeypatch.setenv(var, value)
@@ -14,7 +20,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry(Settings())}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek"}
+    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "qwen-c", "glm-5.3-flash"}
 
     luna = specs["gpt-6-luna"]
     assert luna.base_url == "https://api.openai.com/v1"
@@ -47,13 +53,35 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
     specs = model_registry(settings)
     assert not any(model_available(settings, m) for m in specs)
 
-    settings = _settings(monkeypatch, MODAL_KEY="k", MODAL_SECRET="s", OPENAI_API_KEY="sk-test")
+    settings = _settings(
+        monkeypatch,
+        MODAL_KEY="k",
+        MODAL_SECRET="s",
+        OPENAI_API_KEY="sk-test",
+        CHRYZTOPH_MODAL_KEY="ck",
+        CHRYZTOPH_MODAL_SECRET="cs",
+    )
     specs = model_registry(settings)
     assert all(model_available(settings, m) for m in specs)
 
     settings = _settings(monkeypatch, MODAL_KEY="k", MODAL_SECRET="s")
     specs = model_registry(settings)
-    assert [model_available(settings, m) for m in specs] == [False, True, True]
+    assert [model_available(settings, m) for m in specs] == [
+        False,
+        True,
+        True,
+        False,  # chryztoph workspace presets need their own credential pair
+        False,
+    ]
+
+
+def test_modal_preset_overridden_to_non_modal_url_needs_no_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(monkeypatch, QWEN_BASE_URL="http://localhost:8000/v1")
+    qwen = find_model(settings, "qwen")
+    assert qwen is not None
+    assert model_available(settings, qwen)
 
 
 def test_find_model_unknown_id() -> None:
