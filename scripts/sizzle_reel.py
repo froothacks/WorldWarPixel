@@ -905,12 +905,16 @@ async def _amain(args: argparse.Namespace) -> int:
             for r in sorted(runs, key=lambda r: r.score, reverse=True)
             if r.run_id not in analyzed_ids
         ]
-        candidates = usable + backfill or sorted(runs, key=lambda r: r.score, reverse=True)
 
         def combined(r: RunPick) -> float:
             return r.score + (_num(r.vertex or {}, "cinematic_score", 5.0) - 5.0) * 25.0
 
-        picked = sorted(candidates, key=combined, reverse=True)[: max(1, args.top)]
+        want = max(1, args.top)
+        picked = sorted(usable, key=combined, reverse=True)[:want]
+        if len(picked) < want:
+            picked += sorted(backfill, key=lambda r: r.score, reverse=True)[: want - len(picked)]
+        if not picked:
+            picked = sorted(runs, key=lambda r: r.score, reverse=True)[:want]
     else:
         picked = sorted(runs, key=lambda r: r.score, reverse=True)[: max(1, args.top)]
     for i, r in enumerate(picked, 1):
