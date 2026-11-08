@@ -7,7 +7,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
@@ -69,8 +69,15 @@ class RunConfig(BaseModel):
     )
     model: str = Field(
         default="gpt-6-luna",
-        description="Model preset id from GET /models (qwen, deepseek, gpt-6-luna)",
+        description="Model preset id from GET /models (gpt-6-luna, qwen, deepseek, glm)",
     )
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def _default_model(cls, v: Any) -> Any:
+        # Runs archived before model presets stored model=null.
+        return "gpt-6-luna" if v is None else v
+
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )
