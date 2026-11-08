@@ -1,6 +1,6 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
@@ -15,12 +15,28 @@ class ToolError(Exception):
     """Raised for a rejected tool call; the message is meant to be shown to the agent."""
 
 
+class SocietyAccess(Protocol):
+    """What one agent may do with societies during a turn (implemented by the run)."""
+
+    def current(self) -> int: ...
+
+    def peek(self, society_id: int) -> dict[str, Any]: ...
+
+    def join(self, society_id: int) -> dict[str, Any]: ...
+
+    def rename(self, name: str) -> dict[str, Any]: ...
+
+    def invite(self, name: str) -> dict[str, Any]: ...
+
+
 @dataclass(slots=True)
 class TurnBudget:
     pixels: int = 8
     posts: int = 1
     views: int = 3
     reads: int = 3
+    votes: int = 1
+    invites: int = 1
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -28,6 +44,8 @@ class TurnBudget:
             "posts": self.posts,
             "views": self.views,
             "reads": self.reads,
+            "votes": self.votes,
+            "invites": self.invites,
         }
 
 
@@ -57,7 +75,11 @@ class ToolSet:
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
         blocked: Callable[[int, int], bool] | None = None,
+        societies: SocietyAccess | None = None,
+        vote: Callable[[int, bool], int] | None = None,
     ) -> None:
+        self.societies = societies
+        self._vote = vote
         self._canvas = canvas
         self._board = board
         self._agent_id = agent_id
@@ -166,18 +188,24 @@ class ToolSet:
         self._check("posts", 1)
         self._own_words(title, body)
         norm = title.strip().casefold()
+        society = self.societies.current() if self.societies else None
         for t in self._board.threads():
+            if self._board.society_of(t.id) not in (None, society):
+                continue
             if (t.title or "").casefold() == norm:
                 raise ToolError(
                     f"a thread titled {title.strip()!r} already exists (thread {t.id}); "
                     "reply in it instead of starting another"
                 )
         try:
-            post = self._board.post_thread(self._agent_id, title, body, self._clock())
+            post = self._board.post_thread(self._agent_id, title, body, self._clock(), society)
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._spend("posts", 1)
-        self._sink("post", post.to_dict())
+        payload = post.to_dict()
+        if society is not None:
+            payload["society"] = society
+        self._sink("post", payload)
         return {"thread_id": post.id, "post_id": post.id}
 
     def reply(self, thread_id: int, body: str, parent_id: int | None = None) -> dict[str, Any]:
@@ -196,6 +224,40 @@ class ToolSet:
         self._spend("posts", 1)
         self._sink("post", post.to_dict())
         return {"thread_id": thread_id, "post_id": post.id}
+
+    def vote_thread(self, thread_id: int, up: bool = True) -> dict[str, Any]:
+        if self._vote is None:
+            raise ToolError("voting is not available")
+        self._check("votes", 1)
+        votes = self._vote(thread_id, up)
+        self._spend("votes", 1)
+        return {"thread_id": thread_id, "votes": votes}
+
+    def _society_call(self, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        if self.societies is None:
+            raise ToolError("there are no societies in this world")
+        try:
+            return fn()
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+
+    def peek_society(self, society_id: int) -> dict[str, Any]:
+        self._check("reads", 1)
+        out = self._society_call(lambda: self.societies.peek(society_id))  # type: ignore[union-attr]
+        self._spend("reads", 1)
+        return out
+
+    def join_society(self, society_id: int) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.join(society_id))  # type: ignore[union-attr]
+
+    def name_society(self, name: str) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.rename(name))  # type: ignore[union-attr]
+
+    def invite(self, name: str) -> dict[str, Any]:
+        self._check("invites", 1)
+        out = self._society_call(lambda: self.societies.invite(name))  # type: ignore[union-attr]
+        self._spend("invites", 1)
+        return out
 
     def read_thread(self, thread_id: int) -> dict[str, Any]:
         self._check("reads", 1)

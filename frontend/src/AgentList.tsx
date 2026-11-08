@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import type { Agent } from "./api";
+import type { Agent, Society } from "./api";
 
 interface Props {
   agents: Agent[];
+  societies?: Society[];
   palette: string[];
   selected: number | null;
   lastThought: Map<number, string>;
@@ -16,7 +17,7 @@ interface Props {
 /** Rows rendered at once; with thousands of agents the DOM gets heavy, so the rest load on demand. */
 const MAX_ROWS = 400;
 
-export default function AgentList({ agents, palette, selected, lastThought, onSelect, hidden = false, people = false }: Props) {
+export default function AgentList({ agents, societies = [], palette, selected, lastThought, onSelect, hidden = false, people = false }: Props) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(MAX_ROWS);
   const matching = useMemo(() => {
@@ -56,6 +57,11 @@ export default function AgentList({ agents, palette, selected, lastThought, onSe
               <span className="agent-name">
                 {a.name}
                 <span className="agent-country">{people ? a.headline : a.country}</span>
+                {a.society != null && societies[a.society] && (
+                  <span className="agent-society" style={{ color: societies[a.society].color }} title={`In ${societies[a.society].name}`}>
+                    ● {societies[a.society].name}
+                  </span>
+                )}
               </span>
               <span className="agent-thought">{lastThought.get(a.id) ?? a.last_thought?.thought ?? "no turn yet"}</span>
             </span>

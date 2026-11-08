@@ -14,6 +14,7 @@ from worldwarpixel.sim.llm_policy import (
     _canonical_tool,
     _parse_pixel_list,
     _track_position,
+    guided_user_prompt,
     pick_threads,
     system_prompt,
     user_prompt,
@@ -50,7 +51,7 @@ class FakeCompletions:
 
     async def create(self, **kw: Any) -> Any:
         self.requests.append(kw)
-        return self.responses.pop(0)
+        return self.responses.pop(0) if self.responses else _response(None, [])
 
 
 class FakeClient:
@@ -97,14 +98,14 @@ def test_tool_calls_are_executed_and_summarised() -> None:
     assert [k for k, _ in events] == ["pixel", "pixel", "post"]
     assert (agent.home_x, agent.home_y) == (2, 2)
     assert policy.stats == {
-        "calls": 1,
+        "calls": 2,
         "tool_calls": 2,
         "tool_errors": 0,
         "no_tools": 0,
         "failures": 0,
     }
     latency = policy.public_stats()["latency"]
-    assert latency["model"]["n"] == 1 and latency["turn"]["n"] == 1
+    assert latency["model"]["n"] == 2 and latency["turn"]["n"] == 1
     assert 0 <= latency["turn"]["p50"] <= latency["turn"]["max"]
     req = client.chat.completions.requests[0]
     assert req["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
@@ -148,6 +149,29 @@ def test_no_tool_response_counts_and_prompt_mentions_budget() -> None:
     assert "4 pixels" in system_prompt(agent, 64, 40, 4, 1) and "Priya Raman, 34" in system_prompt(
         agent, 64, 40, 4, 1
     )
+
+
+def test_default_prompt_is_neutral_and_offers_only_basic_tools() -> None:
+    agent, tools, obs, _ = _setup()
+    obs.board = [
+        {"thread_id": 7, "title": "newest", "author": "B", "replies": 0, "latest": None},
+        {"thread_id": 3, "title": "older", "author": "C", "replies": 2, "latest": None},
+    ]
+    client = FakeClient([_response("Hm.", [])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    req = client.chat.completions.requests[0]
+    system = req["messages"][0]["content"]
+    user = req["messages"][1]["content"][0]["text"]
+    for steer in ("r/place", "flag", "religio", "alliance", "free spot", "drawing"):
+        assert steer not in system.lower() and steer not in user.lower()
+    assert user.index("thread 7") < user.index("thread 3")
+    assert "view_canvas" in user
+    names = {t["function"]["name"] for t in req["tools"]}
+    assert names.isdisjoint({"draw_flag", "draw_text", "draw_shape", "fill_rect", "draw_line"})
+    assert "place_pixels" in names and "post_thread" in names
+    guided = LLMPolicy(client, "m", guided=True)  # type: ignore[arg-type]
+    assert "r/place" in guided.describe(agent, 64, 40, 4, 1)
 
 
 def test_agent_max_tokens_is_passed_to_the_model() -> None:
@@ -261,6 +285,9 @@ def test_follow_up_failure_keeps_completed_actions() -> None:
     assert "Paint then look." in thought and "placed 1 px near (3, 3)" in thought
     assert "model call failed: RuntimeError" in thought
     assert len(events) == 1 and policy.stats["failures"] == 1
+    client.chat.completions = FakeCompletions([_response("Back.", [])])
+    asyncio.run(policy.act(agent, tools, obs))
+    assert "last_error" not in policy.stats
 
 
 def test_out_of_range_arguments_are_clamped() -> None:
@@ -404,9 +431,10 @@ def test_prompt_marks_world_news_and_hides_post_tools_without_budget() -> None:
         }
     ]
     obs.budget.posts = 0
-    prompt = user_prompt(agent, obs, "canvas")
+    prompt = guided_user_prompt(agent, obs, "canvas")
     assert "[WORLD NEWS] - thread 7" in prompt
-    assert "Budget: 4 pixels, no posts this turn (you posted recently)." in prompt
+    assert "[WORLD NEWS] - thread 7" in user_prompt(agent, obs)
+    assert "Budget: 4 pixels, no posts this turn (you posted recently)," in prompt
     assert "Hand of God" not in prompt
     assert "Hand of God" not in system_prompt(agent, 64, 40, 4, 1)
     policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
@@ -439,9 +467,117 @@ def test_successful_pixel_calls_emit_action_events() -> None:
             )
         ]
     )
-    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    policy = LLMPolicy(client, "m", vision=False, guided=True)  # type: ignore[arg-type]
     asyncio.run(policy.act(agent, tools, obs))
     actions = [p for k, p in events if k == "action"]
     assert len(actions) == 1 and actions[0]["tool"] == "place_pixels"
     assert actions[0]["args"] == {"count": 1, "x": 2, "y": 2}
     assert actions[0]["result"]["placed"] == 1
+
+
+def test_pixel_triples_string_is_accepted() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [_response("Row.", [("place_pixels", {"pixels": "1,1,2 2,1,2 (3, 1, 2)"})])]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "placed 3 px near (1, 1)" in thought
+    assert [(p["x"], p["y"], p["color"]) for _, p in events] == [(1, 1, 2), (2, 1, 2), (3, 1, 2)]
+
+
+def test_bare_pixel_arguments_are_accepted() -> None:
+    agent, tools, _, events = _setup()
+    policy = LLMPolicy(FakeClient([]), "m", vision=False)  # type: ignore[arg-type]
+    policy._dispatch(agent, tools, "place_pixels", {"x": 5, "y": 6, "color": 3})
+    assert [(p["x"], p["y"], p["color"]) for _, p in events] == [(5, 6, 3)]
+
+
+def test_agent_keeps_painting_while_pixels_are_left() -> None:
+    agent, tools, obs, events = _setup()
+    client = FakeClient(
+        [
+            _response("Start.", [("place_pixels", {"pixels": "0,0,2"})]),
+            _response("More.", [("place_pixels", {"pixels": "1,0,2 2,0,2"})]),
+            _response("Last.", [("place_pixels", {"pixels": "3,0,2"})]),
+            _response("Never asked.", [("place_pixels", {"pixels": "9,9,2"})]),
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    reqs = client.chat.completions.requests
+    assert len(events) == 4 and tools.budget.pixels == 0 and len(reqs) == 3
+    nudges = [m["content"] for m in reqs[-1]["messages"] if m["role"] == "user"][1:]
+    assert nudges == ["3 pixels left this turn.", "1 pixels left this turn."]
+
+
+def test_turn_ends_when_agent_does_not_paint() -> None:
+    agent, tools, obs, _ = _setup()
+    client = FakeClient(
+        [
+            _response("Talk.", [("post_thread", {"title": "Hi", "body": "hello"})]),
+            _response("Never asked.", [("place_pixels", {"pixels": "9,9,2"})]),
+        ]
+    )
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert len(client.chat.completions.requests) == 1
+
+
+def test_budget_line_says_pixels_do_not_carry_over() -> None:
+    agent, _, obs, _ = _setup()
+    assert "Unused pixels don't carry over" in user_prompt(agent, obs, vision=False)
+
+
+def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:
+    from openai import RateLimitError
+
+    from worldwarpixel.sim import llm_policy
+
+    agent, tools, obs, _ = _setup()
+    slept: list[float] = []
+
+    async def fake_sleep(s: float) -> None:
+        slept.append(s)
+
+    class Limited(FakeCompletions):
+        async def create(self, **kw: Any) -> Any:
+            err = RateLimitError.__new__(RateLimitError)
+            Exception.__init__(err, "Error code: 429")
+            raise err
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    client = FakeClient([])
+    client.chat.completions = Limited([])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    asyncio.run(policy.act(agent, tools, obs))
+    assert policy.stats["failures"] == 1 and len(slept) == 1
+    assert llm_policy.RATE_LIMIT_BACKOFF[0] <= slept[0] <= llm_policy.RATE_LIMIT_BACKOFF[1]
+
+
+def test_tool_calls_left_in_text_are_parsed_and_run() -> None:
+    from worldwarpixel.sim.llm_policy import _text_tool_calls
+
+    text, calls = _text_tool_calls(
+        "Painting. <tool_call>place_pixels<arg_key>pixels</arg_key>"
+        "<arg_value>1,1,3 2,1,3</arg_value></tool_call>"
+        "<tool_call>reply<arg_key>thread_id</arg_key><arg_value>4</arg_value>"
+        "<arg_key>body</arg_key><arg_value>cut off mid"
+        "<tool_call>post_thread<arg_key>body</arg_key><arg_value>true</arg_value></tool_call>"
+    )
+    assert text == "Painting. "
+    assert [(c.function.name, json.loads(c.function.arguments)) for c in calls] == [
+        ("place_pixels", {"pixels": "1,1,3 2,1,3"}),
+        ("post_thread", {"body": "true"}),
+    ]
+
+    agent, tools, obs, _ = _setup()
+    content = (
+        "Hi. <tool_call>place_pixels<arg_key>pixels</arg_key>"
+        "<arg_value>1,1,3 2,1,3</arg_value></tool_call>"
+    )
+    client = FakeClient([_response(content, [])])
+    policy = LLMPolicy(client, "m", vision=False)  # type: ignore[arg-type]
+    thought = asyncio.run(policy.act(agent, tools, obs))
+    assert "<tool_call>" not in thought and "placed 2 px" in thought
+    assert policy.stats["no_tools"] == 0

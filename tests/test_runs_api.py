@@ -93,13 +93,14 @@ def test_god_model_switches_a_running_llm_run(client: TestClient) -> None:
     manager.make_narrator = lambda _cfg: None
     run_id = client.post("/runs", json={**SMALL, "policy": "llm", "model": "qwen"}).json()["id"]
 
-    response = client.post(f"/runs/{run_id}/god/model", json={"model": "deepseek"})
-    assert response.status_code == 200 and response.json()["config"]["model"] == "deepseek"
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "glm-5.3-flash"})
+    assert response.status_code == 200 and response.json()["config"]["model"] == "glm-5.3-flash"
     run = manager.runs[run_id]
-    assert run.config.model == "deepseek" and isinstance(run.policy, RandomWalkPolicy)
+    assert run.config.model == "glm-5.3-flash" and isinstance(run.policy, RandomWalkPolicy)
     events = client.get(f"/runs/{run_id}/events", params={"limit": 100}).json()
     assert any(
-        e["kind"] == "god.model_changed" and e["payload"]["model"] == "deepseek" for e in events
+        e["kind"] == "god.model_changed" and e["payload"]["model"] == "glm-5.3-flash"
+        for e in events
     )
     client.post(f"/runs/{run_id}/stop")
 
@@ -193,6 +194,34 @@ def test_spa_fallback_does_not_swallow_api_404s(
     with pytest.raises(HTTPException) as exc:
         asyncio.run(app_module.frontend("runs/nope/unknown"))
     assert exc.value.status_code == 404
+
+
+def test_thread_votes_reorder_the_board(client: TestClient) -> None:
+    run_id = client.post("/runs", json={**SMALL, "posts_per_turn": 0}).json()["id"]
+    first = client.post(f"/runs/{run_id}/god/announce", json={"title": "A", "body": "a"}).json()
+    second = client.post(f"/runs/{run_id}/god/announce", json={"title": "B", "body": "b"}).json()
+    order = [t["thread_id"] for t in client.get(f"/runs/{run_id}/threads").json()]
+    assert order == [second["id"], first["id"]]
+    r = client.post(f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1})
+    assert r.status_code == 200 and r.json() == {"thread_id": first["id"], "votes": 1}
+    threads = client.get(f"/runs/{run_id}/threads").json()
+    assert [t["thread_id"] for t in threads] == [first["id"], second["id"]]
+    assert threads[0]["votes"] == 1
+    again = client.post(
+        f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1}
+    )
+    assert again.json()["votes"] == 2
+    assert (
+        client.post(f"/runs/{run_id}/threads/999/vote", json={"voter": "v1", "vote": 1}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 2}
+        ).status_code
+        == 422
+    )
+    client.post(f"/runs/{run_id}/stop")
 
 
 def test_rosters_endpoint_lists_the_hackathon(client: TestClient) -> None:

@@ -35,7 +35,7 @@ export default function GodBar({
   const [modelChoice, setModelChoice] = useState(run.config.model);
 
   useEffect(() => {
-    if (run.config.policy !== "llm") return;
+    if (run.config.policy === "random") return;
     api
       .listModels()
       .then(setModels)
@@ -216,7 +216,7 @@ export default function GodBar({
           onChange={(e) => pxInterval(+e.target.value)}
         />
       </label>
-      {run.config.policy === "llm" && (
+      {run.config.policy !== "random" && (
         <>
           <label
             className="small"

@@ -77,6 +77,18 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     }));
   }, [debateState]);
 
+  const runTimer = useRef<number | null>(null);
+  const scheduleRunRefresh = useCallback(() => {
+    if (runTimer.current !== null) return;
+    runTimer.current = window.setTimeout(() => {
+      runTimer.current = null;
+      api
+        .getRun(initial.id)
+        .then(setRun)
+        .catch(() => undefined);
+    }, 300);
+  }, [initial.id]);
+
   const scheduleThreadRefresh = useCallback(() => {
     if (refreshTimer.current !== null) return;
     refreshTimer.current = window.setTimeout(() => {
@@ -140,7 +152,16 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           });
           break;
         case "post.created":
+        case "thread.voted":
           scheduleThreadRefresh();
+          break;
+        case "society.joined":
+          setAgents((list) => list.map((a) => (a.id === ev.agent_id ? { ...a, society: ev.to } : a)));
+          scheduleRunRefresh();
+          break;
+        case "society.renamed":
+        case "society.murmur":
+          scheduleRunRefresh();
           break;
         case "board.cleared":
           setThreads([]);
@@ -171,7 +192,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       if (refreshTimer.current !== null)
         window.clearTimeout(refreshTimer.current);
     };
-  }, [acceptDebate, initial.id, scheduleThreadRefresh]);
+  }, [acceptDebate, initial.id, scheduleThreadRefresh, scheduleRunRefresh]);
 
   // Stats come with run.state events; poll a little for the counters in between.
   useEffect(() => {
@@ -444,6 +465,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           totalThreads={run.threads}
           open={openThread}
           onOpen={setOpenThread}
+          onVoted={scheduleThreadRefresh}
+          societies={run.societies ?? []}
+          agents={agents}
         />
         <div className="side">
           <nav className="tabs">
@@ -472,6 +496,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
           <AgentList
             agents={agents}
+            societies={run.societies ?? []}
             palette={palette}
             selected={selected}
             lastThought={lastThought}

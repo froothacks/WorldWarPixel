@@ -42,7 +42,11 @@ export type ServerEvent =
       votes: Record<string, number>;
       winner_id: number | null;
       topic: string;
-    };
+    }
+  | { type: "thread.voted"; thread_id: number; votes: number }
+  | { type: "society.joined"; agent_id: number; agent: string; from: number; to: number }
+  | { type: "society.renamed"; agent_id: number; society: number; name: string }
+  | { type: "society.murmur"; society: number; murmur: string; transcript: string };
 
 export interface StreamHandlers {
   onEvent: (event: ServerEvent) => void;

@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     tts_model: str = "gpt-4o-mini-tts"
     stage_model: str | None = None
     """Debate lines model (default: the narrator's). With an OpenAI TTS key it runs on OpenAI."""
+    device_tokens: SecretStr = SecretStr("")
+    """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
+    whisper_model: str = "base"
+    """faster-whisper model size used to transcribe society-screen voice clips."""
+    murmur_condense: bool = False
+    """Rephrase voice transcripts into a rumour with the server's chat model."""
+    voice_dump_dir: str = ""
+    """When set, every received voice clip is saved there as a WAV (for debugging devices)."""
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"

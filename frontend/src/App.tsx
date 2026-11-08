@@ -4,6 +4,7 @@ import StartScreen from "./StartScreen";
 import LiveView from "./LiveView";
 import Presenter from "./Presenter";
 import Audience from "./Audience";
+import Screen from "./Screen";
 
 function runFromUrl(): string | null {
   return new URLSearchParams(location.search).get("run");
@@ -16,6 +17,8 @@ function setUrl(runId: string | null) {
 
 export default function App() {
   const params = new URLSearchParams(location.search);
+  const screen = params.get("screen");
+  if (screen !== null) return <Screen society={+screen || 0} />;
   const stageId = params.get("stage");
   const audienceId = params.get("audience");
   if (audienceId) return <Audience key={audienceId} runId={audienceId} />;
