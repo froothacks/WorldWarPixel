@@ -69,8 +69,8 @@ for secret_name in "${APP_SECRETS[@]}"; do
     exit 1
   fi
   if [ -z "$enabled_version" ]; then
-    echo "::warning::$secret_name has no enabled version; skipped"
-    continue
+    echo "$secret_name exists in Secret Manager but has no enabled version; add a version or delete the secret" >&2
+    exit 1
   fi
   secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
   secret_display+="${secret_display:+, }${secret_name}"
