@@ -106,6 +106,18 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),
+        # meganwchun workspace: proxy auth comes from MEGANWCHUN_MODAL_KEY/_SECRET.
+        ModelSpec(
+            id="glm-megan",
+            label="GLM 5.3 Flash NVFP4 (meganwchun)",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url="https://meganwchun--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="meganwchun",
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
+        ),
     ]
 
 

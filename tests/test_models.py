@@ -11,6 +11,8 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         "MODAL_SECRET",
         "CHRYZTOPH_MODAL_KEY",
         "CHRYZTOPH_MODAL_SECRET",
+        "MEGANWCHUN_MODAL_KEY",
+        "MEGANWCHUN_MODAL_SECRET",
     ):
         monkeypatch.delenv(var, raising=False)
     for var, value in env.items():
@@ -20,7 +22,15 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry(Settings())}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm", "qwen-c", "glm-5.3-flash"}
+    assert set(specs) == {
+        "gpt-6-luna",
+        "qwen",
+        "deepseek",
+        "glm",
+        "qwen-c",
+        "glm-5.3-flash",
+        "glm-megan",
+    }
 
     luna = specs["gpt-6-luna"]
     assert luna.base_url == "https://api.openai.com/v1"
@@ -73,6 +83,8 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
         OPENAI_API_KEY="sk-test",
         CHRYZTOPH_MODAL_KEY="ck",
         CHRYZTOPH_MODAL_SECRET="cs",
+        MEGANWCHUN_MODAL_KEY="mk",
+        MEGANWCHUN_MODAL_SECRET="ms",
     )
     specs = model_registry(settings)
     assert all(model_available(settings, m) for m in specs)
@@ -86,6 +98,7 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
         True,  # glm (advait-m workspace) shares MODAL_KEY/MODAL_SECRET
         False,  # chryztoph workspace presets need their own credential pair
         False,
+        False,  # so does the meganwchun workspace preset
     ]
 
 

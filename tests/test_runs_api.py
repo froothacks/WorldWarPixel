@@ -75,6 +75,7 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
         "glm",
         "qwen-c",
         "glm-5.3-flash",
+        "glm-megan",
     }
     assert all(set(m) == {"id", "label", "model", "available"} for m in models)
 
