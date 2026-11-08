@@ -18,7 +18,7 @@ import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
 import Territory from "./Territory";
 import Alliances from "./Alliances";
-import { ErrorIcon, Toasts } from "./Errors";
+import { Toasts } from "./Errors";
 import { errorHint, useToasts } from "./errorUtils";
 import Board from "./Board";
 import NarratorDock from "./NarratorDock";
@@ -275,7 +275,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       .then(setRun)
       .catch((e: Error) => notify(`Couldn't ${action} the run`, e.message));
   const [errDismissed, setErrDismissed] = useState<string | null>(null);
-  const [errOpen, setErrOpen] = useState(false);
   // A recovery ends the dismissed episode, so the next failure shows again even with the same text.
   if (!run.llm?.last_error && errDismissed !== null) setErrDismissed(null);
   const [god, setGod] = useState(false);
@@ -378,17 +377,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
         </div>
       </header>
       {llm?.last_error && llm.last_error !== errDismissed && (
-        <div className={`errbar ${errOpen ? "open" : ""}`} role="alert">
-          <ErrorIcon />
-          <strong>Model calls failing</strong>
-          {errorHint(llm.last_error) && <span className="errbar-hint">{errorHint(llm.last_error)}</span>}
-          <span className="errbar-count">{llm.failures.toLocaleString()} failed</span>
-          <span className="errbar-msg" title={llm.last_error}>
-            {llm.last_error}
+        <div className="errbar" role="alert" title={llm.last_error}>
+          <span className="errbar-msg">
+            Model calls failing: {errorHint(llm.last_error) ?? llm.last_error}
           </span>
-          <button className="text" onClick={() => setErrOpen((o) => !o)}>
-            {errOpen ? "Less" : "Details"}
-          </button>
+          <span className="errbar-count">{llm.failures.toLocaleString()} failed</span>
           <button className="icon-close" aria-label="Dismiss until the error changes" onClick={() => setErrDismissed(llm.last_error ?? null)}>
             ×
           </button>

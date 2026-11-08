@@ -402,16 +402,9 @@ button.text:hover { background: none; color: var(--text); }
 .god-reply .inline-error { flex: 1 1 100%; }
 
 .err-icon { flex: none; }
-.errbar { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px 5px 12px; background: color-mix(in srgb, var(--danger) 10%, var(--bg)); border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); font-size: 12px; }
-.errbar .err-icon { color: var(--danger); }
-.errbar strong { font-weight: 600; white-space: nowrap; }
-.errbar-hint { color: var(--danger); white-space: nowrap; }
-.errbar-hint::before { content: "·"; margin-right: 8px; color: var(--faint); }
-.errbar-count { font-family: var(--mono); font-size: 11px; color: var(--danger); padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 16%, transparent); white-space: nowrap; }
-.errbar-msg { flex: 1; min-width: 0; color: var(--muted); font-family: var(--mono); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.errbar.open { align-items: flex-start; }
-.errbar.open .errbar-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
-.errbar button.text { flex: none; height: 22px; }
+.errbar { flex: none; display: flex; align-items: center; gap: 10px; min-width: 0; height: 26px; padding: 0 6px 0 12px; background: color-mix(in srgb, var(--danger) 8%, var(--bg)); border-bottom: 1px solid var(--border); font-size: 12px; }
+.errbar-count { flex: none; color: var(--muted); font-size: 11px; }
+.errbar-msg { flex: 1; min-width: 0; color: var(--danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icon-close { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; }
 .icon-close:hover { background: var(--hover); color: var(--text); }
 .inline-error { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--danger); font-size: 12px; }
