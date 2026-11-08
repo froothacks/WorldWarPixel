@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     """Optional bearer key for OpenAI-style endpoints; never sent to Modal hosts."""
     openai_base_url: str | None = None
-    openai_model: str = "gpt-4o-mini"
     agent_vision: bool = True
     agent_max_tokens: int = Field(default=700, ge=1)
     """Max output tokens per agent model call; reasoning models need more to reach the tool call."""

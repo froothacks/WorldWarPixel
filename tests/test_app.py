@@ -14,9 +14,7 @@ class FakeChatService(ChatService):
     def __init__(self) -> None:
         self._semaphore = asyncio.Semaphore(10)
 
-    async def chat(
-        self, messages: Sequence[ChatCompletionMessageParam], model: str | None = None
-    ) -> str:
+    async def chat(self, messages: Sequence[ChatCompletionMessageParam], model: str) -> str:
         last = messages[-1]
         return f"echo:{last.get('content')}"
 
@@ -36,7 +34,9 @@ def test_health(client: TestClient) -> None:
 
 
 def test_chat(client: TestClient) -> None:
-    resp = client.post("/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+    resp = client.post(
+        "/chat", json={"messages": [{"role": "user", "content": "hi"}], "model": "m"}
+    )
     assert resp.status_code == 200
     assert resp.json() == {"reply": "echo:hi"}
 
@@ -48,7 +48,8 @@ def test_chat_batch(client: TestClient) -> None:
             "conversations": [
                 [{"role": "user", "content": "a"}],
                 [{"role": "user", "content": "b"}],
-            ]
+            ],
+            "model": "m",
         },
     )
     assert resp.status_code == 200
@@ -56,4 +57,9 @@ def test_chat_batch(client: TestClient) -> None:
 
 
 def test_chat_rejects_empty(client: TestClient) -> None:
-    assert client.post("/chat", json={"messages": []}).status_code == 422
+    assert client.post("/chat", json={"messages": [], "model": "m"}).status_code == 422
+
+
+def test_chat_requires_model(client: TestClient) -> None:
+    resp = client.post("/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+    assert resp.status_code == 422

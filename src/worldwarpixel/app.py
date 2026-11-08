@@ -30,7 +30,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
-    model: str | None = None
+    model: str
 
 
 class ChatResponse(BaseModel):
@@ -39,7 +39,7 @@ class ChatResponse(BaseModel):
 
 class BatchChatRequest(BaseModel):
     conversations: list[list[Message]] = Field(min_length=1)
-    model: str | None = None
+    model: str
 
 
 class BatchChatResponse(BaseModel):
@@ -96,9 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout=settings.request_timeout,
         default_headers=settings.default_headers() or None,
     ) as client:
-        app.state.chat_service = ChatService(
-            client, settings.openai_model, settings.max_concurrency
-        )
+        app.state.chat_service = ChatService(client, settings.max_concurrency)
 
         def make_policy(config: RunConfig) -> Policy:
             if config.policy == "llm":
@@ -190,7 +188,6 @@ async def health_config() -> dict[str, object]:
     s = get_settings()
     return {
         "openai_base_url": s.openai_base_url,
-        "openai_model": s.openai_model,
         "is_modal_endpoint": s.is_modal_endpoint,
         "api_key": s.api_key() != "none",
         "modal_key": bool(s.modal_key.get_secret_value()),

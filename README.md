@@ -9,7 +9,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync
 uv run pre-commit install
-cp .env.example .env   # then set OPENAI_BASE_URL / OPENAI_MODEL and the credentials below
+cp .env.example .env   # then set the credentials below
 ```
 
 ## Run
@@ -63,7 +63,7 @@ curl -X POST localhost:8000/runs -H 'content-type: application/json' \
 
 ## Narrator
 
-Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the model (`NARRATOR_MODEL`, default `OPENAI_MODEL`) for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
+Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the run's selected model preset for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
 
 ## Chat endpoints
 
@@ -78,7 +78,7 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
 
 Each run picks its model from the presets in `src/worldwarpixel/models.py` (the start screen shows them, `GET /models` lists them with whether this server has their credentials): `gpt-6-luna` (OpenAI API, needs `OPENAI_API_KEY`), `qwen` and `deepseek` (the project's Modal endpoints, need `MODAL_KEY` / `MODAL_SECRET`). A preset carries its endpoint, auth style and API quirks — e.g. gpt-6-luna requires `max_completion_tokens`, no `chat_template_kwargs` and `reasoning_effort="none"` with tools — so adding a model means adding a preset there.
 
@@ -149,7 +149,7 @@ One-time setup, with the Modal CLI authenticated (`uv run --with modal==1.6.3 mo
 
 ```sh
 uv run --with modal==1.6.3 modal secret create worldwarpixel \
-  OPENAI_BASE_URL=https://<model-endpoint>/v1 OPENAI_MODEL=world-war-pixel \
+  OPENAI_BASE_URL=https://<model-endpoint>/v1 \
   MODAL_KEY=... MODAL_SECRET=... GOD_TOKEN=$(openssl rand -hex 16)
 uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
 ```

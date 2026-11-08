@@ -24,7 +24,7 @@ class FakeCompletions:
 def _service(completions: FakeCompletions, max_concurrency: int) -> ChatService:
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     fake: AsyncOpenAI = client  # type: ignore[assignment]
-    return ChatService(fake, "test-model", max_concurrency)
+    return ChatService(fake, max_concurrency)
 
 
 def test_chat_many_preserves_order_and_limits_concurrency() -> None:
@@ -32,7 +32,7 @@ def test_chat_many_preserves_order_and_limits_concurrency() -> None:
     service = _service(completions, max_concurrency=3)
     conversations = [[{"role": "user", "content": str(i)}] for i in range(10)]
 
-    replies = asyncio.run(service.chat_many(conversations))  # type: ignore[arg-type]
+    replies = asyncio.run(service.chat_many(conversations, "test-model"))  # type: ignore[arg-type]
 
     assert replies == [f"test-model:{i}" for i in range(10)]
     assert completions.peak == 3
