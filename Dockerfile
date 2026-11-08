@@ -28,6 +28,7 @@ ENV PATH=/app/.venv/bin:$PATH \
     EVENT_LOG_PATH=/root/state/events.db \
     EVENT_LOG_BACKUP=/data/events.db \
     BACKUP_INTERVAL=60 \
+    SHUTDOWN_GRACE=4 \
     TIMELAPSE_DIR=/data/timelapses \
     PORT=8080
 EXPOSE 8080
