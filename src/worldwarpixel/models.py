@@ -1,7 +1,7 @@
 """Selectable agent models: the endpoints serving each one, their secrets, and API quirks.
 
 The start screen picks one preset per run. A preset may list several endpoints serving the
-same model (e.g. GLM deployed in three Modal workspaces); the server multiplexes a run's
+same model (e.g. GLM deployed in four Modal workspaces); the server multiplexes a run's
 agents across every endpoint whose secrets it holds, see routing.py.
 
 The quirks are load-bearing:
@@ -37,6 +37,7 @@ OPENAI = Endpoint(
 ADVAIT = ""  # advait-m: MODAL_KEY / MODAL_SECRET
 CHRYZTOPH = "CHRYZTOPH_"
 MEGANWCHUN = "MEGANWCHUN_"
+LEONFATTAKHOV = "LEONFATTAKHOV_"
 
 GLM_MODEL = "nvidia/GLM-5.3-Flash-NVFP4"
 GLM_SERVER = "ep-glm-5-3-flash-nvfp4-server"
@@ -104,6 +105,12 @@ def model_registry() -> list[ModelSpec]:
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=ADVAIT,
                 ),
+                modal_endpoint(
+                    "leonfattakhov",
+                    "ep-deepseek-v4-1-flash-server",
+                    "deepseek-ai/DeepSeek-V4.1-Flash",
+                    secret_prefix=LEONFATTAKHOV,
+                ),
             ),
             max_tokens=3000,
             narrator_max_tokens=3000,
@@ -115,6 +122,7 @@ def model_registry() -> list[ModelSpec]:
                 modal_endpoint("advait-m", GLM_SERVER, GLM_MODEL, secret_prefix=ADVAIT),
                 modal_endpoint("chryztoph", GLM_SERVER, GLM_MODEL, secret_prefix=CHRYZTOPH),
                 modal_endpoint("meganwchun", GLM_SERVER, GLM_MODEL, secret_prefix=MEGANWCHUN),
+                modal_endpoint("leonfattakhov", GLM_SERVER, GLM_MODEL, secret_prefix=LEONFATTAKHOV),
             ),
             aliases=("glm-5.3-flash", "glm-megan"),
             # Reasons (reasoning_content) before the tool call: at the default effort it burns a
