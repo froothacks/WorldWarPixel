@@ -3,10 +3,11 @@ import json
 import struct
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from fastapi.testclient import TestClient
+from openai import NOT_GIVEN
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
@@ -58,6 +59,22 @@ def test_narrator_openai_reasoning_model_params() -> None:
     assert "max_tokens" not in request
     assert request["reasoning_effort"] == "none"
     assert not request.get("extra_body")
+
+
+@pytest.mark.parametrize("token_param", ("max_tokens", "max_completion_tokens"))
+def test_narrator_omits_unset_reasoning_effort(
+    token_param: Literal["max_tokens", "max_completion_tokens"],
+) -> None:
+    completions = _FakeCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    model = OpenAINarratorModel(
+        client,  # type: ignore[arg-type]
+        "m",
+        token_param=token_param,
+        reasoning_effort=None,
+    )
+    asyncio.run(model.complete([{"role": "user", "content": "hi"}]))
+    assert completions.requests[0]["reasoning_effort"] is NOT_GIVEN
 
 
 CONFIG = RunConfig(

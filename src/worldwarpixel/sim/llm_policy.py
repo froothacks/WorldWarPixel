@@ -6,7 +6,7 @@ import re
 import time
 from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI
+from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionContentPartParam,
     ChatCompletionMessageParam,
@@ -383,7 +383,9 @@ class LLMPolicy:
                     if self._chat_template_kwargs
                     else None
                 )
-                reasoning = cast(Any, self._reasoning_effort)
+                reasoning: Any = (
+                    self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
+                )
                 if self._token_param == "max_completion_tokens":
                     response = await self._client.chat.completions.create(
                         model=self._model,
