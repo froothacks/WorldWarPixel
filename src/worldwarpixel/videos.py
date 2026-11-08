@@ -26,7 +26,7 @@ class VideoStore:
         s3_bucket: str | None = None,
         s3_endpoint: str | None = None,
         s3_prefix: str = "timelapses/",
-        duration: float = 20.0,
+        duration: float | None = None,
         ffmpeg: str = "ffmpeg",
         autosave_interval: float = 0.0,
     ) -> None:
