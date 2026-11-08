@@ -336,6 +336,7 @@ class BufferedPostgresEventLog(EventStore):
         self._queue: queue.Queue[Any] = queue.Queue()
         self._stop = object()
         self._closed = False
+        self._closing = threading.Event()
         self._thread = threading.Thread(target=self._writer, name="event-log-writer", daemon=True)
         self._thread.start()
 
@@ -385,6 +386,7 @@ class BufferedPostgresEventLog(EventStore):
         if self._closed:
             return
         self._closed = True
+        self._closing.set()
         self._queue.put(self._stop)
         self._thread.join(timeout=10)
         self._reader.close()
@@ -489,7 +491,10 @@ class BufferedPostgresEventLog(EventStore):
                     with suppress(Exception):
                         log.close()
                     log = None
-                time.sleep(0.5 if self._closed else min(2.0 ** (lost - 1), RECONNECT_MAX_DELAY))
+                # Wait on the closing event so shutdown cuts a long backoff short.
+                self._closing.wait(min(2.0 ** (lost - 1), RECONNECT_MAX_DELAY))
+                if self._closed:
+                    time.sleep(0.5)
 
 
 def _connection_lost(log: PostgresEventLog) -> bool:
