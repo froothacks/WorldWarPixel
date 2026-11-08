@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import itertools
 import json
 import math
+import os
 import random
 import re
 import subprocess
 import sys
+import urllib.request
 import wave
 from array import array
 from dataclasses import dataclass, field
@@ -53,6 +56,7 @@ class RunPick:
     rank: int
     windows: list[tuple[float, float, float]] = field(default_factory=list)
     peak_frame: Path | None = None
+    vertex: dict[str, Any] | None = None
 
 
 def sh(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -689,6 +693,132 @@ def subtitle_for(run: RunPick) -> str:
     return " · ".join(bits)
 
 
+def _extract_json(text: str) -> dict[str, Any] | None:
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def vertex_token(sa_key: Path | None) -> str:
+    env = os.environ.copy()
+    if sa_key is not None:
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = str(sa_key)
+        env["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"] = str(sa_key)
+    proc = subprocess.run(
+        ["gcloud", "auth", "application-default", "print-access-token"],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError(f"gcloud access token failed: {proc.stderr[-400:]}")
+    return proc.stdout.strip()
+
+
+def vertex_url(project: str, location: str, model: str) -> str:
+    host = (
+        "aiplatform.googleapis.com"
+        if location == "global"
+        else f"{location}-aiplatform.googleapis.com"
+    )
+    return (
+        f"https://{host}/v1/projects/{project}/locations/{location}/"
+        f"publishers/google/models/{model}:generateContent"
+    )
+
+
+def vertex_analyze_run(
+    run: RunPick, token: str, project: str, location: str, model: str
+) -> dict[str, Any] | None:
+    duration = max(_num(run.meta, "duration_s", 22.5), 1.0)
+    video_b64 = base64.b64encode(run.video.read_bytes()).decode("ascii")
+    prompt = (
+        "You are analyzing a WorldWarPixel timelapse (pixel-art war simulator). "
+        "Watch the video and "
+        'return ONLY JSON: {"useful": bool, "random_pixels": bool, "cinematic_score": 0-10, '
+        '"title": str, "tagline": str, "highlights": [{"start_s": float, "end_s": float, '
+        '"caption": str}], "reason": str}. Set random_pixels=true and useful=false if the canvas '
+        "is just random pixels moving with no recognizable patterns, flags, text, "
+        "murals, or battles "
+        "forming. Otherwise useful=true. cinematic_score rewards coherent pixel art, country "
+        "takeovers, battles, narrator events, and fast wipes. highlights: up to 3 moments within "
+        f"the {duration:.1f}s video that would look best in a hype reel, each 2-6s, with a short "
+        "caption. No markdown."
+    )
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "video/mp4", "data": video_b64}},
+                ],
+            }
+        ],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
+    }
+    req = urllib.request.Request(
+        vertex_url(project, location, model),
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"vertex {run.run_id} failed: {exc}", file=sys.stderr)
+        return None
+    text = ""
+    try:
+        text = str(payload["candidates"][0]["content"]["parts"][0]["text"])
+    except (KeyError, IndexError, TypeError):
+        return None
+    info = _extract_json(text)
+    if info is None:
+        return None
+    info["run_id"] = run.run_id
+    info["duration_s"] = duration
+    return info
+
+
+def apply_vertex_windows(run: RunPick, limit: int) -> bool:
+    info = run.vertex or {}
+    duration = max(_num(run.meta, "duration_s", 22.5), 1.0)
+    highlights = info.get("highlights")
+    if not isinstance(highlights, list):
+        return False
+    windows: list[tuple[float, float, float]] = []
+    score = _num(info, "cinematic_score", 5.0) * 10.0
+    for item in highlights:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = float(item.get("start_s", 0.0) or 0.0)
+            end = float(item.get("end_s", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        start = max(0.0, min(start, duration))
+        end = max(0.0, min(end, duration))
+        if end - start < 1.5:
+            end = min(duration, start + 2.0)
+        if end - start < 0.8:
+            continue
+        windows.append((start, end, score))
+        if len(windows) >= limit:
+            break
+    if not windows:
+        return False
+    run.windows = sorted(windows, key=lambda w: w[0])
+    return True
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -706,6 +836,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--llm-model", default="", help="optional model id for theme/order (needs creds)"
     )
+    p.add_argument("--vertex-model", default="", help="Vertex Gemini model for video understanding")
+    p.add_argument("--vertex-project", default="world-war-pixel-514101")
+    p.add_argument("--vertex-location", default="global")
+    p.add_argument("--vertex-runs", type=int, default=0, help="Vertex candidate pool size")
+    p.add_argument("--gcp-sa-key", default="", help="service account JSON for Vertex auth")
     p.add_argument(
         "--upload", default="", help="optional gs://bucket/prefix to upload reel+manifest"
     )
@@ -728,7 +863,40 @@ async def _amain(args: argparse.Namespace) -> int:
         return 1
     print_score_table(runs)
 
-    picked = sorted(runs, key=lambda r: r.score, reverse=True)[: max(1, args.top)]
+    if args.vertex_model:
+        pool_n = max(args.top * 2, args.vertex_runs, 4)
+        pool = sorted(runs, key=lambda r: r.score, reverse=True)[: max(1, pool_n)]
+        sa_key = Path(args.gcp_sa_key).expanduser() if args.gcp_sa_key else None
+        token = ""
+        try:
+            token = await asyncio.to_thread(vertex_token, sa_key)
+        except Exception as exc:
+            print(f"vertex auth failed ({exc}); using deterministic picks", file=sys.stderr)
+        if token:
+            for r in pool:
+                info = await asyncio.to_thread(
+                    vertex_analyze_run,
+                    r,
+                    token,
+                    args.vertex_project,
+                    args.vertex_location,
+                    args.vertex_model,
+                )
+                if info is not None:
+                    r.vertex = info
+                    print(
+                        f"  vertex {r.run_id}: useful={info.get('useful')} "
+                        f"random={info.get('random_pixels')} score={info.get('cinematic_score')}"
+                    )
+                else:
+                    print(f"  vertex {r.run_id}: no result", file=sys.stderr)
+
+        def combined(r: RunPick) -> float:
+            return r.score + (_num(r.vertex or {}, "cinematic_score", 5.0) - 5.0) * 25.0
+
+        picked = sorted(pool, key=combined, reverse=True)[: max(1, args.top)]
+    else:
+        picked = sorted(runs, key=lambda r: r.score, reverse=True)[: max(1, args.top)]
     for i, r in enumerate(picked, 1):
         r.rank = i
 
@@ -753,8 +921,11 @@ async def _amain(args: argparse.Namespace) -> int:
     print(f"analyzing {len(picked)} runs x {args.clips_per_run} clips")
     for r in picked:
         analyze_windows(r, workdir, count=args.clips_per_run, win=args.window)
+        vertex_windows = r.vertex is not None and apply_vertex_windows(
+            r, max(1, args.clips_per_run)
+        )
         peak = r.peak_frame.name if r.peak_frame else "-"
-        print(f"  {r.run_id}: {len(r.windows)} windows, peak={peak}")
+        print(f"  {r.run_id}: {len(r.windows)} windows, peak={peak}, vertex={vertex_windows}")
 
     shots_dir = workdir / "shots"
     shots_dir.mkdir(parents=True, exist_ok=True)
