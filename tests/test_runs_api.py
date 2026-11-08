@@ -68,7 +68,13 @@ def test_run_lifecycle(client: TestClient) -> None:
 
 def test_models_endpoint_lists_presets(client: TestClient) -> None:
     models = client.get("/models").json()
-    assert {m["id"] for m in models} == {"gpt-6-luna", "qwen", "glm"}
+    assert {m["id"] for m in models} == {
+        "gpt-6-luna",
+        "qwen",
+        "deepseek",
+        "qwen-c",
+        "glm-5.3-flash",
+    }
     assert all(set(m) == {"id", "label", "model", "available"} for m in models)
 
 
@@ -86,12 +92,15 @@ def test_god_model_switches_a_running_llm_run(client: TestClient) -> None:
     manager.make_narrator = lambda _cfg: None
     run_id = client.post("/runs", json={**SMALL, "policy": "llm", "model": "qwen"}).json()["id"]
 
-    response = client.post(f"/runs/{run_id}/god/model", json={"model": "glm"})
-    assert response.status_code == 200 and response.json()["config"]["model"] == "glm"
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "glm-5.3-flash"})
+    assert response.status_code == 200 and response.json()["config"]["model"] == "glm-5.3-flash"
     run = manager.runs[run_id]
-    assert run.config.model == "glm" and isinstance(run.policy, RandomWalkPolicy)
+    assert run.config.model == "glm-5.3-flash" and isinstance(run.policy, RandomWalkPolicy)
     events = client.get(f"/runs/{run_id}/events", params={"limit": 100}).json()
-    assert any(e["kind"] == "god.model_changed" and e["payload"]["model"] == "glm" for e in events)
+    assert any(
+        e["kind"] == "god.model_changed" and e["payload"]["model"] == "glm-5.3-flash"
+        for e in events
+    )
     client.post(f"/runs/{run_id}/stop")
 
 

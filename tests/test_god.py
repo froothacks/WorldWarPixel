@@ -54,12 +54,12 @@ def test_swap_model_replaces_policy_and_records_event() -> None:
         config = CONFIG.model_copy(update={"policy": "llm", "model": "qwen"})
         run = Run("m", config, EventLog(), RandomWalkPolicy(seed=1))
         new_policy = RandomWalkPolicy(seed=2)
-        run.swap_model(new_policy, None, "glm")
-        assert run.config.model == "glm"
+        run.swap_model(new_policy, None, "glm-5.3-flash")
+        assert run.config.model == "glm-5.3-flash"
         assert run.policy is new_policy
         events = run.log.read("m")
         changed = [e for e in events if e.kind == "god.model_changed"]
-        assert changed and changed[-1].payload["model"] == "glm"
+        assert changed and changed[-1].payload["model"] == "glm-5.3-flash"
 
     asyncio.run(main())
 

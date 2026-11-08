@@ -70,7 +70,7 @@ class RunConfig(BaseModel):
     )
     model: str = Field(
         default="gpt-6-luna",
-        description="Model preset id from GET /models (gpt-6-luna, qwen, glm)",
+        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen-c, glm-5.3-flash)",
     )
 
     @field_validator("model", mode="before")
