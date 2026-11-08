@@ -56,7 +56,11 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert glm.model == specs["glm-5.3-flash"].model
     assert "advait-m--ep-glm-5-3-flash-nvfp4" in (glm.base_url or "")
     assert not glm.chat_template_kwargs
-    assert glm.max_tokens == 3000 and glm.narrator_max_tokens == 3000
+    for gid in ("glm", "glm-5.3-flash", "glm-megan"):
+        g = specs[gid]
+        # Default effort reasons through the whole budget and never calls a tool.
+        assert g.reasoning_effort == "low"
+        assert g.max_tokens == 8000 and g.narrator_max_tokens == 8000
 
 
 def test_modal_base_urls_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
