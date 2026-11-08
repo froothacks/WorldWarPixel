@@ -17,6 +17,7 @@ SERVICE="${CLOUD_RUN_SERVICE:-worldwarpixel}"
 BUCKET="${TIMELAPSE_BUCKET:-world-war-pixel-timelapses-514101}"
 REPO="${ARTIFACT_REPO:-worldwarpixel}"
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$(git rev-parse --short HEAD)"
+CACHE_REPO="$REGION-docker.pkg.dev/$PROJECT/$REPO/cache"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 
 if [ -z "${APP_ENV_FILE:-}" ]; then
@@ -41,7 +42,9 @@ gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
 
 # Submit async and poll: `gcloud builds submit`'s log streaming needs project Viewer, which the
 # deployer SA need not have; the build itself only needs Cloud Build Editor.
-BUILD_ID="$(gcloud builds submit --tag "$IMAGE" --quiet --async --format="value(id)" .)"
+BUILD_ID="$(gcloud builds submit --config cloudbuild.yaml \
+  --substitutions="_IMAGE=$IMAGE,_CACHE_REPO=$CACHE_REPO" \
+  --quiet --async --format="value(id)" .)"
 echo "Cloud Build $BUILD_ID"
 while :; do
   STATUS="$(gcloud builds describe "$BUILD_ID" --format="value(status)")"
