@@ -32,11 +32,9 @@ class Settings(BaseSettings):
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
     tts_api_key: SecretStr = SecretStr("")
-    """Stage voices: an OpenAI key, or set TTS_BASE_URL for a local OpenAI-compatible TTS."""
+    """Speech panel voices: an OpenAI key, or set TTS_BASE_URL for a compatible speech service."""
     tts_base_url: str | None = None
     tts_model: str = "gpt-4o-mini-tts"
-    stage_model: str | None = None
-    """Debate lines model (default: the narrator's). With an OpenAI TTS key it runs on OpenAI."""
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     whisper_model: str = "base"

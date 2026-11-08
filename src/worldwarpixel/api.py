@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import json
 import secrets
 import time
 from collections.abc import Callable
@@ -28,7 +27,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
-from worldwarpixel.sim.stage import REACTIONS, SpeechSynth, StageBusy, wav
+from worldwarpixel.sim.speech import SpeechSynth, wav
 from worldwarpixel.sim.timelapse import build_timelapse
 
 MAX_RESTORED = 8
@@ -44,17 +43,15 @@ class RunManager:
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
-        speech: SpeechSynth | None = None,
-        stage_model: NarratorModel | None = None,
         make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.log = log
-        self.speech = speech
-        self.stage_model = stage_model
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
         self.make_narrator = make_narrator
+        self.speech = speech
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
@@ -70,15 +67,7 @@ class RunManager:
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )
-        run = Run(
-            run_id,
-            config,
-            self.log,
-            policy,
-            narrator_model=narrator,
-            speech=self.speech,
-            stage_model=self.stage_model,
-        )
+        run = Run(run_id, config, self.log, policy, narrator_model=narrator, speech=self.speech)
         self.runs[run_id] = run
         await run.start()
         return run
@@ -109,6 +98,7 @@ class RunManager:
                 old = self.runs.pop(self._restored.pop(0), None)
                 if old is not None:
                     old.hub.close_all()
+                    old.speech.hub.close_all()
         return self.runs[run_id]
 
     async def summaries(self) -> list[dict[str, Any]]:
@@ -126,11 +116,13 @@ class RunManager:
             await run.stop()
         finally:
             run.hub.close_all()
-            run.stage.hub.close_all()
+            run.speech.hub.close_all()
             self.log.append(run_id, time.time(), "run.deleted", None, {})
 
     async def shutdown(self) -> None:
         await asyncio.gather(*(r.stop() for r in self.runs.values()))
+        for run in self.runs.values():
+            run.speech.hub.close_all()
         self.log.close()
 
 
@@ -395,6 +387,11 @@ class NarratorQuestion(BaseModel):
     question: str = Field(min_length=1, max_length=500)
 
 
+class SpeechRequest(BaseModel):
+    text: str
+    agent_id: int | None = None
+
+
 @router.get("/{run_id}/narrator")
 async def get_narrator(run_id: str, manager: ManagerDep) -> dict[str, Any]:
     """The narrator's update history (newest last) plus its interval and stats."""
@@ -413,214 +410,68 @@ async def ask_narrator(run_id: str, body: NarratorQuestion, manager: ManagerDep)
         raise HTTPException(503, f"narrator unavailable: {e}") from e
 
 
-class StageStart(BaseModel):
-    a: int | None = Field(default=None, description="First debater (agent id); picked if omitted")
-    b: int | None = Field(default=None, description="Second debater (agent id)")
-    topic: str | None = Field(default=None, max_length=200)
-    auto: bool | None = Field(default=None, description="Keep starting debates after this one")
-
-
-class StageAuto(BaseModel):
-    auto: bool
-
-
-class StageVote(BaseModel):
-    voter: str = Field(min_length=1, max_length=64, description="Stable per-viewer id")
-    agent_id: int
-
-
-class StageReaction(BaseModel):
-    reaction: str = Field(description=f"One of: {', '.join(REACTIONS)}")
-    agent_id: int | None = None
-
-
-class StageNarration(BaseModel):
-    text: str = Field(min_length=1, max_length=280)
-    name: str | None = Field(default=None, max_length=40)
-    announce: bool = Field(default=False, description="Also post it to every agent (god mode)")
-
-
-def _live(run_id: str, manager: RunManager) -> Run:
-    run = manager.get(run_id)
-    if run.state == "stopped":
-        raise HTTPException(409, "run is stopped")
-    return run
-
-
-@router.get("/{run_id}/stage")
-async def get_stage(run_id: str, manager: ManagerDep) -> dict[str, Any]:
-    """The live debate: phase, debaters, votes and the spoken transcript."""
-    return manager.get(run_id).stage.state()
-
-
-@router.get("/{run_id}/stage/frame")
-async def stage_frame(
-    run_id: str,
-    manager: ManagerDep,
-    w: int = Query(default=320, ge=16, le=800),
-    h: int = Query(default=240, ge=16, le=800),
-    podium: int = Query(default=0, ge=0, le=1),
-) -> Response:
-    """A nearest-neighbour RGB565 preview of the active debate region."""
-    frame = manager.get(run_id).stage.frame(w, h)
-    return Response(
-        frame,
-        media_type="application/octet-stream",
-        headers={"X-Width": str(w), "X-Height": str(h)},
-    )
-
-
-@router.post("/{run_id}/stage/start")
-async def start_debate(
-    run_id: str, body: StageStart, manager: ManagerDep, _god: GodDep
-) -> dict[str, Any]:
-    """Put two agents on stage (the fiercest canvas rivals unless `a` and `b` are given)."""
-    stage = _live(run_id, manager).stage
+@router.post("/{run_id}/speak", status_code=202)
+async def speak(
+    run_id: str, body: SpeechRequest, manager: ManagerDep, _god: GodDep
+) -> dict[str, bool]:
+    run = await manager.fetch(run_id)
     try:
-        if body.auto is not None:
-            stage.auto = body.auto
-        return stage.start_debate(body.a, body.b, body.topic)
-    except StageBusy as e:
-        raise HTTPException(409, str(e)) from e
+        run.speech.say(body.text, body.agent_id)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-
-
-@router.post("/{run_id}/stage/stop")
-async def stop_debate(run_id: str, manager: ManagerDep, _god: GodDep) -> dict[str, Any]:
-    """End the current debate without a verdict and turn auto mode off."""
-    stage = manager.get(run_id).stage
-    stage.auto = False
-    stage.end_debate()
-    return stage.state(transcript=False)
-
-
-@router.post("/{run_id}/stage/auto")
-async def stage_auto(
-    run_id: str, body: StageAuto, manager: ManagerDep, _god: GodDep
-) -> dict[str, Any]:
-    stage = manager.get(run_id).stage
-    stage.set_auto(body.auto)
-    return stage.state(transcript=False)
-
-
-@router.post("/{run_id}/stage/vote")
-async def stage_vote(run_id: str, body: StageVote, manager: ManagerDep) -> dict[str, Any]:
-    """One vote per `voter`; voting again changes it. Open during the debate and the vote."""
-    stage = _live(run_id, manager).stage
-    try:
-        return {"votes": stage.vote(body.voter, body.agent_id)}
-    except StageBusy as e:
-        raise HTTPException(409, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-
-
-@router.post("/{run_id}/stage/react", status_code=204)
-async def stage_react(run_id: str, body: StageReaction, manager: ManagerDep) -> None:
-    """Cheer, boo, laugh or gasp; debaters hear the crowd in their next line."""
-    try:
-        _live(run_id, manager).stage.react(body.reaction, body.agent_id)
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-
-
-@router.post("/{run_id}/stage/narrate", status_code=202)
-async def stage_narrate(
-    run_id: str,
-    body: StageNarration,
-    manager: ManagerDep,
-    x_god_token: Annotated[str | None, Header()] = None,
-) -> dict[str, Any]:
-    """A live narrator line: spoken on stage next, and the debaters respond to it."""
-    run = _live(run_id, manager)
-    if body.announce:
-        require_god(x_god_token)
-    try:
-        run.stage.narrate(body.text, body.name)
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-    if body.announce:
-        with contextlib.suppress(BoardError):
-            run.god_announce(f"Live narrator: {body.name or 'Narrator'}"[:120], body.text)
     return {"queued": True}
 
 
-@router.get("/{run_id}/stage/lines/{line_id}/audio")
-async def stage_audio(
+@router.get("/{run_id}/speech")
+async def get_speech(run_id: str, manager: ManagerDep) -> dict[str, Any]:
+    return (await manager.fetch(run_id)).speech.state()
+
+
+@router.get("/{run_id}/speech/lines/{line_id}/audio")
+async def speech_audio(
     run_id: str,
     line_id: int,
     manager: ManagerDep,
     format: Annotated[str, Query(pattern="^(wav|pcm)$")] = "wav",
 ) -> Response:
-    """A spoken line's audio: WAV for browsers, raw s16le mono PCM for podium devices."""
-    stage = manager.get(run_id).stage
-    pcm = stage.audio(line_id)
+    speech = (await manager.fetch(run_id)).speech
+    pcm = speech.audio(line_id)
     if pcm is None:
         raise HTTPException(404, f"no audio for line {line_id}")
+    rate = speech.sample_rate
     if format == "pcm":
-        rate = stage.sample_rate
         return Response(
             pcm, media_type="application/octet-stream", headers={"X-Sample-Rate": str(rate)}
         )
-    return Response(wav(pcm, stage.sample_rate), media_type="audio/wav")
+    return Response(wav(pcm, rate), media_type="audio/wav")
 
 
-@router.websocket("/{run_id}/stage/ws")
-async def stage_socket(websocket: WebSocket, run_id: str) -> None:
-    """Stage-only stream for podium screens: `stage.snapshot`, then `stage.*` events (JSON)."""
+@router.websocket("/{run_id}/speech/ws")
+async def speech_socket(websocket: WebSocket, run_id: str) -> None:
     manager: RunManager = websocket.app.state.runs
-    run = manager.runs.get(run_id)
-    if run is None:
+    try:
+        run = await manager.fetch(run_id)
+    except HTTPException:
         await websocket.close(code=4004, reason="run not found")
         return
     await websocket.accept()
-    podium_raw = websocket.query_params.get("podium")
-    podium: int | None = None
-    if podium_raw is not None:
-        try:
-            podium = int(podium_raw)
-        except ValueError:
-            await websocket.close(code=1008, reason="podium must be 0 or 1")
-            return
-        if podium not in (0, 1):
-            await websocket.close(code=1008, reason="podium must be 0 or 1")
-            return
-        run.stage.device_connected(podium)
-    narrator = websocket.query_params.get("narrator", "0") in ("1", "true")
-    queue = run.stage.hub.subscribe()
-    transcript = websocket.query_params.get("transcript", "1") not in ("0", "false")
+    run.speech.device_connected()
+    queue = run.speech.hub.subscribe()
 
-    def includes_line(line: dict[str, Any]) -> bool:
-        return line.get("podium") == podium or (
-            narrator and line.get("kind") in ("narrator", "verdict")
-        )
-
-    def snapshot() -> dict[str, Any]:
-        state = run.stage.state(transcript)
-        if podium is not None and "transcript" in state:
-            state["transcript"] = [line for line in state["transcript"] if includes_line(line)]
-        return {"type": "stage.snapshot", **state}
+    async def send_snapshot() -> None:
+        await websocket.send_json({"type": "speech.snapshot", **run.speech.state()})
 
     async def sender() -> None:
-        await websocket.send_json(snapshot())
+        await send_snapshot()
         while True:
             msg = await queue.get()
             if msg == CLOSE:
                 await websocket.close(code=1001, reason="run deleted")
                 return
             if msg == RESYNC:
-                await websocket.send_json(snapshot())
+                await send_snapshot()
             elif isinstance(msg, str):
-                if podium is None:
-                    await websocket.send_text(msg)
-                    continue
-                event = json.loads(msg)
-                event_type = event.get("type")
-                if event_type in ("stage.state", "stage.votes", "stage.verdict") or (
-                    event_type == "stage.line" and includes_line(event)
-                ):
-                    await websocket.send_text(msg)
+                await websocket.send_text(msg)
 
     async def receiver() -> None:
         while True:
@@ -629,15 +480,14 @@ async def stage_socket(websocket: WebSocket, run_id: str) -> None:
     tasks = [asyncio.create_task(sender()), asyncio.create_task(receiver())]
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for t in pending:
-            t.cancel()
-        for t in done:
+        for task in pending:
+            task.cancel()
+        for task in done:
             with contextlib.suppress(WebSocketDisconnect):
-                t.result()
+                task.result()
     finally:
-        run.stage.hub.unsubscribe(queue)
-        if podium is not None:
-            run.stage.device_disconnected(podium)
+        run.speech.hub.unsubscribe(queue)
+        run.speech.device_disconnected()
 
 
 @router.websocket("/{run_id}/ws")

@@ -74,7 +74,6 @@ class ToolSet:
         sink: EventSink,
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
-        blocked: Callable[[int, int], bool] | None = None,
         societies: SocietyAccess | None = None,
         vote: Callable[[int, bool], int] | None = None,
     ) -> None:
@@ -87,7 +86,6 @@ class ToolSet:
         self._sink = sink
         self._clock = clock
         self._writer = writer
-        self._blocked = blocked
 
     def _check(self, kind: str, n: int) -> None:
         left = getattr(self.budget, kind)
@@ -109,6 +107,11 @@ class ToolSet:
     def place_pixels(self, pixels: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
         if not pixels:
             raise ToolError("no pixels given")
+        if self.budget.pixels <= 0:
+            raise ToolError("no pixel budget left this turn")
+        # Small models often miscount; keep the first N pixels instead of rejecting the turn.
+        dropped = max(0, len(pixels) - self.budget.pixels)
+        pixels = pixels[: self.budget.pixels]
         writes: list[PixelWrite] = []
         for x, y, color in pixels:
             if not self._canvas.in_bounds(x, y):
@@ -116,35 +119,12 @@ class ToolSet:
             if not 0 <= color < len(PALETTE):
                 raise ToolError(f"color {color} is not in 0..{len(PALETTE) - 1}")
             writes.append(PixelWrite(x, y, color, self._agent_id))
-        blocked: list[PixelWrite] = []
-        allowed: list[PixelWrite] = []
-        for write in writes:
-            if self._blocked is not None and self._blocked(write.x, write.y):
-                blocked.append(write)
-            else:
-                allowed.append(write)
-        if self.budget.pixels <= 0 and allowed:
-            raise ToolError("no pixel budget left this turn")
-        dropped = max(0, len(allowed) - self.budget.pixels)
-        allowed = allowed[: self.budget.pixels]
-        self._spend("pixels", len(allowed))
-        if allowed:
-            self._write(allowed)
-        out: dict[str, Any] = {"placed": len(allowed), "pixels_left": self.budget.pixels}
-        if allowed:
-            out["last"] = [allowed[-1].x, allowed[-1].y]
-        notes: list[str] = []
-        if blocked:
-            out["blocked"] = len(blocked)
-            notes.append(
-                f"{len(blocked)} pixels are inside a region held by the debate winner; "
-                "they were not placed"
-            )
+        self._spend("pixels", len(writes))
+        self._write(writes)
+        out: dict[str, Any] = {"placed": len(writes), "pixels_left": self.budget.pixels}
         if dropped:
             out["dropped"] = dropped
-            notes.append(f"only {len(allowed)} fit the budget; {dropped} pixels were dropped")
-        if notes:
-            out["note"] = "; ".join(notes)
+            out["note"] = f"only {len(writes)} fit the budget; {dropped} pixels were dropped"
         return out
 
     def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:

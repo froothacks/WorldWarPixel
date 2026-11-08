@@ -18,8 +18,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
 from worldwarpixel.sim.societies import Societies
-from worldwarpixel.sim.stage import GOD_ID as GOD_ID
-from worldwarpixel.sim.stage import SpeechSynth, Stage
+from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
 
@@ -100,18 +99,13 @@ class RunConfig(BaseModel):
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
-    stage_auto: bool = Field(
-        default=False, description="Start live debates on stage automatically, one after another"
-    )
-    stage_lines: int = Field(default=6, ge=2, le=30, description="Spoken lines per debate")
-    stage_vote_seconds: float = Field(
-        default=20.0, ge=3, le=600, description="Seconds the audience votes after a debate"
-    )
-    stage_hold_seconds: float = Field(
-        default=120.0, ge=0, le=1800, description="Seconds a verdict winner holds its region"
+    speak_narrator: bool = Field(
+        default=True, description="Read narrator updates aloud on the speech panel"
     )
 
 
+GOD_ID = 65535
+"""Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
 AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
@@ -136,9 +130,8 @@ class Run:
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         narrator_model: NarratorModel | None = None,
-        speech: SpeechSynth | None = None,
-        stage_model: NarratorModel | None = None,
         agents: list[AgentSpec] | None = None,
+        speech: SpeechSynth | None = None,
     ) -> None:
         self.id = run_id
         self.config = config
@@ -200,7 +193,9 @@ class Run:
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
-        self._stage_model = stage_model
+        self.speech = Speech(
+            self, speech, self._running, narrate=config.speak_narrator, clock=clock
+        )
         self.narrator = Narrator(
             self,
             narrator_model if config.policy != "random" else None,
@@ -209,18 +204,7 @@ class Run:
             include_image=config.narrator_canvas_image,
             clock=clock,
             sleep=sleep,
-        )
-        self.stage = Stage(
-            self,
-            (stage_model or narrator_model) if config.policy != "random" else None,
-            speech,
-            self._running,
-            auto=config.stage_auto,
-            lines_per_debate=config.stage_lines,
-            vote_seconds=config.stage_vote_seconds,
-            hold_seconds=config.stage_hold_seconds,
-            clock=clock,
-            sleep=sleep,
+            on_update=self.speech.narrate,
         )
 
     @property
@@ -299,11 +283,9 @@ class Run:
         self.hub.publish("board.cleared")
 
     def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
-        """Switch models for agents and narrator; Stage follows unless explicitly overridden."""
+        """Switch the LLM preset mid-run; agents and the narrator pick it up on next use."""
         self.policy = policy
         self.narrator.set_model(narrator_model)
-        if self._stage_model is None:
-            self.stage.set_model(narrator_model)
         self.config = self.config.model_copy(update={"model": model})
         self._record("god.model_changed", GOD_ID, {"model": model})
 
@@ -311,17 +293,9 @@ class Run:
         """Post a thread as the human; agents see it on the board like any other thread."""
         post = self.board.post_thread(GOD_ID, title, body, self._clock())
         self._on_write(GOD_ID, "post", post.to_dict())
-        self.pin_announcement(post.thread_id, title, body)
-        return post.to_dict()
-
-    def pin_announcement(self, thread_id: int, title: str, body: str) -> None:
         self._announcements.append(
-            {"thread_id": thread_id, "title": title, "body": body, "ts": self._clock()}
+            {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
         )
-
-    def post_reply(self, author_id: int, thread_id: int, body: str) -> dict[str, Any]:
-        post = self.board.reply(author_id, thread_id, body, self._clock())
-        self._on_write(author_id, "post", post.to_dict())
         return post.to_dict()
 
     def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
@@ -462,8 +436,8 @@ class Run:
         self._running.set()
         self.hub.start()
         self._tasks = [asyncio.create_task(self._agent_loop(a)) for a in self.agents]
+        self._tasks.append(asyncio.create_task(self.speech.run()))
         self.narrator.start()
-        self.stage.start()
 
     def pause(self) -> None:
         if self.state == "running":
@@ -485,7 +459,6 @@ class Run:
                 await t
         self._tasks = []
         await self.narrator.stop()
-        await self.stage.stop()
         self._running.set()
         self._set_state("stopped")
         await self.hub.stop()
@@ -506,7 +479,6 @@ class Run:
             last_turn = self.started_at or self._clock()
             while True:
                 await self._running.wait()
-                await self.stage.gate(agent.id)
                 now = self._clock()
                 await self._turn(agent, now - last_turn, queue, pending)
                 last_turn = now
@@ -529,8 +501,7 @@ class Run:
         while True:
             w = await queue.get()
             await self._running.wait()
-            if not self.stage.blocks(w.agent_id, w.x, w.y):
-                apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
+            apply_writes(self.canvas, [w], lambda kind, p: self._on_write(agent.id, kind, p))
             if pending.get((w.x, w.y)) == (w.color, w.agent_id):
                 del pending[(w.x, w.y)]
             if queue.empty() and self.status.get(agent.id) == "painting":
@@ -561,17 +532,7 @@ class Run:
 
         def writer(writes: list[PixelWrite]) -> None:
             if queue is None or (self.config.pixel_interval <= 0 and queue.empty()):
-                allowed: list[PixelWrite] = []
-                for w in writes:
-                    if self.stage.blocks(w.agent_id, w.x, w.y):
-                        if pending is not None and pending.get((w.x, w.y)) == (
-                            w.color,
-                            w.agent_id,
-                        ):
-                            del pending[(w.x, w.y)]
-                    else:
-                        allowed.append(w)
-                apply_writes(self.canvas, allowed, sink)
+                apply_writes(self.canvas, writes, sink)
                 return
             for w in writes:
                 queue.put_nowait(w)
@@ -588,7 +549,6 @@ class Run:
             writer,
             societies=_SocietyAccess(self, agent.id) if self.societies else None,
             vote=lambda thread_id, up: self.agent_vote(agent.id, thread_id, up),
-            blocked=lambda x, y: self.stage.blocks(agent.id, x, y),
         )
         society = self.societies.of(agent.id) if self.societies else None
         obs = Observation(
@@ -710,7 +670,7 @@ class Run:
         self.log.append(self.id, self._clock(), kind, agent_id, payload)
 
     def record(self, kind: str, agent_id: int | None, payload: dict[str, Any]) -> None:
-        """Append an event on behalf of a collaborator (the narrator, the stage)."""
+        """Append an event on behalf of a collaborator (the narrator)."""
         self._record(kind, agent_id, payload)
 
     # -- read model ------------------------------------------------------------------------
@@ -729,7 +689,6 @@ class Run:
             "clients": self.hub.client_count,
             "llm": public_stats() if public_stats else None,
             "narrator": dict(self.narrator.stats),
-            "stage": {"phase": self.stage.phase, "debate_id": self.stage.debate_id},
             "societies": self.society_summary(),
         }
 
@@ -778,7 +737,6 @@ class Run:
             "agents": self.agent_list(),
             "threads": self.board.listing(limit=50, name_of=self.agent_name),
             "narrator": self.narrator.state(),
-            "stage": self.stage.state(transcript=False),
         }
 
 

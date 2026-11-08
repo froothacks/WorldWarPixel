@@ -13,7 +13,6 @@ from worldwarpixel.sim.llm_policy import (
     LLMPolicy,
     _canonical_tool,
     _parse_pixel_list,
-    _track_position,
     guided_user_prompt,
     pick_threads,
     system_prompt,
@@ -113,15 +112,6 @@ def test_tool_calls_are_executed_and_summarised() -> None:
     assert parts[1]["type"] == "image_url" and parts[1]["image_url"]["url"].startswith(
         "data:image/png"
     )
-
-
-def test_track_position_uses_last_allowed_pixel() -> None:
-    agent, _, _, _ = _setup()
-    args = {"pixels": [{"x": 1, "y": 2}, {"x": 9, "y": 7}]}
-
-    _track_position(agent, "place_pixels", args, {"placed": 1, "last": [9, 7]})
-
-    assert (agent.home_x, agent.home_y) == (9, 7)
 
 
 def test_read_tool_triggers_second_round_and_errors_are_reported() -> None:

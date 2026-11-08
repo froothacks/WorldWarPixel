@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -8,10 +7,7 @@ from worldwarpixel.sim.canvas import Canvas
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
-def make(
-    budget: TurnBudget | None = None,
-    blocked: Callable[[int, int], bool] | None = None,
-) -> tuple[ToolSet, list[tuple[str, dict[str, Any]]]]:
+def make(budget: TurnBudget | None = None) -> tuple[ToolSet, list[tuple[str, dict[str, Any]]]]:
     events: list[tuple[str, dict[str, Any]]] = []
     tools = ToolSet(
         Canvas(32, 32),
@@ -20,45 +16,18 @@ def make(
         budget=budget or TurnBudget(),
         sink=lambda k, p: events.append((k, p)),
         clock=lambda: 123.0,
-        blocked=blocked,
     )
     return tools, events
 
 
 def test_pixel_budget_is_enforced_per_turn() -> None:
     tools, events = make(TurnBudget(pixels=3))
-    assert tools.place_pixels([(0, 0, 1), (1, 0, 1)]) == {
-        "placed": 2,
-        "pixels_left": 1,
-        "last": [1, 0],
-    }
+    assert tools.place_pixels([(0, 0, 1), (1, 0, 1)]) == {"placed": 2, "pixels_left": 1}
     res = tools.place_pixels([(2, 0, 1), (3, 0, 1)])
     assert res["placed"] == 1 and res["dropped"] == 1 and tools.budget.pixels == 0
     assert len(events) == 3
     with pytest.raises(ToolError, match="no pixel budget"):
         tools.place_pixels([(4, 0, 1)])
-
-
-def test_blocked_pixels_do_not_spend_budget_and_join_dropped_note() -> None:
-    tools, events = make(TurnBudget(pixels=2), blocked=lambda x, _: x == 0)
-    out = tools.place_pixels([(0, 0, 1), (1, 0, 1), (2, 0, 1), (3, 0, 1)])
-    assert out == {
-        "placed": 2,
-        "pixels_left": 0,
-        "last": [2, 0],
-        "blocked": 1,
-        "dropped": 1,
-        "note": (
-            "1 pixels are inside a region held by the debate winner; they were not placed; "
-            "only 2 fit the budget; 1 pixels were dropped"
-        ),
-    }
-    assert [event[1]["x"] for event in events] == [1, 2]
-
-    all_blocked, no_events = make(TurnBudget(pixels=2), blocked=lambda _x, _y: True)
-    blocked_out = all_blocked.place_pixels([(0, 0, 1), (1, 0, 1)])
-    assert blocked_out["placed"] == 0 and blocked_out["blocked"] == 2
-    assert blocked_out["pixels_left"] == 2 and no_events == []
 
 
 def test_invalid_pixels_are_rejected_before_writing() -> None:

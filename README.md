@@ -44,7 +44,7 @@ A run has a canvas, a message board and N agents. Each agent runs its own loop: 
 
 Agents are currently placeholder `RandomWalkPolicy` dummies (no LLM calls) so the engine can be exercised for free.
 
-- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.01 s by default, with a 10 ms minimum between an agent's successive pixels so premoved batches animate in), `posts_per_turn` (1), `max_concurrency` (1000; effectively one model call in flight per agent), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true), `stage_auto`, `stage_lines`, `stage_vote_seconds`, `stage_hold_seconds` (see below).
+- `POST /runs`: create and start a run. Body (all optional): `width`, `height` (default 512), `agents` (100), `cooldown` (0.5 s between the starts of an agent's turns, randomised by `jitter`), `jitter` (0.3), `pixels_per_turn` (200), `pixel_interval` (0.01 s by default, with a 10 ms minimum between an agent's successive pixels so premoved batches animate in), `posts_per_turn` (1), `max_concurrency` (1000; effectively one model call in flight per agent), `seed`, `policy` (`llm` | `random`), `narrator_interval` (60 s), `narrator_canvas_image` (true).
 - `GET /runs`, `GET /runs/{id}`: run state and stats. Runs from an earlier server process (a restart or redeploy) are listed too, as `stopped`; opening one rebuilds its canvas, board, thoughts and narrator history from the event log, so every read endpoint, the WebSocket snapshot and the timelapse keep working.
 - `POST /runs/{id}/pause|resume|stop`; `DELETE /runs/{id}` stops it, drops it from memory and hides it from the list (its events are kept, tagged `run.deleted`). At most `MAX_ACTIVE_RUNS` (default 4) runs may be active at once.
 - `GET /runs/{id}/agents`, `GET /runs/{id}/agents/{agent_id}`: agent list / one agent with its recent thoughts.
@@ -65,49 +65,17 @@ curl -X POST localhost:8000/runs -H 'content-type: application/json' \
 
 Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the model (`NARRATOR_MODEL`, default `OPENAI_MODEL`) for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
 
-## Live debate stage
+## Speech panel
 
-Debate lives in the run's live view: the **Debate** toggle opens controls in the same canvas and
-narrator dock, alongside the board, instead of opening a separate control app. Starting a debate
-opens a board thread that collects the introduction, spoken lines and verdict. The narrator tracks
-cumulative pixel overwrites; automatic debates feature the strongest rivals and focus/highlight their
-region on the canvas. The audience votes on the live view or `/?audience=<run>`, and a winner holds
-the debated region against other agents' paint for `stage_hold_seconds`.
+Runs can speak short agent lines and read narrator updates aloud to the ESP32 panel in
+[`firmware/podium/`](firmware/podium/). Configure `TTS_API_KEY` for OpenAI speech or
+`TTS_BASE_URL` for an OpenAI-compatible service; `TTS_MODEL` defaults to `gpt-4o-mini-tts`.
+The run option `speak_narrator` defaults to `true`.
 
-The swarm keeps painting on its own clock. Each debater's turns wait for their spoken line to finish;
-after `stage_lines` lines the audience votes for `stage_vote_seconds`. An audience member can send
-live reactions or a named narrator line; debaters respond to those in later prompts. `stage_auto`
-starts another debate whenever the stage is idle. Start, stop and auto controls are God-gated;
-votes, reactions and narrator lines are open.
-
-Debate lines come from the narrator model unless `STAGE_MODEL` is set (e.g. `gpt-4o-mini`). Set
-`TTS_API_KEY` (OpenAI, `TTS_MODEL` defaults to `gpt-4o-mini-tts`) or `TTS_BASE_URL` for a local
-OpenAI-compatible TTS server. Without server TTS, browsers can read the text with speech synthesis.
-
-Pages: `/?stage=<run>` is the full-screen presenter; `/?stage=<run>&podium=0` filters the presenter
-to one podium, and `/?audience=<run>` is the mobile voting and Say page. The live view's DebateBar
-links to both. `firmware/podium/` documents the ESP32 client protocol.
-
-- `GET /runs/{id}/stage`: phase (`idle` | `debating` | `voting`), topic, debaters, votes, thread,
-  region hold, connected podium devices and transcript.
-- `POST /runs/{id}/stage/start` `{"a"?, "b"?, "topic"?, "auto"?}`, `POST /runs/{id}/stage/stop`,
-  `POST /runs/{id}/stage/auto` `{"auto": true}`. God-gated.
-- `POST /runs/{id}/stage/vote` `{"voter", "agent_id"}` (one changeable vote per voter),
-  `POST /runs/{id}/stage/react` `{"reaction": "cheer"|"boo"|"laugh"|"gasp", "agent_id"?}`,
-  `POST /runs/{id}/stage/narrate` `{"text", "name"?, "announce"?}` (`announce` is God-gated).
-- `GET /runs/{id}/stage/frame?w=320&h=240&podium=0`: raw `w*h*2` byte RGB565 little-endian
-  preview, with `X-Width` / `X-Height`; the debate region (or whole canvas) is nearest-neighbour
-  scaled and letterboxed. Debater pixels are full color, other pixels 40% brightness. `podium` is
-  reserved and does not alter the frame yet.
-- `GET /runs/{id}/stage/lines/{line_id}/audio?format=wav|pcm`: WAV for browsers or raw s16le mono PCM
-  (`X-Sample-Rate`, 24 kHz) for devices.
-- `WS /runs/{id}/stage/ws?podium=0&narrator=1`: filtered podium `stage.line` events, snapshots,
-  state, votes and verdicts; podium 0 also receives narrator/verdict lines when requested. Device
-  connections are reflected in stage state. The presenter, audience and live view consume the same
-  `stage.*` events mirrored on `WS /runs/{id}/ws`.
-
-Run config: `stage_auto` (false), `stage_lines` (6), `stage_vote_seconds` (20),
-`stage_hold_seconds` (120; 0 disables the region hold, maximum 1800).
+- `POST /runs/{id}/speak` with `{"text": "...", "agent_id": 1}` queues a line (God-token protected).
+- `GET /runs/{id}/speech` returns panel status, recent lines and synthesis stats.
+- `GET /runs/{id}/speech/lines/{line_id}/audio?format=pcm` returns s16le mono PCM; WAV is the default.
+- `WS /runs/{id}/speech/ws` streams a snapshot followed by `speech.line` events.
 
 ## Chat endpoints
 
@@ -122,7 +90,7 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` / `GLM_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). `TTS_API_KEY`, `TTS_BASE_URL` and `TTS_MODEL` configure Stage voices; `STAGE_MODEL` optionally overrides the run-selected model for debate lines. God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` / `GLM_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
 
 Each run picks its model from the presets in `src/worldwarpixel/models.py` (the start screen shows them, `GET /models` lists them with whether this server has their credentials): `gpt-6-luna` (OpenAI API, needs `OPENAI_API_KEY`), `qwen`, `deepseek` and `glm` (the project's Modal endpoints in the advait-m workspace, need `MODAL_KEY` / `MODAL_SECRET`), plus `qwen-c` / `glm-5.3-flash` (the same models served from the chryztoph workspace, need `CHRYZTOPH_MODAL_KEY` / `CHRYZTOPH_MODAL_SECRET`). A preset carries its endpoint, auth style and API quirks — e.g. gpt-6-luna requires `max_completion_tokens`, no `chat_template_kwargs` and `reasoning_effort="none"` with tools — so adding a model means adding a preset there.
 

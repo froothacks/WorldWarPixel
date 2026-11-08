@@ -6,15 +6,12 @@ import {
   type NarratorState,
   type NarratorUpdate,
   type RunSummary,
-  type StageState,
   type ThreadDigest,
   type Thought,
 } from "./api";
 import { openRunStream, type ServerEvent } from "./ws";
 import { PixelStore } from "./pixelStore";
 import GodBar, { type GodTool } from "./GodBar";
-import DebateBar from "./DebateBar";
-import { useDebate, useStageAudio } from "./debate";
 import { DISPATCH_ID, DISPATCH_NAME, GOD_ID, GOD_NAME } from "./api";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
@@ -52,8 +49,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const [country, setCountry] = useState<string | null>(null);
   const [openThread, setOpenThread] = useState<number | null>(null);
   const [focus, setFocus] = useState<Region | null>(null);
-  const [debateOpen, setDebateOpen] = useState(false);
-  const [stageSound, setStageSound] = useState(false);
   const [narrator, setNarrator] = useState<NarratorState | null>(null);
   const [store, setStore] = useState<PixelStore | null>(null);
   const [version, setVersion] = useState(0);
@@ -61,21 +56,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const paletteRef = useRef<string[]>([]);
   const storeRef = useRef<PixelStore | null>(null);
   const refreshTimer = useRef<number | null>(null);
-  const focusedDebate = useRef<number | null>(null);
-  const debate = useDebate(initial.id, false);
-  const debateState = debate.state;
-  const acceptDebate = debate.accept;
-  useStageAudio(initial.id, debate.transcript.at(-1) ?? null, stageSound);
-
-  useEffect(() => {
-    const stage = debateState;
-    if (!stage?.region || focusedDebate.current === stage.debate_id) return;
-    focusedDebate.current = stage.debate_id;
-    setFocus((prev) => ({
-      ...stage.region!,
-      nonce: (prev?.nonce ?? 0) + 1,
-    }));
-  }, [debateState]);
 
   const runTimer = useRef<number | null>(null);
   const scheduleRunRefresh = useCallback(() => {
@@ -103,7 +83,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
 
   useEffect(() => {
     const onEvent = (ev: ServerEvent) => {
-      acceptDebate(ev);
       switch (ev.type) {
         case "snapshot":
           paletteRef.current = ev.palette;
@@ -192,7 +171,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       if (refreshTimer.current !== null)
         window.clearTimeout(refreshTimer.current);
     };
-  }, [acceptDebate, initial.id, scheduleThreadRefresh, scheduleRunRefresh]);
+  }, [initial.id, scheduleThreadRefresh, scheduleRunRefresh]);
 
   // Stats come with run.state events; poll a little for the counters in between.
   useEffect(() => {
@@ -244,15 +223,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
 
   const selectedAgent = selected !== null ? agentMap.get(selected) : undefined;
   const highlightMask = useMemo(() => {
+    if (!country) return null;
     const mask = new Uint8Array(65536);
-    if (selected !== null) return null;
-    if (country) {
-      for (const a of agents) if (a.country === country) mask[a.id] = 1;
-      return mask;
-    }
-    for (const debater of debate.state?.debaters ?? []) mask[debater.id] = 1;
-    return mask.some(Boolean) ? mask : null;
-  }, [country, agents, debate.state?.debaters, selected]);
+    for (const a of agents) if (a.country === country) mask[a.id] = 1;
+    return mask;
+  }, [country, agents]);
   const pixelsOwned = useMemo(
     () => (selected !== null && store ? store.countOwned(selected) : 0),
     // version is what makes this recount as pixels land.
@@ -290,16 +265,6 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       );
     },
     [initial.id],
-  );
-  const say = useCallback(
-    async (text: string, name: string) => {
-      await api.stageNarrate(initial.id, text, name);
-    },
-    [initial.id],
-  );
-  const acceptStageState = useCallback(
-    (state: StageState) => acceptDebate({ type: "stage.state", ...state }),
-    [acceptDebate],
   );
 
   const control = (action: "pause" | "resume" | "stop") =>
@@ -366,28 +331,12 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <button
             className={god ? "on" : ""}
             onClick={() => {
-              const next = !god;
-              setGod(next);
-              if (next) setDebateOpen(false);
+              setGod(!god);
               if (god) setTool(null);
             }}
             title="Intervene: paint, erase, clear, announce, change the pace"
           >
             God mode
-          </button>
-          <button
-            className={debateOpen ? "on" : ""}
-            onClick={() => {
-              const next = !debateOpen;
-              setDebateOpen(next);
-              if (next) {
-                setGod(false);
-                setTool(null);
-              }
-            }}
-            title="Open live debate controls"
-          >
-            Debate{debate.state && debate.state.phase !== "idle" ? " ●" : ""}
           </button>
           <button onClick={() => setTimelapse(true)} title="Replay the canvas history so far">
             Timelapse
@@ -408,18 +357,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       )}
       <div className="live-grid">
         <section className="stage">
-          {debateOpen ? (
-            <DebateBar
-              runId={initial.id}
-              state={debate.state}
-              agents={agents}
-              palette={palette}
-              sound={stageSound}
-              onSound={setStageSound}
-              onSelectAgent={setSelected}
-              onState={acceptStageState}
-            />
-          ) : god ? (
+          {god ? (
             <GodBar
               runId={initial.id}
               run={run}
@@ -446,14 +384,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             tool={god ? tool : null}
             onPaint={paint}
           />
-          <NarratorDock
-            narrator={narrator}
-            paused={run.state !== "running"}
-            stageLines={debate.transcript}
-            onHighlight={onHighlight}
-            onAsk={ask}
-            onSay={say}
-          />
+          <NarratorDock narrator={narrator} paused={run.state !== "running"} onHighlight={onHighlight} onAsk={ask} />
         </section>
         <Board
           runId={initial.id}

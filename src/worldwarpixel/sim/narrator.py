@@ -75,17 +75,12 @@ class NarratorModel(Protocol):
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str: ...
 
 
-VLLM_NO_THINKING: dict[str, Any] = {"chat_template_kwargs": {"enable_thinking": False}}
-
-
 class OpenAINarratorModel:
     def __init__(
         self,
         client: AsyncOpenAI,
         model: str,
         timeout: float = 60.0,
-        temperature: float = 0.4,
-        extra_body: dict[str, Any] | None = VLLM_NO_THINKING,
         max_tokens: int = 700,
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
@@ -96,24 +91,27 @@ class OpenAINarratorModel:
         self.model = model
         self._vision = vision
         self._timeout = timeout
-        self._temperature = temperature
-        self._extra_body = extra_body
         self._max_tokens = max_tokens
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
+        # Same endpoint quirks as the agent policy; see models.py.
         if not self._vision:
             messages = [_text_only(m) for m in messages]
-        extra_body = self._extra_body if self._chat_template_kwargs else None
+        extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._chat_template_kwargs
+            else None
+        )
         reasoning: Any = self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
         if self._token_param == "max_completion_tokens":
             response = await self._client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 max_completion_tokens=self._max_tokens,
-                temperature=self._temperature,
+                temperature=0.4,
                 timeout=self._timeout,
                 reasoning_effort=reasoning,
                 extra_body=extra_body,
@@ -123,7 +121,7 @@ class OpenAINarratorModel:
                 model=self.model,
                 messages=messages,
                 max_tokens=self._max_tokens,
-                temperature=self._temperature,
+                temperature=0.4,
                 timeout=self._timeout,
                 reasoning_effort=reasoning,
                 extra_body=extra_body,
@@ -273,6 +271,7 @@ class Narrator:
         include_image: bool = True,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        on_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._run = run
         self._model = model
@@ -281,10 +280,9 @@ class Narrator:
         self.include_image = include_image
         self._clock = clock
         self._sleep = sleep
+        self._on_update = on_update
         self.history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self.stats = {"updates": 0, "answers": 0, "failures": 0}
-        self.rivalry: Counter[tuple[int, int]] = Counter()
-        self.rivalry_at: dict[tuple[int, int], tuple[int, int]] = {}
         self.next_update_at: float | None = None
         self._window = Window(clock())
         self._displaced: dict[tuple[int, int], int] = {}
@@ -338,10 +336,6 @@ class Narrator:
             w.regions[(rx, ry)] += 1
             prev = int(payload.get("prev_owner") or 0)
             x, y = int(payload["x"]), int(payload["y"])
-            agent_count = len(self._run.agents)
-            if prev != agent_id and 1 <= agent_id <= agent_count and 1 <= prev <= agent_count:
-                self.rivalry[(agent_id, prev)] += 1
-                self.rivalry_at[(agent_id, prev)] = (x, y)
             if prev == 0:
                 w.claimed_blank += 1
             elif prev != agent_id:
@@ -753,6 +747,11 @@ class Narrator:
         self.stats["answers" if update["kind"] == "answer" else "updates"] += 1
         self._run.record("narrator.update", None, update)
         self._run.hub.publish("narrator.update", **update, stats=dict(self.stats))
+        if self._on_update is not None:
+            try:
+                self._on_update(update)
+            except Exception:
+                log.exception("narrator update hook failed")
 
     async def tick(self) -> dict[str, Any]:
         """Summarise the window since the last update, then start a new window."""

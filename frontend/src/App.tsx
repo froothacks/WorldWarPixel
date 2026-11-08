@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { api, type RunSummary } from "./api";
 import StartScreen from "./StartScreen";
 import LiveView from "./LiveView";
-import Presenter from "./Presenter";
-import Audience from "./Audience";
 import Screen from "./Screen";
 
 function runFromUrl(): string | null {
@@ -16,21 +14,12 @@ function setUrl(runId: string | null) {
 }
 
 export default function App() {
-  const params = new URLSearchParams(location.search);
-  const screen = params.get("screen");
+  const screen = new URLSearchParams(location.search).get("screen");
   if (screen !== null) return <Screen society={+screen || 0} />;
-  const stageId = params.get("stage");
-  const audienceId = params.get("audience");
-  if (audienceId) return <Audience key={audienceId} runId={audienceId} />;
-  if (stageId) {
-    const value = params.get("podium");
-    const podium = value === null ? null : Number(value);
-    return <Presenter runId={stageId} podium={podium === 0 || podium === 1 ? podium : null} />;
-  }
-  return <RunApp />;
+  return <Main />;
 }
 
-function RunApp() {
+function Main() {
   const [run, setRun] = useState<RunSummary | null>(null);
   const [loading, setLoading] = useState(() => runFromUrl() !== null);
 

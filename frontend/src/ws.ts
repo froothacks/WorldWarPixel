@@ -1,16 +1,4 @@
-import type {
-  AgentStatus,
-  NarratorStats,
-  NarratorUpdate,
-  Post,
-  RunState,
-  RunStats,
-  Snapshot,
-  StageLine,
-  StageReaction,
-  StageState,
-  Thought,
-} from "./api";
+import type { AgentStatus, NarratorStats, NarratorUpdate, Post, RunState, RunStats, Snapshot, Thought } from "./api";
 
 export const FRAME_SNAPSHOT = 1;
 export const FRAME_PIXELS = 2;
@@ -32,17 +20,6 @@ export type ServerEvent =
   | ({ type: "narrator.update"; stats?: NarratorStats } & NarratorUpdate)
   | { type: "canvas.cleared" }
   | { type: "board.cleared" }
-  | ({ type: "stage.state" } & StageState)
-  | ({ type: "stage.line" } & StageLine)
-  | { type: "stage.votes"; debate_id: number; votes: Record<string, number> }
-  | { type: "stage.reaction"; reaction: StageReaction; agent_id: number | null }
-  | {
-      type: "stage.verdict";
-      debate_id: number;
-      votes: Record<string, number>;
-      winner_id: number | null;
-      topic: string;
-    }
   | { type: "thread.voted"; thread_id: number; votes: number }
   | { type: "society.joined"; agent_id: number; agent: string; from: number; to: number }
   | { type: "society.renamed"; agent_id: number; society: number; name: string }
