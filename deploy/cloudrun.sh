@@ -79,12 +79,13 @@ if [ -n "$CLOUDSQL_INSTANCE" ]; then
 fi
 # KEY=value lines -> the YAML gcloud expects; keeps the values out of the command line.
 yaml="$(mktemp)"
-trap 'rm -f "$yaml"' EXIT
+yaml_tmp="$(mktemp)"
+trap 'rm -f "$yaml" "$yaml_tmp"' EXIT
 grep -v '^\s*\(#\|$\)' "$APP_ENV_FILE" | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1: "\2"/' > "$yaml"
 # With Cloud SQL, DATABASE_URL comes from Secret Manager; drop any literal copy from APP_ENV_FILE.
 if [ -n "$CLOUDSQL_INSTANCE" ]; then
-  grep -vi '^database_url:' "$yaml" > "$yaml.tmp" || true
-  mv "$yaml.tmp" "$yaml"
+  grep -vi '^database_url:' "$yaml" > "$yaml_tmp" || true
+  mv "$yaml_tmp" "$yaml"
 fi
 args+=(--env-vars-file "$yaml")
 gcloud run deploy "$SERVICE" "${args[@]}" --quiet
