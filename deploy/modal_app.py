@@ -110,15 +110,13 @@ class Web:
         serve.restore()
         self._serve = serve
         self._stop = threading.Event()
-        self._tunnel = serve.start_tunnel()
-        if self._tunnel is not None:
-            print("cloudflared tunnel started", flush=True)
+        self._tunnel = self._start_tunnel()
 
         def loop() -> None:
             while not self._stop.wait(serve.INTERVAL):
                 if self._tunnel is not None and self._tunnel.poll() is not None:
                     print("cloudflared exited; restarting", flush=True)
-                    self._tunnel = serve.start_tunnel()
+                    self._tunnel = self._start_tunnel()
                 try:
                     serve.backup()
                 except Exception as exc:
@@ -126,6 +124,17 @@ class Web:
 
         self._backups = threading.Thread(target=loop, daemon=True)
         self._backups.start()
+
+    def _start_tunnel(self) -> subprocess.Popen[bytes] | None:
+        # A tunnel failure must never take down the app or the backup loop with it.
+        try:
+            tunnel = self._serve.start_tunnel()
+        except Exception as exc:
+            print(f"cloudflared failed to start: {exc!r}", flush=True)
+            return None
+        if tunnel is not None:
+            print("cloudflared tunnel started", flush=True)
+        return tunnel
 
     @modal.asgi_app(label="worldwarpixel-home")
     def web(self) -> Any:
