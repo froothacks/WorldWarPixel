@@ -75,6 +75,26 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             max_tokens=3000,
             narrator_max_tokens=3000,
         ),
+        # chryztoph workspace endpoints: proxy auth comes from CHRYZTOPH_MODAL_KEY/_SECRET.
+        ModelSpec(
+            id="qwen-c",
+            label="Qwen (chryztoph)",
+            model="qwen",
+            base_url="https://chryztoph--ep-qwen-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="chryztoph",
+        ),
+        ModelSpec(
+            id="glm-5.3-flash",
+            label="GLM 5.3 Flash NVFP4",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url="https://chryztoph--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="chryztoph",
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
+        ),
     ]
 
 
