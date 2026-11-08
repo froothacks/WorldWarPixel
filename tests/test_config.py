@@ -77,6 +77,9 @@ def test_modal_headers_for_workspace_reads_dotenv(
         "Modal-Key": "dk",
         "Modal-Secret": "ds",
     }
+    # An env var set to "" (operator cleared it) wins over .env: no credentials are sent.
+    monkeypatch.setenv("CHRYZTOPH_MODAL_KEY", "")
+    assert Settings().modal_headers_for(url, "chryztoph") == {}
 
 
 @pytest.mark.parametrize("var", ["AGENT_MAX_TOKENS", "NARRATOR_MAX_TOKENS"])
