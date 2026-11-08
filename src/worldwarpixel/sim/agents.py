@@ -42,6 +42,12 @@ class Observation:
     canvas_width: int
     canvas_height: int
     board: list[dict[str, Any]]
+    society: dict[str, Any] | None = None
+    """The agent's own society: id, name, members and the current murmur (if any)."""
+    societies: list[dict[str, Any]] | None = None
+    """Every society's id, name and member count, when the run has societies."""
+    memory: list[str] | None = None
+    """The agent's own last few turns (thought plus what it did), oldest first."""
 
 
 class Policy(Protocol):
@@ -58,10 +64,12 @@ def seed_agents(
     rng: random.Random,
     pool: RespondentPool | None = None,
     countries: Sequence[Country] | None = None,
+    by_country: bool = True,
 ) -> list[AgentSpec]:
     """Agents representative of the world: seats per country from UN WPP 2024 population
     (largest remainder), each seat filled by a weighted-sampled WVS7 respondent (or a synthetic
-    stand-in) whose answers become the agent's persona. Agents cluster per country on the canvas.
+    stand-in) whose answers become the agent's persona. With by_country, compatriots share a
+    colour and start clustered; otherwise every agent gets its own spot and colour.
     """
     pool = pool or default_pool()
     countries = countries or load_countries()
@@ -79,6 +87,12 @@ def seed_agents(
             source = next(iter(sorted(pool.countries)))
         cx, cy, color = rng.randrange(width), rng.randrange(height), 2 + i % visible
         for _ in range(seats[iso3]):
+            if not by_country:
+                cx, cy, color = (
+                    rng.randrange(width),
+                    rng.randrange(height),
+                    2 + rng.randrange(visible),
+                )
             respondent = nemotron.enrich(pool.sample(source, rng), iso3, rng)
             name = random_name(country.name, rng, used, respondent.sex, country.subregion)
             survey_name = by_iso3[source].name if source in by_iso3 else source

@@ -9,6 +9,7 @@ from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.societies import Migration
 from worldwarpixel.sim.timelapse import iter_events
 
 REJECTED = "Tool call rejected"
@@ -27,7 +28,7 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
     run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None)
     run.created_at = run.started_at = first.ts
     run.state = "stopped"
-    stats, narrator = run.stats, run.narrator
+    stats, narrator, socs = run.stats, run.narrator, run.societies
     for e in events:
         p = cast(dict[str, Any], e.payload)
         if e.kind == "pixel":
@@ -41,7 +42,9 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
         elif e.kind == "god.clear_canvas":
             run.canvas.clear()
         elif e.kind == "post":
-            run.board.restore(Post(**p))
+            society = p.get("society")
+            post = Post(**{k: v for k, v in p.items() if k != "society"})
+            run.board.restore(post, None if society is None else int(society))
             run.world.observe_post(p)
             stats["posts"] += 1
         elif e.kind == "god.clear_board":
@@ -51,6 +54,14 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
             stats["errors"] += str(p.get("thought", "")).startswith(REJECTED)
             if e.agent_id in run.thoughts:
                 run.thoughts[e.agent_id].append(p)
+        elif e.kind == "society.join" and socs and e.agent_id in socs.members:
+            socs.members[e.agent_id] = int(p["to"])
+            socs.migrations.append(Migration(e.ts, e.agent_id, int(p["from"]), int(p["to"])))
+            socs.moves += 1
+        elif e.kind == "society.renamed" and socs:
+            socs.rename(int(p["society"]), str(p["name"]))
+        elif e.kind == "society.murmur" and socs:
+            socs.set_murmur(int(p["society"]), str(p["murmur"]), str(p["transcript"]), e.ts)
         elif e.kind == "narrator.update":
             narrator.history.append(p)
             narrator.stats["answers" if p.get("kind") == "answer" else "updates"] += 1

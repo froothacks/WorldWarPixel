@@ -1,6 +1,6 @@
 # WorldWarPixel
 
-An r/place-style simulation where a swarm of agents share a pixel canvas and a threaded message board. FastAPI + asyncio service; agents, canvas, board and realtime stream live in one process.
+A simulation where a swarm of agents share a pixel canvas and a threaded message board. FastAPI + asyncio service; agents, canvas, board and realtime stream live in one process.
 
 ## Setup
 
@@ -78,9 +78,9 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' \
 
 ## Configuration
 
-Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
+Settings are read from environment variables or `.env` (see `.env.example`): `OPENAI_BASE_URL`, `OPENAI_API_KEY` (optional; only sent to bearer-authenticated endpoints like real OpenAI, never to Modal), `OPENAI_MODEL`, `MAX_CONCURRENCY`, `REQUEST_TIMEOUT`, `EVENT_LOG_PATH`, `MAX_ACTIVE_RUNS`, `QWEN_BASE_URL` / `DEEPSEEK_BASE_URL` / `GLM_BASE_URL` (endpoints of the Modal model presets), and `AGENT_MAX_TOKENS` / `NARRATOR_MAX_TOKENS` (fallback output budgets, default 700, for model presets that don't carry their own; raise them for reasoning models that spend tokens thinking before they call a tool or finish the narrator JSON). God-mode endpoints (`/runs/{id}/god/*`: brush/eraser, clear canvas/board, announcements, pace) are open by default, since the person running the simulation is also its God; set `GOD_TOKEN` to lock them on a shared deployment, after which requests must carry it in the `X-God-Token` header (the UI has a field for it).
 
-Each run picks its model from the presets in `src/worldwarpixel/models.py` (the start screen shows them, `GET /models` lists them with whether this server has their credentials): `gpt-6-luna` (OpenAI API, needs `OPENAI_API_KEY`), `qwen` and `deepseek` (the project's Modal endpoints, need `MODAL_KEY` / `MODAL_SECRET`). A preset carries its endpoint, auth style and API quirks — e.g. gpt-6-luna requires `max_completion_tokens`, no `chat_template_kwargs` and `reasoning_effort="none"` with tools — so adding a model means adding a preset there.
+Each run picks its model from the presets in `src/worldwarpixel/models.py` (the start screen shows them, `GET /models` lists them with whether this server has their credentials): `gpt-6-luna` (OpenAI API, needs `OPENAI_API_KEY`), `qwen`, `deepseek` and `glm` (the project's Modal endpoints in the advait-m workspace, need `MODAL_KEY` / `MODAL_SECRET`), plus `qwen-c` / `glm-5.3-flash` (the same models served from the chryztoph workspace, need `CHRYZTOPH_MODAL_KEY` / `CHRYZTOPH_MODAL_SECRET`). A preset carries its endpoint, auth style and API quirks — e.g. gpt-6-luna requires `max_completion_tokens`, no `chat_template_kwargs` and `reasoning_effort="none"` with tools — so adding a model means adding a preset there.
 
 ## Persona data
 
@@ -141,7 +141,7 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 
 ## Deploy to Modal
 
-`deploy/modal_app.py` runs the app (API + UI + WebSockets) directly in one always-on, non-preemptible [Modal web container](https://modal.com/docs/guide/webhooks). It serves the app at a stable `*.modal.run` URL; there is no 24-hour Sandbox lifetime cap. A single WebSocket connection is limited to 24 hours. The app uses exactly one container because live run state is held in memory.
+`deploy/modal_app.py` serves the FastAPI app (API + UI + WebSockets) in-process in one always-on, non-preemptible [Modal web container](https://modal.com/docs/guide/webhooks), without a uvicorn subprocess or proxy hop for WebSockets. It serves the app at a stable `*.modal.run` URL; there is no 24-hour Sandbox lifetime cap. A single WebSocket connection is limited to 24 hours. The app uses exactly one container because live run state is held in memory.
 
 Non-preemptible compute costs 3x the list price for CPU and memory, and the one container stays on continuously. The event log is SQLite on the container's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 60 seconds (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. A deploy replaces the container, so live runs stop and reopen as stopped runs from the saved log. Deploys may briefly overlap old and new containers, so up to 60 seconds of events from the old container can be lost.
 

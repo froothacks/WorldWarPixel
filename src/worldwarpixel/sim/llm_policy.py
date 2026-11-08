@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -6,9 +7,10 @@ import re
 import time
 from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import (
     ChatCompletionContentPartParam,
+    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
 )
@@ -46,21 +48,18 @@ TOOLS: list[ChatCompletionToolParam] = [
         "type": "function",
         "function": {
             "name": "place_pixels",
-            "description": "Paint up to your remaining pixel budget. Coordinates are 0-based.",
+            "description": (
+                "Paint any number of pixels, up to your remaining pixel budget. "
+                "Coordinates are 0-based."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "pixels": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "x": {"type": "integer"},
-                                "y": {"type": "integer"},
-                                "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                            },
-                            "required": ["x", "y", "color"],
-                        },
+                        "type": "string",
+                        "description": (
+                            'Space-separated x,y,colour triples, e.g. "10,5,3 11,5,3 12,5,3 13,6,8"'
+                        ),
                     }
                 },
                 "required": ["pixels"],
@@ -120,10 +119,60 @@ TOOLS: list[ChatCompletionToolParam] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "vote_thread",
+            "description": "Upvote or downvote a thread; votes move threads up or down the board.",
+            "parameters": {
+                "type": "object",
+                "properties": {"thread_id": {"type": "integer"}, "up": {"type": "boolean"}},
+                "required": ["thread_id", "up"],
+            },
+        },
+    },
 ]
 
-READ_TOOLS = {"view_canvas", "read_thread"}
+
+def _fn(name: str, description: str, props: dict[str, Any]) -> ChatCompletionToolParam:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": props, "required": list(props)},
+        },
+    }
+
+
+SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
+    _fn(
+        "peek_society",
+        "Look at another society: its name, size and top threads.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn(
+        "join_society",
+        "Leave your society and join another one.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn("name_society", "Rename the society you are in.", {"name": {"type": "string"}}),
+    _fn(
+        "invite",
+        "Invite someone (by name) to join the society you are in.",
+        {"name": {"type": "string"}},
+    ),
+]
+
+READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 MAX_ROUNDS = 2
+PAINT_ROUNDS = 2
+"""Extra model calls in a turn while the agent keeps painting and has pixels left."""
+_XML_CALL_RE = re.compile(r"<tool_call>\s*([\w.-]+)(.*?)(?=</tool_call>|<tool_call>|$)", re.S)
+_XML_ARG_RE = re.compile(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>", re.S)
+RATE_LIMIT_BACKOFF = (3.0, 8.0)
+"""Seconds (min, max) an agent waits after a 429 so a shared endpoint is not hammered."""
+BOARD_THREADS = 8
 
 
 def palette_legend() -> str:
@@ -131,6 +180,21 @@ def palette_legend() -> str:
 
 
 def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Free-for-all: who you are, what you can do, nothing about what you should do."""
+    return (
+        f"You are {agent.persona}\n\n"
+        f"You share a {width}x{height} pixel canvas (x grows right, y grows down, 0-based) and a "
+        "public message board with many other people. "
+        f"Each turn you may paint up to {pixels} pixels and make up to {posts} post or reply. "
+        f"Colours: {palette_legend()}. You started near ({agent.home_x}, {agent.home_y}).\n\n"
+        "Each turn you see the canvas and the top threads on the board. "
+        "Do whatever you want.\n\n"
+        "Write one or two short sentences of thought in first person, then use the tools."
+    )
+
+
+def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Opt-in scaffolding: r/place framing, examples, stencil tools and spot hints."""
     event = agent.persona_card.get("event")
     setting = (
         f"You have joined an r/place-style game at {event}: a {width}x{height} shared pixel "
@@ -233,40 +297,88 @@ def pick_threads(
     return picked
 
 
-def user_prompt(
+TAG_PREFIXES = {"dispatch": "[WORLD NEWS] ", "mention": "[about you] "}
+
+
+def board_lines(threads: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"{TAG_PREFIXES.get(str(d.get('tag')), '')}- thread {d['thread_id']} "
+        f'"{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
+        + (
+            f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
+            if d["latest"]
+            else ""
+        )
+        for d in threads
+    )
+
+
+def society_lines(obs: Observation) -> str:
+    """Facts only: where the agent is, what else exists, and any murmur in its society."""
+    if obs.society is None:
+        return ""
+    me = obs.society
+    others = ", ".join(
+        f'{s["id"]} "{s["name"]}" ({s["members"]} people)'
+        for s in obs.societies or []
+        if s["id"] != me["id"]
+    )
+    text = (
+        f"The people here are split into societies; each has its own threads. You are in society "
+        f'{me["id"]} "{me["name"]}" ({me["members"]} people). Other societies: {others}. '
+        "You can peek_society, join_society, name_society or invite someone to your society.\n"
+    )
+    for key, label in (
+        ("invites", "Invitations"),
+        ("moves", "Recent moves"),
+        ("contacts", "People you have talked with recently"),
+    ):
+        if me.get(key):
+            text += f"{label}: {'; '.join(me[key])}.\n"
+    if me.get("murmur"):
+        text += f"People in your society have been saying: {me['murmur']}\n"
+    return text
+
+
+def memory_lines(obs: Observation) -> str:
+    if not obs.memory:
+        return ""
+    return "Your last turns:\n" + "\n".join(f"- {m}" for m in obs.memory) + "\n"
+
+
+def budget_line(agent: AgentSpec, obs: Observation) -> str:
+    b = obs.budget
+    posts = "no posts this turn (you posted recently)" if b.posts == 0 else f"{b.posts} post"
+    return (
+        f"Turn for {agent.name}. Budget: {b.pixels} pixels, {posts}, {b.votes} vote. "
+        "Unused pixels don't carry over to the next turn.\n"
+    )
+
+
+def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
+    """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
+    board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
+    look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
+    where = "your society's threads" if obs.society else "the board"
+    return (
+        f"{budget_line(agent, obs)}"
+        f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}"
+    )
+
+
+def guided_user_prompt(
     agent: AgentSpec,
     obs: Observation,
     view: str,
     rng: random.Random | None = None,
 ) -> str:
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
-    prefixes = {"announcement": "", "dispatch": "[WORLD NEWS] ", "mention": "[about you] "}
-    board = (
-        "\n".join(
-            f"{prefixes.get(str(d.get('tag')), '')}- thread {d['thread_id']} "
-            f'"{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
-            + (
-                f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
-                if d["latest"]
-                else ""
-            )
-            for d in threads
-        )
-        or "- (no threads yet; you could start one)"
-    )
-    budget = (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, "
-        "no posts this turn (you posted recently).\n"
-        if obs.budget.posts == 0
-        else f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, "
-        f"{obs.budget.posts} post.\n"
-    )
+    board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
-        budget
-        + f"{view}\n\nSome current threads:\n{board}\n\n"
-        + "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
-        + "you are pursuing. If a thread above matters to you, answer it with "
-        + "reply(thread_id=..., body=...) rather than starting a new one."
+        f"{budget_line(agent, obs)}{view}\n\nSome current threads:\n{board}\n\n"
+        "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
+        "you are pursuing. If a thread above matters to you, answer it with "
+        "reply(thread_id=..., body=...) rather than starting a new one."
     )
 
 
@@ -295,7 +407,11 @@ def latency_summary(samples: list[float]) -> dict[str, float] | None:
 
 
 class LLMPolicy:
-    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
+    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text.
+
+    By default agents get a neutral prompt and only the basic tools. ``guided=True`` adds the
+    r/place framing, stencil tools, drawing memory and busy/quiet-area hints.
+    """
 
     def __init__(
         self,
@@ -303,12 +419,14 @@ class LLMPolicy:
         model: str,
         timeout: float = 45.0,
         vision: bool = True,
+        guided: bool = False,
         max_tokens: int = 700,
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
     ) -> None:
         self._client = client
+        self._guided = guided
         self._model = model
         self._timeout = timeout
         self._vision = vision
@@ -327,7 +445,8 @@ class LLMPolicy:
         self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
-        return system_prompt(agent, width, height, pixels, posts)
+        prompt = guided_system_prompt if self._guided else system_prompt
+        return prompt(agent, width, height, pixels, posts)
 
     def public_stats(self) -> dict[str, Any]:
         """Counters plus latency percentiles of the recent model calls and whole turns."""
@@ -338,11 +457,15 @@ class LLMPolicy:
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         turn_t0 = time.monotonic()
-        text = user_prompt(
-            agent,
-            obs,
-            region_view(agent, tools.regions(limit=None), self._rng),
-            self._rng,
+        text = (
+            guided_user_prompt(
+                agent,
+                obs,
+                region_view(agent, tools.regions(limit=None), self._rng),
+                self._rng,
+            )
+            if self._guided
+            else user_prompt(agent, obs, self._vision)
         )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
@@ -363,7 +486,7 @@ class LLMPolicy:
         messages: list[ChatCompletionMessageParam] = [
             {
                 "role": "system",
-                "content": system_prompt(
+                "content": self.describe(
                     agent, obs.canvas_width, obs.canvas_height, obs.budget.pixels, obs.budget.posts
                 ),
             },
@@ -371,7 +494,8 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
-        for round_no in range(MAX_ROUNDS):
+        read_rounds = paint_rounds = 0
+        for round_no in range(MAX_ROUNDS + PAINT_ROUNDS):
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
@@ -414,12 +538,18 @@ class LLMPolicy:
                 self.stats["last_error"] = str(e)[:200]
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
                 thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
+                if isinstance(e, RateLimitError):
+                    await asyncio.sleep(self._rng.uniform(*RATE_LIMIT_BACKOFF))
                 break
             _sample(self._latency["model"], time.monotonic() - call_t0)
+            self.stats.pop("last_error", None)
             msg = response.choices[0].message
-            if msg.content:
-                thoughts.append(msg.content.strip())
-            calls = msg.tool_calls or []
+            said = msg.content or ""
+            calls: list[Any] = list(msg.tool_calls or [])
+            if not calls and "<tool_call>" in said:
+                said, calls = _text_tool_calls(said)
+            if said.strip():
+                thoughts.append(said.strip())
             if not calls:
                 if round_no == 0:
                     self.stats["no_tools"] += 1
@@ -429,12 +559,13 @@ class LLMPolicy:
                     ChatCompletionMessageParam,
                     {
                         "role": "assistant",
-                        "content": msg.content or "",
+                        "content": said,
                         "tool_calls": [c.model_dump() for c in calls],
                     },
                 )
             )
             used_read = False
+            pixels_before = tools.budget.pixels
             for call in calls:
                 if call.type != "function":
                     continue
@@ -443,8 +574,14 @@ class LLMPolicy:
                 result = self._execute(agent, tools, name, call.function.arguments, actions)
                 used_read |= name in READ_TOOLS
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
-            if not used_read:
+            left = tools.budget.pixels
+            if left < pixels_before and left > 0 and paint_rounds < PAINT_ROUNDS:
+                paint_rounds += 1
+                messages.append({"role": "user", "content": f"{left} pixels left this turn."})
+                continue
+            if not used_read or read_rounds >= MAX_ROUNDS - 1:
                 break
+            read_rounds += 1
         thought = " ".join(t for t in thoughts if t)
         if actions:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
@@ -482,9 +619,13 @@ class LLMPolicy:
         return json.dumps(result)
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
-        """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
+        """Guided only: once the board is busy, usually hide post_thread so agents reply."""
+        free = TOOLS + SOCIETY_TOOLS if obs.society else TOOLS
+        tools = TOOLS if self._guided else free
         if obs.budget.posts == 0:
-            return [t for t in TOOLS if t["function"]["name"] not in ("post_thread", "reply")]
+            return [t for t in tools if t["function"]["name"] not in ("post_thread", "reply")]
+        if not self._guided:
+            return tools
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
             return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
         return TOOLS
@@ -513,6 +654,8 @@ class LLMPolicy:
         # looking at the canvas.
         match name:
             case "place_pixels":
+                if "pixels" not in a and "x" in a and "y" in a:  # one bare pixel
+                    a["pixels"] = [{k: a[k] for k in ("x", "y", "color") if k in a}]
                 raw_pixels = a["pixels"]
                 if isinstance(raw_pixels, str):  # the model often double-encodes the list
                     raw_pixels = _parse_pixel_list(raw_pixels)
@@ -542,14 +685,55 @@ class LLMPolicy:
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
                 return tools.reply(int(a["thread_id"]), str(a["body"])[:600])
+            case "vote_thread":
+                up = a.get("up", True) not in (False, 0, "false", "False", "down")
+                return tools.vote_thread(int(a["thread_id"]), up)
             case "view_canvas":
                 return tools.view_canvas(int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]))
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
+            case "peek_society":
+                return tools.peek_society(int(a["society_id"]))
+            case "join_society":
+                return tools.join_society(int(a["society_id"]))
+            case "name_society":
+                return tools.name_society(str(a["name"]))
+            case "invite":
+                return tools.invite(str(a["name"]))
         raise ToolError(f"unknown tool {name}")
 
 
 _FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
+
+
+_TRIPLE_RE = re.compile(r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)")
+
+
+def _text_tool_calls(content: str) -> tuple[str, list[ChatCompletionMessageFunctionToolCall]]:
+    """Tool calls some endpoints leave in the text (GLM style:
+    <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>). Returns the text
+    before the first call and the complete calls; a call cut off mid-value is dropped."""
+    calls: list[ChatCompletionMessageFunctionToolCall] = []
+    for m in _XML_CALL_RE.finditer(content):
+        body = m.group(2)
+        if body.count("<arg_value>") != body.count("</arg_value>"):
+            continue
+        args: dict[str, Any] = {}
+        for key, value in _XML_ARG_RE.findall(body):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                parsed = None
+            numeric = isinstance(parsed, int | float) and not isinstance(parsed, bool)
+            args[key] = parsed if numeric or isinstance(parsed, list | dict) else value
+        calls.append(
+            ChatCompletionMessageFunctionToolCall(
+                id=f"text{len(calls)}",
+                type="function",
+                function={"name": m.group(1), "arguments": json.dumps(args)},  # type: ignore[arg-type]
+            )
+        )
+    return content.split("<tool_call>", 1)[0], calls
 
 
 def _pixel_coords(fields: dict[str, Any], w: int, h: int) -> tuple[int, int] | None:
@@ -573,20 +757,26 @@ def _salvage_place_pixels(name: str, raw: str) -> dict[str, Any] | None:
 
 
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
-    """Decode a stringified pixel list, salvaging truncated or sloppy JSON object by object."""
+    """Decode "x,y,c x,y,c" triples or a stringified (possibly truncated) JSON pixel list."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, list):
             return parsed
     except ValueError:
         pass
+    if "{" not in text:
+        triples = [
+            {"x": int(x), "y": int(y), "color": int(c)} for x, y, c in _TRIPLE_RE.findall(text)
+        ]
+        if triples:
+            return triples
     found: list[dict[str, int]] = []
     for obj in re.findall(r"\{[^{}]*\}", text):  # only complete {...} objects, any key order
         fields = {k: rx.search(obj) for k, rx in _FIELD_RE.items()}
         if all(fields.values()):
             found.append({k: int(m.group(1)) for k, m in fields.items() if m})
     if not found:
-        raise ToolError("pixels must be a list of {x, y, color}")
+        raise ToolError('pixels must be x,y,colour triples like "10,5,3 11,5,3"')
     return found
 
 
@@ -607,6 +797,7 @@ _TOOL_HINTS = (
     ("see", "view_canvas"),
     ("look", "view_canvas"),
     ("view", "view_canvas"),
+    ("vote", "vote_thread"),
     ("reply", "reply"),
     ("thread", "post_thread"),
     ("post", "post_thread"),
@@ -646,8 +837,8 @@ def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "place_pixels":
         px = args.get("pixels") or []
         return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
-    out: dict[str, Any] = {}
-    if name in ("post_thread", "reply"):
+    out: dict[str, Any] = {k: v for k, v in args.items() if k in ("society_id", "name", "up")}
+    if name in ("post_thread", "reply", "vote_thread"):
         out["thread_id"] = args.get("thread_id")
         out["title"] = str(args.get("title", ""))[:80] or None
     return out
@@ -663,8 +854,18 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             return f"posted thread {result.get('thread_id')}"
         case "reply":
             return f"replied in thread {args.get('thread_id')}"
+        case "vote_thread":
+            return f"{'up' if args.get('up', True) else 'down'}voted thread {args.get('thread_id')}"
         case "view_canvas":
             return "looked at the canvas"
         case "read_thread":
             return f"read thread {args.get('thread_id')}"
+        case "peek_society":
+            return f"peeked at society {args.get('society_id')}"
+        case "join_society":
+            return f'joined society {result.get("society")} "{result.get("name")}"'
+        case "name_society":
+            return f'renamed my society to "{result.get("name")}"'
+        case "invite":
+            return f"invited {result.get('invited')} to society {result.get('society')}"
     return name

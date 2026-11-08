@@ -1,8 +1,10 @@
-"""Sandbox entrypoint: restore the event log from the Volume, run the app, back the log up.
+"""Restore and back up the event log for the Modal app and legacy Sandbox.
 
-SQLite lives on the sandbox's local disk (WAL needs real file locking, which a network Volume
-does not promise). A consistent copy is written to the Volume every ``BACKUP_INTERVAL`` seconds,
-on SIGTERM and on ``python serve.py backup``, then committed with ``sync`` (Volumes v2).
+SQLite lives on the container's local disk (WAL needs real file locking, which a network Volume
+does not promise). The Modal ASGI container calls ``restore()`` before app startup and backs up
+periodically and on exit. ``python serve.py`` remains the legacy server entrypoint, and
+``python serve.py backup`` is used to retire its Sandbox. Backups are committed with ``sync``
+(Volumes v2).
 """
 
 import os
@@ -52,17 +54,21 @@ def start_tunnel() -> subprocess.Popen[bytes] | None:
     if not TUNNEL_TOKEN:
         return None
     # Remotely-managed tunnel: hostnames and DNS live in the Cloudflare dashboard; the token
-    # is the only thing the sandbox needs. --no-autoupdate keeps the image reproducible.
+    # is the only thing the container needs. --no-autoupdate keeps the image reproducible.
     return subprocess.Popen(
         ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token", TUNNEL_TOKEN]
     )
 
 
-def serve() -> int:
+def restore() -> None:
     if BACKUP.exists() and not LIVE.exists():
         copy_db(BACKUP, LIVE)
         print(f"restored event log from {BACKUP}", flush=True)
     LIVE.parent.mkdir(parents=True, exist_ok=True)
+
+
+def serve() -> int:
+    restore()
     env = {**os.environ, "EVENT_LOG_PATH": str(LIVE)}
     cmd = [sys.executable, "-m", "uvicorn", "worldwarpixel.app:app", "--host", "0.0.0.0"]
     server = subprocess.Popen([*cmd, "--port", PORT], env=env)
