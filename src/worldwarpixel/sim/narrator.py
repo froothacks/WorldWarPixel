@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
-from openai import AsyncOpenAI
+from openai import NOT_GIVEN, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from worldwarpixel.sim.canvas import PALETTE, Canvas
@@ -105,7 +105,7 @@ class OpenAINarratorModel:
             if self._chat_template_kwargs
             else None
         )
-        reasoning = cast(Any, self._reasoning_effort)
+        reasoning: Any = self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
         if self._token_param == "max_completion_tokens":
             response = await self._client.chat.completions.create(
                 model=self.model,
@@ -271,6 +271,7 @@ class Narrator:
         include_image: bool = True,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        on_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._run = run
         self._model = model
@@ -279,6 +280,7 @@ class Narrator:
         self.include_image = include_image
         self._clock = clock
         self._sleep = sleep
+        self._on_update = on_update
         self.history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self.stats = {"updates": 0, "answers": 0, "failures": 0}
         self.next_update_at: float | None = None
@@ -745,6 +747,11 @@ class Narrator:
         self.stats["answers" if update["kind"] == "answer" else "updates"] += 1
         self._run.record("narrator.update", None, update)
         self._run.hub.publish("narrator.update", **update, stats=dict(self.stats))
+        if self._on_update is not None:
+            try:
+                self._on_update(update)
+            except Exception:
+                log.exception("narrator update hook failed")
 
     async def tick(self) -> dict[str, Any]:
         """Summarise the window since the last update, then start a new window."""

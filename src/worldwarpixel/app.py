@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from worldwarpixel.api import RunManager, random_policy, rosters_router, videos_router
 from worldwarpixel.api import router as runs_router
-from worldwarpixel.config import get_settings
+from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.devices import router as devices_router
 from worldwarpixel.llm import ChatService
 from worldwarpixel.models import ModelSpec, find_model, model_available, model_registry
@@ -22,6 +22,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
 
@@ -53,9 +54,25 @@ def _to_params(messages: list[Message]) -> list[ChatCompletionMessageParam]:
     return [m.model_dump() for m in messages]  # type: ignore[misc]
 
 
+def tts_client(settings: Settings) -> AsyncOpenAI | None:
+    """Speech panel voices use their own OpenAI-compatible endpoint."""
+    key = settings.tts_api_key.get_secret_value()
+    if not key and not settings.tts_base_url:
+        return None
+    return AsyncOpenAI(
+        api_key=key or "none",
+        base_url=settings.tts_base_url or "https://api.openai.com/v1",
+        timeout=settings.request_timeout,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    tts = tts_client(settings)
+    speech: SpeechSynth | None = (
+        OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
+    )
     specs = model_registry(settings)
     app.state.model_specs = specs
     # One client per model preset, created lazily and shared by every run using it.
@@ -155,6 +172,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.max_active_runs,
             make_policy,
             make_narrator=make_narrator,
+            speech=speech,
             videos=VideoStore(
                 settings.timelapse_dir,
                 s3_bucket=settings.timelapse_s3_bucket,
@@ -171,6 +189,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await app.state.runs.shutdown()
             for model_client in clients.values():
                 await model_client.close()
+            if tts is not None:
+                await tts.close()
 
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)

@@ -66,6 +66,18 @@ curl -X POST localhost:8000/runs -H 'content-type: application/json' \
 
 Each run has a narrator loop that pauses/stops with the run. Every `narrator_interval` seconds it builds a digest of the window since the last update (new posts, most active threads, turns/pixels/posts per agent and country, the 4×4 canvas regions that changed most, who overwrote whom) plus, when `narrator_canvas_image` is on, a downsampled PNG of the canvas, and asks the model (`NARRATOR_MODEL`, default `OPENAI_MODEL`) for a JSON update: a one-line `headline`, 2–4 `bullets` and `highlights` (`{type: "thread", id}`, `{type: "agent", id}`, `{type: "region", x, y, w, h}`) that the UI turns into chips. If the model call fails the update falls back to a stats-only summary (`source: "fallback"`). Updates are appended to the event log as `narrator.update`, kept on the run (last 50) and published over the WebSocket.
 
+## Speech panel
+
+Runs can speak short agent lines and read narrator updates aloud to the ESP32 panel in
+[`firmware/podium/`](firmware/podium/). Configure `TTS_API_KEY` for OpenAI speech or
+`TTS_BASE_URL` for an OpenAI-compatible service; `TTS_MODEL` defaults to `gpt-4o-mini-tts`.
+The run option `speak_narrator` defaults to `true`.
+
+- `POST /runs/{id}/speak` with `{"text": "...", "agent_id": 1}` queues a line (God-token protected).
+- `GET /runs/{id}/speech` returns panel status, recent lines and synthesis stats.
+- `GET /runs/{id}/speech/lines/{line_id}/audio?format=pcm` returns s16le mono PCM; WAV is the default.
+- `WS /runs/{id}/speech/ws` streams a snapshot followed by `speech.line` events.
+
 ## Timelapse videos
 
 Stopping a run (`POST /runs/{id}/stop`) renders an mp4 in the background (`TIMELAPSE_AUTO`, default on): the canvas timelapse on the left, the message board on the right with posts appearing on the same clock, and the latest narrator headline as a caption (`sim/video.py`; frames are composed with Pillow and piped to `ffmpeg`, which must be on the PATH or at `FFMPEG_PATH`). `POST /runs/{id}/video` renders on demand (also for live runs and runs restored from the log), `GET /runs/{id}/video` streams the file, `GET /videos` lists everything rendered. Videos land in `TIMELAPSE_DIR` (`/data/timelapses` on the Modal Volume in production) next to a `{run_id}.json` sidecar with the run's config, stats, top countries and narrator headlines, so the archive can be scanned later to pick out the good ones. Set `TIMELAPSE_S3_BUCKET` (plus `TIMELAPSE_S3_ENDPOINT` — `https://storage.googleapis.com` for Google Cloud Storage, or the R2 endpoint — and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, which for GCS are a service account's HMAC key) to mirror both files into a bucket. `python -m worldwarpixel.videos [run_id ...]` renders missing videos for archived runs.

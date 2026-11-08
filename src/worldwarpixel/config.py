@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ffmpeg_path: str = "ffmpeg"
     god_token: SecretStr = SecretStr("")
     """When set, god-mode endpoints require this value in the X-God-Token header."""
+    tts_api_key: SecretStr = SecretStr("")
+    """Speech panel voices: an OpenAI key, or set TTS_BASE_URL for a compatible speech service."""
+    tts_base_url: str | None = None
+    tts_model: str = "gpt-4o-mini-tts"
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     whisper_model: str = "base"
