@@ -77,6 +77,10 @@ class RunManager:
             names = await self.name_societies(config)
             if names:
                 config = config.model_copy(update={"society_names": names})
+            if len(self.active()) >= self.max_active_runs:  # another launch finished meanwhile
+                raise HTTPException(
+                    409, f"{self.max_active_runs} runs already active; stop one first"
+                )
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )
