@@ -207,6 +207,15 @@ static void handle_state(const cJSON *root)
         g_state.run_id[0] = 0;
         g_state.run_active = false;
     }
+    /* the world changed under us (e.g. following newest): the people list is stale.
+     * Drop it instead of refetching; the visitor taps REFRESH. */
+    if (g_state.agents_run[0] && strcmp(g_state.agents_run, g_state.run_id)) {
+        g_state.agents_run[0] = 0;
+        g_state.n_agents = 0;
+        g_state.iv_agent.id = -1;
+        g_state.n_convo = 0;
+        g_state.iv_status = IV_IDLE;
+    }
 
     const cJSON *soc = cJSON_GetObjectItem(root, "society");
     if (cJSON_IsObject(soc)) {
