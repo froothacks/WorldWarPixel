@@ -54,7 +54,7 @@ class RunPick:
     video: Path
     score: float
     rank: int
-    windows: list[tuple[float, float, float]] = field(default_factory=list)
+    windows: list[tuple[float, float, float, str]] = field(default_factory=list)
     peak_frame: Path | None = None
     vertex: dict[str, Any] | None = None
 
@@ -362,11 +362,14 @@ def render_shot(
     run: RunPick,
     speed: float,
     tmp: Path,
+    caption_override: str = "",
 ) -> None:
     tmp.mkdir(parents=True, exist_ok=True)
     title_txt = tmp / "title.txt"
     caption_txt = tmp / "caption.txt"
     title, caption = shot_overlays(run)
+    if caption_override:
+        caption = _ellipsis(caption_override, 110)
     title_txt.write_text(title)
     caption_txt.write_text(caption)
     font = _font_arg()
@@ -645,7 +648,7 @@ def analyze_windows(run: RunPick, workdir: Path, *, count: int, win: int) -> Non
     )
     frames = sorted(frames_dir.glob("f_*.png"))
     if len(frames) < 2:
-        run.windows = [(0.0, duration, 0.0)]
+        run.windows = [(0.0, duration, 0.0, "")]
         run.peak_frame = frames[0] if frames else None
         return
     imgs = [Image.open(p).convert("L") for p in frames]
@@ -663,12 +666,12 @@ def analyze_windows(run: RunPick, workdir: Path, *, count: int, win: int) -> Non
         if len(chosen) >= count:
             break
     chosen.sort(key=lambda x: x[1])
-    windows: list[tuple[float, float, float]] = []
+    windows: list[tuple[float, float, float, str]] = []
     best_score, best_start = -1.0, 0
     for score, start in chosen:
         win_start = max(0.0, float(start) - 1.0)
         win_end = min(duration, win_start + win)
-        windows.append((win_start, win_end, float(score)))
+        windows.append((win_start, win_end, float(score), ""))
         if score > best_score:
             best_score, best_start = score, start
     run.windows = windows
@@ -744,12 +747,15 @@ def vertex_analyze_run(
         'return ONLY JSON: {"useful": bool, "random_pixels": bool, "cinematic_score": 0-10, '
         '"title": str, "tagline": str, "highlights": [{"start_s": float, "end_s": float, '
         '"caption": str}], "reason": str}. Set random_pixels=true and useful=false if the canvas '
-        "is just random pixels moving with no recognizable patterns, flags, text, "
-        "murals, or battles "
-        "forming. Otherwise useful=true. cinematic_score rewards coherent pixel art, country "
-        "takeovers, battles, narrator events, and fast wipes. highlights: up to 3 moments within "
-        f"the {duration:.1f}s video that would look best in a hype reel, each 2-6s, with a short "
-        "caption. No markdown."
+        "is just random pixels moving with no recognizable patterns, flags, text, symbols, "
+        "murals, or battles forming. Otherwise useful=true. cinematic_score rewards coherent "
+        "pixel art, country takeovers, battles, narrator events, fast wipes, and especially "
+        "creative beats: agents collaborating, agents fighting on the canvas, symbols or murals "
+        "being drawn, and funny or interesting message-board posts. highlights: up to 3 moments "
+        "within the "
+        f"{duration:.1f}s video that best show those creative, collaborative, fighting, or funny "
+        "beats, each 2-6s, with a short caption that calls out what is happening (quote the "
+        "message or name the fight/collab/art when visible). No markdown."
     )
     body = {
         "contents": [
@@ -794,7 +800,7 @@ def apply_vertex_windows(run: RunPick, limit: int) -> bool:
     highlights = info.get("highlights")
     if not isinstance(highlights, list):
         return False
-    windows: list[tuple[float, float, float]] = []
+    windows: list[tuple[float, float, float, str]] = []
     score = _num(info, "cinematic_score", 5.0) * 10.0
     for item in highlights:
         if not isinstance(item, dict):
@@ -810,7 +816,8 @@ def apply_vertex_windows(run: RunPick, limit: int) -> bool:
             end = min(duration, start + 2.0)
         if end - start < 0.8:
             continue
-        windows.append((start, end, score))
+        caption = str(item.get("caption") or "").strip()
+        windows.append((start, end, score, caption))
         if len(windows) >= limit:
             break
     if not windows:
@@ -971,7 +978,7 @@ async def _amain(args: argparse.Namespace) -> int:
             make_text_card(card_png, f"#{r.rank}  {r.run_id}", subtitle)
         render_card_video(card_png, card_mp4, args.card_seconds)
         shot_paths.append(card_mp4)
-        for ci, (start, end, _score) in enumerate(r.windows):
+        for ci, (start, end, _score, caption) in enumerate(r.windows):
             dur = max(1.0, end - start)
             kind = "zoom" if ci % 2 == 1 else "normal"
             shot = shots_dir / f"{len(shot_paths):03d}_{r.run_id}_{ci}_{kind}.mp4"
@@ -984,6 +991,7 @@ async def _amain(args: argparse.Namespace) -> int:
                 run=r,
                 speed=args.speed,
                 tmp=workdir / "shot_tmp" / r.run_id / str(ci),
+                caption_override=caption,
             )
             shot_paths.append(shot)
 
@@ -1010,7 +1018,7 @@ async def _amain(args: argparse.Namespace) -> int:
                 "rank": r.rank,
                 "run_id": r.run_id,
                 "score": round(r.score, 2),
-                "windows": [[round(a, 2), round(b, 2), round(s, 2)] for a, b, s in r.windows],
+                "windows": [[round(a, 2), round(b, 2), round(s, 2), c] for a, b, s, c in r.windows],
                 "peak_frame": str(r.peak_frame) if r.peak_frame else None,
                 "meta": {
                     "pixels": _num(r.meta, "pixels"),
