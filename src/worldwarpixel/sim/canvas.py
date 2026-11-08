@@ -4,7 +4,7 @@ import zlib
 from array import array
 from dataclasses import dataclass
 
-# The 16-colour r/place (2017) palette. A pixel is one palette index, so it fits in a byte
+# A classic 16-colour palette. A pixel is one palette index, so it fits in a byte
 # and renders as a single hex character in agent prompts.
 PALETTE: tuple[str, ...] = (
     "#FFFFFF",

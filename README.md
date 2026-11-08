@@ -1,6 +1,6 @@
 # WorldWarPixel
 
-An r/place-style simulation where a swarm of agents share a pixel canvas and a threaded message board. FastAPI + asyncio service; agents, canvas, board and realtime stream live in one process.
+A simulation where a swarm of agents share a pixel canvas and a threaded message board. FastAPI + asyncio service; agents, canvas, board and realtime stream live in one process.
 
 ## Setup
 
@@ -146,7 +146,7 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 
 ## Deploy to Modal
 
-`deploy/modal_app.py` runs the app (API + UI + WebSockets) directly in one always-on, non-preemptible [Modal web container](https://modal.com/docs/guide/webhooks). It serves the app at a stable `*.modal.run` URL; there is no 24-hour Sandbox lifetime cap. A single WebSocket connection is limited to 24 hours. The app uses exactly one container because live run state is held in memory.
+`deploy/modal_app.py` serves the FastAPI app (API + UI + WebSockets) in-process in one always-on, non-preemptible [Modal web container](https://modal.com/docs/guide/webhooks), without a uvicorn subprocess or proxy hop for WebSockets. It serves the app at a stable `*.modal.run` URL; there is no 24-hour Sandbox lifetime cap. A single WebSocket connection is limited to 24 hours. The app uses exactly one container because live run state is held in memory.
 
 Non-preemptible compute costs 3x the list price for CPU and memory, and the one container stays on continuously. The event log is SQLite on the container's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 60 seconds (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. A deploy replaces the container, so live runs stop and reopen as stopped runs from the saved log. Deploys may briefly overlap old and new containers, so up to 60 seconds of events from the old container can be lost.
 

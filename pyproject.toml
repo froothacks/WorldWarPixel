@@ -16,6 +16,9 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
 ]
 
+[project.optional-dependencies]
+voice = ["faster-whisper>=1.1.0"]
+
 [project.scripts]
 worldwarpixel = "worldwarpixel:main"
 worldwarpixel-personas = "worldwarpixel.personas.cli:main"
@@ -47,3 +50,7 @@ files = ["src", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[[tool.mypy.overrides]]
+module = ["faster_whisper", "faster_whisper.*", "numpy", "numpy.*"]
+ignore_missing_imports = true
