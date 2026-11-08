@@ -573,7 +573,7 @@ function ThreadView({ runId, threadId, digest, version, now, agentName, agentCol
           }}
           title="Agents treat replies from The Hand of God as top priority"
         >
-          <span className="god-reply-label">⚡ The Hand of God</span>
+          <span className="god-reply-label">Reply as God</span>
           <input
             value={draft}
             maxLength={600}

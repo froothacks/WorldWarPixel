@@ -325,6 +325,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
     <div className="live">
       <header className="topbar">
         <button className="brand" onClick={onLeave} title="Back to all runs">
+          <span className="logo" aria-hidden="true" />
           WorldWarPixel
         </button>
         <span className="crumb">
@@ -333,18 +334,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <span className={`state state-${run.state}`}>{run.state}</span>
           {people && <span className="roster-tag">{run.agents} attendees</span>}
         </span>
-        <dl className="stats" title={llmTitle}>
-          <Stat k="agents" v={run.agents} />
-          <Stat k="turns" v={run.stats.turns} />
-          <Stat k="px" v={run.stats.pixels} />
-          <Stat k="posts" v={run.stats.posts} />
-          {llm && <Stat k="calls" v={llm.calls} className="opt" />}
-          {turnLatency && <Stat k="p50" v={`${turnLatency.p50.toFixed(2)}s`} className="opt" />}
-          {llm && llm.failures > 0 && <Stat k="failed" v={llm.failures} className="bad" />}
-        </dl>
         <span className="spacer" />
         <span className={`conn ${live ? "conn-on" : ""}`} title={connection}>
-          {live ? "● live" : connection.startsWith("disconnected") ? "○ offline" : "○ connecting"}
+          {live ? "Live" : connection.startsWith("disconnected") ? "Offline" : "Connecting"}
         </span>
         <div className="actions">
           <button
@@ -389,6 +381,15 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       )}
       <div className="live-grid">
         <section className="stage">
+          <dl className="kpis" title={llmTitle}>
+            <Stat k="agents" v={run.agents} />
+            <Stat k="turns" v={run.stats.turns} />
+            <Stat k="pixels" v={run.stats.pixels} />
+            <Stat k="posts" v={run.stats.posts} />
+            {llm && <Stat k="model calls" v={llm.calls} className="opt" />}
+            {turnLatency && <Stat k="turn p50" v={`${turnLatency.p50.toFixed(2)}s`} className="opt" />}
+            {llm && llm.failures > 0 && <Stat k="failed" v={llm.failures} className="bad" />}
+          </dl>
           {god ? (
             <GodBar
               runId={initial.id}
@@ -497,7 +498,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
 
 function Stat({ k, v, className = "" }: { k: string; v: number | string; className?: string }) {
   return (
-    <div className={`stat ${className}`}>
+    <div className={`kpi ${className}`}>
       <dt>{k}</dt>
       <dd>{typeof v === "number" ? v.toLocaleString() : v}</dd>
     </div>
