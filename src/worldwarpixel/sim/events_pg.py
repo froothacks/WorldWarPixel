@@ -274,6 +274,57 @@ class PostgresEventLog(EventStore):
             )
         return events
 
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None:
+        first = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = %s AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id ASC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if first is None:
+            return None
+        last = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = %s AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if last is None:
+            return None
+        return float(first[1]), float(last[1]), int(last[0])
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]:
+        started = time.perf_counter()
+        rows = self._conn.execute(
+            "SELECT id, ts, kind, (payload::jsonb ->> 'x')::int,"
+            " (payload::jsonb ->> 'y')::int, (payload::jsonb ->> 'color')::int"
+            " FROM events"
+            f" WHERE run_id = %s AND id > %s AND kind IN ({CANVAS_KINDS_SQL})"
+            " ORDER BY run_id, id LIMIT %s",
+            (run_id, after_id, limit),
+        ).fetchall()
+        elapsed = time.perf_counter() - started
+        if elapsed >= SLOW_READ_SECONDS:
+            logger.warning(
+                "slow event read run=%s after=%d limit=%d rows=%d in %.2fs",
+                run_id,
+                after_id,
+                limit,
+                len(rows),
+                elapsed,
+            )
+        return [
+            (
+                int(row[0]),
+                float(row[1]),
+                str(row[2]),
+                None if row[3] is None else int(row[3]),
+                None if row[4] is None else int(row[4]),
+                None if row[5] is None else int(row[5]),
+            )
+            for row in rows
+        ]
+
     def count(self, run_id: str) -> int:
         row = self._conn.execute(
             "SELECT COUNT(*) FROM events WHERE run_id = %s", (run_id,)
@@ -416,6 +467,14 @@ class BufferedPostgresEventLog(EventStore):
         return self._read(
             lambda r: r.read(run_id, after_id=after_id, limit=limit, canvas_only=canvas_only)
         )
+
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None:
+        return self._read(lambda r: r.canvas_span(run_id))
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]:
+        return self._read(lambda r: r.canvas_events(run_id, after_id, limit))
 
     def count(self, run_id: str) -> int:
         return self._read(lambda r: r.count(run_id))

@@ -189,7 +189,7 @@ def test_archived_api_reads_use_and_close_readers(
         assert timelapse.status_code == 200
         assert timelapse.headers["content-type"] == "application/octet-stream"
         assert struct.unpack_from("<HHH", timelapse.content, 0) == (3, 16, 16)
-        assert len(readers) == 2 and closed == readers
+        assert len(readers) == 3 and closed == readers
 
 
 def test_archived_board_and_event_reads_do_not_replay(

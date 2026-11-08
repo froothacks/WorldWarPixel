@@ -95,6 +95,12 @@ class EventStore(Protocol):
         self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
     ) -> list[Event]: ...
 
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None: ...
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]: ...
+
     def count(self, run_id: str) -> int: ...
 
     def run_meta(self, run_id: str) -> RunMeta | None: ...
@@ -244,6 +250,46 @@ class EventLog:
                 elapsed,
             )
         return events
+
+    def canvas_span(self, run_id: str) -> tuple[float, float, int] | None:
+        first = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = ? AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id ASC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if first is None:
+            return None
+        last = self._conn.execute(
+            "SELECT id, ts FROM events"
+            f" WHERE run_id = ? AND kind IN ({CANVAS_KINDS_SQL}) ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if last is None:
+            return None
+        return float(first[1]), float(last[1]), int(last[0])
+
+    def canvas_events(
+        self, run_id: str, after_id: int, limit: int
+    ) -> list[tuple[int, float, str, int | None, int | None, int | None]]:
+        rows = self._conn.execute(
+            "SELECT id, ts, kind, json_extract(payload, '$.x'),"
+            " json_extract(payload, '$.y'), json_extract(payload, '$.color')"
+            " FROM events"
+            f" WHERE run_id = ? AND id > ? AND kind IN ({CANVAS_KINDS_SQL})"
+            " ORDER BY run_id, id LIMIT ?",
+            (run_id, after_id, limit),
+        ).fetchall()
+        return [
+            (
+                int(row[0]),
+                float(row[1]),
+                str(row[2]),
+                None if row[3] is None else int(row[3]),
+                None if row[4] is None else int(row[4]),
+                None if row[5] is None else int(row[5]),
+            )
+            for row in rows
+        ]
 
     def count(self, run_id: str) -> int:
         row = self._conn.execute(
