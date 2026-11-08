@@ -8,7 +8,7 @@ interface Props {
   version: number;
   agents: Map<number, Agent>;
   highlightAgent: number | null;
-  /** Indexed by owner id; non-zero entries are lit up like highlightAgent (e.g. one country). */
+  /** Indexed by owner id; non-zero entries stay in colour like highlightAgent (e.g. one country). */
   highlightMask?: Uint8Array | null;
   onPickAgent: (agentId: number) => void;
   focus: Region | null;
@@ -47,6 +47,7 @@ export default function CanvasView({
   const flushTimer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const spotlightRef = useRef<ImageData | null>(null);
   const [vp, setVp] = useState<Viewport | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -95,24 +96,38 @@ export default function CanvasView({
       off.height = store.height;
       offscreenRef.current = off;
     }
-    off.getContext("2d")!.putImageData(store.image, 0, 0);
+    let image = store.image;
+    if (highlightAgent !== null || highlightMask) {
+      // Spotlight: the highlighted pixels keep their colour, everything else is greyed and darkened.
+      let out = spotlightRef.current;
+      if (!out || out.width !== store.width || out.height !== store.height) {
+        out = new ImageData(store.width, store.height);
+        spotlightRef.current = out;
+      }
+      const src = store.image.data;
+      const dst = out.data;
+      const { owners } = store;
+      for (let i = 0, p = 0; i < owners.length; i++, p += 4) {
+        const o = owners[i];
+        if (o !== 0 && (o === highlightAgent || (highlightMask !== null && highlightMask[o]))) {
+          dst[p] = src[p];
+          dst[p + 1] = src[p + 1];
+          dst[p + 2] = src[p + 2];
+        } else {
+          const grey = 16 + (src[p] * 0.299 + src[p + 1] * 0.587 + src[p + 2] * 0.114) * 0.2;
+          dst[p] = dst[p + 1] = dst[p + 2] = grey;
+        }
+        dst[p + 3] = 255;
+      }
+      image = out;
+    }
+    off.getContext("2d")!.putImageData(image, 0, 0);
     const ctx = el.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#0b0b0c";
     ctx.fillRect(0, 0, el.clientWidth, el.clientHeight);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, vp.panX, vp.panY, store.width * vp.zoom, store.height * vp.zoom);
-    if (highlightAgent !== null || highlightMask) {
-      ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-      const { owners, width } = store;
-      for (let i = 0; i < owners.length; i++) {
-        const o = owners[i];
-        if (o !== highlightAgent && !(highlightMask && highlightMask[o])) continue;
-        const x = i % width;
-        const y = (i - x) / width;
-        ctx.fillRect(vp.panX + x * vp.zoom, vp.panY + y * vp.zoom, vp.zoom, vp.zoom);
-      }
-    }
     if (tool && hover) {
       const half = Math.floor(tool.size / 2);
       ctx.strokeStyle = tool.mode === "erase" ? "#ff5f5f" : "#ffffff";
