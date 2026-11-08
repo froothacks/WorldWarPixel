@@ -109,3 +109,26 @@ def test_migrate_sqlite_to_pg_is_idempotent(pg_url: str, tmp_path: Path) -> None
         assert target.append("m", 3.0, "post", 1, {}) == 3
     finally:
         target.close()
+
+
+def test_migrate_sqlite_to_pg_rejects_conflicting_ids(pg_url: str, tmp_path: Path) -> None:
+    target = PostgresEventLog(pg_url)
+    try:
+        target.append("pg", 9.0, "run.created", None, {"config": {"width": 8}})
+    finally:
+        target.close()
+
+    sqlite_path = tmp_path / "events.db"
+    source = EventLog(sqlite_path)
+    source.append("sqlite", 1.0, "run.created", None, {"config": {"width": 16}})
+    source.close()
+
+    with pytest.raises(ValueError, match="already exists in Postgres"):
+        migrate(sqlite_path, pg_url)
+
+    check = PostgresEventLog(pg_url)
+    try:
+        assert check.count("pg") == 1
+        assert check.count("sqlite") == 0
+    finally:
+        check.close()

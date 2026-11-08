@@ -4,8 +4,10 @@ Usage:
     DATABASE_URL=postgresql://user:pass@host/db python -m worldwarpixel.sim.events_migrate events.db
     python -m worldwarpixel.sim.events_migrate events.db --database-url postgresql://...
 
-The copy is idempotent: rows whose SQLite id already exists in Postgres are skipped, and the
-identity sequence is moved past the largest migrated id so new appends do not collide.
+The copy is idempotent: rows whose SQLite id already exists in Postgres with identical content
+are skipped, and the identity sequence is moved past the largest migrated id so new appends do
+not collide. A Postgres row with the same id but different content raises ValueError instead of
+silently dropping the SQLite event.
 """
 
 import argparse
@@ -22,7 +24,10 @@ INSERT_SQL = """
 INSERT INTO events (id, run_id, ts, kind, agent_id, payload)
 OVERRIDING SYSTEM VALUE
 VALUES (%s, %s, %s, %s, %s, %s)
-ON CONFLICT (id) DO NOTHING
+"""
+
+SELECT_SQL = """
+SELECT id, run_id, ts, kind, agent_id, payload FROM events WHERE id = ANY(%s)
 """
 
 
@@ -49,8 +54,18 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
             )
             total = 0
             while rows := cursor.fetchmany(batch_size):
+                ids = [int(row[0]) for row in rows]
+                existing = {
+                    int(row[0]): row for row in target.execute(SELECT_SQL, (ids,)).fetchall()
+                }
                 for row in rows:
-                    target.execute(INSERT_SQL, row)
+                    current = existing.get(int(row[0]))
+                    if current is None:
+                        target.execute(INSERT_SQL, row)
+                    elif tuple(current) != tuple(row):
+                        raise ValueError(
+                            f"event id {row[0]} already exists in Postgres with different content"
+                        )
                 total += len(rows)
             _reset_identity(target)
         return total
