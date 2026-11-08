@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     device_tokens: SecretStr = SecretStr("")
     """Society screens: "token:society,token:society". Empty = devices are open (dev only)."""
     transcribe_model: str = "gpt-4o-mini-transcribe"
-    interview_realtime_model: str = "gpt-realtime-2.1-mini"
+    interview_realtime_model: str = "gpt-realtime-2.1"
     """Society-screen interviews go speech-to-speech through this Realtime model on TTS_API_KEY
     (no TTS_BASE_URL), skipping transcription, the run's model queue and TTS. Empty = the old
     transcribe -> run's model -> TTS path."""

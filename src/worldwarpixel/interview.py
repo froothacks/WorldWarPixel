@@ -17,8 +17,9 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 from worldwarpixel.sim.agents import AgentSpec
+from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PALETTE
-from worldwarpixel.sim.run import Run
+from worldwarpixel.sim.run import MENTION, Run
 from worldwarpixel.sim.speech import voice_for
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
 RATE = 16_000
 """Screens play what they record: 16 kHz signed 16-bit little-endian mono."""
-MAX_TURNS = 6
+MAX_TURNS = 20
 MAX_REPLY = 400
 MAX_AGENTS = 120
 REALTIME_RATE: Literal[24000] = 24_000
@@ -132,24 +133,128 @@ def resample(pcm: bytes, src: int, dst: int = RATE) -> bytes:
     return out.tobytes()
 
 
+VOICE = (
+    "Right now a human visitor is standing at a screen next to the world you live in and is "
+    "talking to you out loud. This is a real conversation, not a service call: you are not an "
+    "assistant and you don't owe them politeness. Talk the way you actually talk, with your own "
+    "opinions, moods, grudges, soft spots, gossip and jokes. Name names: say what you really "
+    "think of the people you have dealt with and what happened between you. Be blunt, "
+    "sarcastic, petty, excited or fed up when that is how you feel, and push back on the "
+    "visitor when they deserve it. The facts about your background are who you are, not "
+    "talking points; don't recite them. Keep it spoken and short, usually one to three "
+    "sentences, no lists, no markdown, no emoji, and don't end with a question or an offer to "
+    "help just to be nice. Reply in the language the visitor uses."
+)
+DELIVERY = (
+    "How you sound: casual and expressive, at a natural quick pace, with real feeling in your "
+    "voice. Laugh, sigh, hesitate or cut yourself off when it fits."
+)
+CONTEXT_CHARS = 40_000
+"""Rough cap on the thread transcripts in an interview prompt (about 10k tokens)."""
+MEMORY_KEPT = 50
+THOUGHT_CHARS = 600
+THREAD_TAIL = 10
+
+
+def persona_lines(agent: AgentSpec) -> list[str]:
+    lines = [f"You are {agent.persona}" if agent.persona else f"You are {agent.name}."]
+    traits = agent.persona_card.get("personality") or {}
+    if traits.get("traits"):
+        lines.append("People would describe you as " + ", ".join(traits["traits"]) + ".")
+    if traits.get("leadership_notes"):
+        lines.append(str(traits["leadership_notes"]))
+    return lines
+
+
+def _about(run: Run, agent: AgentSpec, post: Post) -> bool:
+    """The agent wrote the post or is @mentioned in its title or body."""
+    if post.author_id == agent.id:
+        return True
+    text = f"{post.title or ''} {post.body}"
+    return any(run.find_agent(w) == agent.id for w in MENTION.findall(text))
+
+
+def thread_lines(run: Run, agent: AgentSpec, budget: int = CONTEXT_CHARS) -> list[str]:
+    """Every thread the agent wrote in or was @mentioned in, most recently active for it first,
+    with who said what. Long threads keep the opening post, the posts by or about the agent (own
+    replies with the post they answered), and the latest replies."""
+    mine: list[tuple[float, list[Post]]] = []
+    for root in run.board.threads():
+        posts = run.board.thread(root.id)
+        touched = [p.created_at for p in posts if _about(run, agent, p)]
+        if touched:
+            mine.append((max(touched), posts))
+    mine.sort(key=lambda t: t[0], reverse=True)
+
+    def who(post: Post) -> str:
+        return "You" if post.author_id == agent.id else run.agent_name(post.author_id)
+
+    out: list[str] = []
+    used = 0
+    for i, (_, posts) in enumerate(mine):
+        keep = {0, *range(max(1, len(posts) - THREAD_TAIL), len(posts))}
+        index = {p.id: j for j, p in enumerate(posts)}
+        for j, p in enumerate(posts):
+            if not _about(run, agent, p):
+                continue
+            keep.add(j)
+            if p.author_id == agent.id and j:
+                keep.add(index.get(p.parent_id, j - 1) if p.parent_id else j - 1)
+        root = posts[0]
+        block = [f'Thread "{root.title}", started by {who(root)}:']
+        last = -1
+        for j in sorted(keep):
+            if j > last + 1:
+                block.append(f"  ({j - last - 1} more posts)")
+            block.append(f"  {who(posts[j])}: {posts[j].body}")
+            last = j
+        text = "\n".join(block)
+        if used + len(text) > budget:
+            out.append(f"(and {len(mine) - i} older threads you took part in)")
+            break
+        out.append(text)
+        used += len(text)
+    return out
+
+
+def people_lines(run: Run, agent: AgentSpec) -> list[str]:
+    seen = run.contacts.get(agent.id, {})
+    if not seen:
+        return []
+    names = [run.agent_name(c) for c in sorted(seen, key=seen.__getitem__, reverse=True)]
+    return ["People you have talked with lately, most recent first: " + ", ".join(names) + "."]
+
+
+def context(run: Run, agent: AgentSpec) -> str:
+    """The interviewee's system prompt: who they are, their world, people and history."""
+    cfg = run.config
+    parts = [
+        "\n".join(persona_lines(agent)),
+        f"You live in a shared world with {len(run.agents)} other people: a {cfg.width}x"
+        f"{cfg.height} pixel canvas everyone paints on, and a message board where they talk in "
+        "threads.",
+    ]
+    parts += people_lines(run, agent)
+    recent = run.recall(agent.id, MEMORY_KEPT, THOUGHT_CHARS)
+    if recent:
+        parts.append(
+            "What you have been doing and thinking, oldest first:\n"
+            + "\n".join(f"- {r}" for r in recent)
+        )
+    threads = thread_lines(run, agent)
+    if threads:
+        parts.append(
+            "Board threads you took part in or were mentioned in (You = you):\n"
+            + "\n\n".join(threads)
+        )
+    parts.append(VOICE)
+    return "\n\n".join(parts)
+
+
 def messages(
     run: Run, agent: AgentSpec, history: list[tuple[str, str]], question: str
 ) -> list[dict[str, str]]:
-    context = [
-        agent.persona or f"You are {agent.name} from {agent.country}.",
-        "",
-        "Right now a human visitor is standing at a screen next to the world you live in and "
-        "is talking to you out loud. Answer as yourself, in the first person, the way you would "
-        "actually speak: one to three short sentences, plain words, no lists, no markdown, no "
-        "emoji. Reply in the language the visitor uses.",
-    ]
-    if run.societies is not None:
-        society = run.societies.get(run.societies.of(agent.id))
-        context.append(f"You currently belong to the society called {society.name}.")
-    recent = run.recall(agent.id, 5)
-    if recent:
-        context += ["", "What you have been doing lately:", *(f"- {r}" for r in recent)]
-    out = [{"role": "system", "content": "\n".join(context)}]
+    out = [{"role": "system", "content": context(run, agent)}]
     for asked, said in history[-MAX_TURNS:]:
         out += [{"role": "user", "content": asked}, {"role": "assistant", "content": said}]
     out.append({"role": "user", "content": question})
@@ -224,7 +329,7 @@ def realtime_instructions(run: Run, agent: AgentSpec, history: list[tuple[str, s
     if history:
         turns = "\n".join(f'Visitor: "{q}"\nYou: "{a}"' for q, a in history[-MAX_TURNS:])
         text += f"\n\nEarlier in this conversation:\n{turns}"
-    return text
+    return text + "\n\n" + DELIVERY
 
 
 async def live(

@@ -155,7 +155,7 @@ def test_interview_over_websocket(client: TestClient) -> None:
         _until(ws, "interview.reply")
 
     system = asked[0][0]["content"]
-    assert "visitor" in system and "society" in system
+    assert "visitor" in system and "society" not in system
     assert [m["role"] for m in asked[1]] == ["system", "user", "assistant", "user"]
     memory = run.thoughts[mei][-2]["thought"]
     assert "What are you painting?" in memory and "blue waves" in memory
@@ -281,3 +281,37 @@ def test_realtime_releases_held_audio_when_answer_ends_before_transcript(
             assert got == 2 * 3200 and '"interview.text"' in msg["text"]
     finally:
         state.realtime = None
+
+
+def test_interview_context_has_threads_people_and_long_memory() -> None:
+    from worldwarpixel.interview import context
+
+    cfg = RunConfig(width=16, height=16, agents=4, cooldown=1, seed=1, societies=2)
+    run = _named(Run("c", cfg, EventLog(), RandomWalkPolicy(0)))
+    me, a, b, c = run.agents
+    root = run.board.post_thread(a.id, "Who smeared my wave?", "Somebody painted over it", 1.0)
+    run.board.reply(me.id, root.id, "Not me, ask the green crowd", 2.0)
+    run.board.reply(b.id, root.id, "It was definitely you", 3.0)
+    other = run.board.post_thread(c.id, "Quiet thread", "nothing to do with you", 4.0)
+    ping = run.board.post_thread(b.id, "Hey", f"@{me.name.split()[0]} come look", 5.0)
+    run.meet(me.id, a.id)
+    for i in range(12):
+        run.note_thought(me.id, f"turn number {i}")
+    long = run.board.post_thread(c.id, f"@{me.name.split()[0]} paints too much", "see title", 7.0)
+    asked = run.board.reply(a.id, long.id, "What colour should the river be?", 8.0)
+    run.board.reply(b.id, long.id, f"@{me.name.split()[0]} you owe me a pixel", 9.0)
+    for i in range(15):
+        run.board.reply(c.id, long.id, f"filler {i}", 10.0 + i)
+    run.board.reply(me.id, long.id, "Blue, obviously", 30.0, parent_id=asked.id)
+
+    text = context(run, me)
+    assert text.startswith(f"You are {me.persona}")
+    assert "Who smeared my wave?" in text and "Hey" in text and "Quiet thread" not in text
+    assert f"{b.name}: It was definitely you" in text and "You: Not me" in text
+    assert f"started by {a.name}" in text
+    assert a.name in text.split("People you have")[1] and "society" not in text
+    assert "turn number 0" in text and "turn number 11" in text
+    assert "not an assistant" in text
+    assert "paints too much" in text and "you owe me a pixel" in text
+    assert f"{a.name}: What colour should the river be?" in text and "filler 0" not in text
+    assert other.id and ping.id
