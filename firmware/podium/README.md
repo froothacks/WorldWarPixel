@@ -45,7 +45,7 @@ quickest check that display and speaker both work.
 
 ## Screen
 
-Portrait layout: 32 px header (debater name/country in their colour, phase), 320×320 frame of the
+Portrait layout: 50 px header (debater name/country in their colour, phase), 320×320 frame of the
 contested region, caption panel below. While a debate is active it polls
 `GET /runs/{RUN_ID}/stage/frame?w=320&h=320&podium={PODIUM}` every 1.5 s: 320×320×2 bytes of
 RGB565 little-endian, debaters' pixels at full colour and others dimmed, drawn with
