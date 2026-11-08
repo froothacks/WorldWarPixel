@@ -16,7 +16,7 @@ from openai.types.chat import (
     ChatCompletionToolParam,
 )
 
-from worldwarpixel.routing import EndpointPool, as_pool
+from worldwarpixel.routing import EndpointPool, as_pool, describe_endpoint
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.tools import ToolError, ToolSet
@@ -540,9 +540,13 @@ class LLMPolicy:
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
-                self.stats["last_error"] = str(e)[:200]
-                log.warning("agent %s LLM call failed: %s", agent.id, e)
-                thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
+                where = describe_endpoint(e)
+                message = str(e)
+                self.stats["last_error"] = f"via {where}: {message}"[:200]
+                log.warning("agent %s LLM call failed via %s: %s", agent.id, where, e)
+                thoughts.append(
+                    f"(model call failed via {where}: {type(e).__name__}: {message[:140]})"
+                )
                 if isinstance(e, RateLimitError):
                     await asyncio.sleep(self._rng.uniform(*RATE_LIMIT_BACKOFF))
                 break

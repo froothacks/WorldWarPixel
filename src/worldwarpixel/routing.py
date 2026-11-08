@@ -8,6 +8,7 @@ call fails over to the key's next endpoint and the bad one cools down for a whil
 """
 
 import hashlib
+import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -22,6 +23,8 @@ from openai import (
 )
 from openai.types.chat import ChatCompletion
 
+log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
@@ -35,6 +38,14 @@ class Endpoint:
     auth: Literal["modal", "bearer"]
     secrets: tuple[str, ...]
     """Env var names: modal = (key, secret) sent as Modal-Key/Modal-Secret; bearer = (api key,)."""
+
+
+def describe_endpoint(e: BaseException) -> str:
+    """'name (base_url)' of the endpoint that raised e, or 'unknown endpoint'."""
+    endpoint = getattr(e, "endpoint", None)
+    if not isinstance(endpoint, Endpoint):
+        return "unknown endpoint"
+    return f"{endpoint.name} ({endpoint.base_url})" if endpoint.base_url else endpoint.name
 
 
 def modal_endpoint(workspace: str, server: str, model: str, *, secret_prefix: str) -> Endpoint:
@@ -138,13 +149,25 @@ class EndpointPool:
                     model=endpoint.model, **kwargs
                 )
                 return response
-            except RETRYABLE as e:
+            except Exception as e:
                 stats["errors"] += 1
+                endpoint_attribute = "endpoint"
+                setattr(e, endpoint_attribute, endpoint)
+                if not isinstance(e, RETRYABLE):
+                    raise
                 if isinstance(e, APITimeoutError):
                     raise  # slow, not down: retrying elsewhere would only double the wait
                 self._cooling_until[endpoint.name] = self._clock() + self._cooldown
                 if i == len(candidates) - 1:
                     raise
+                next_endpoint = candidates[i + 1][0]
+                log.warning(
+                    "endpoint %s failed (%s: %s); failing over to %s",
+                    endpoint.name,
+                    type(e).__name__,
+                    e,
+                    next_endpoint.name,
+                )
                 stats["failovers"] += 1
         raise AssertionError("unreachable")
 
