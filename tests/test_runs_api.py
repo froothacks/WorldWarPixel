@@ -74,10 +74,11 @@ def test_models_endpoint_lists_presets(client: TestClient) -> None:
         "deepseek",
         "glm",
         "qwen-c",
-        "glm-5.3-flash",
-        "glm-megan",
     }
-    assert all(set(m) == {"id", "label", "model", "available"} for m in models)
+    assert all(set(m) == {"id", "label", "model", "available", "endpoints"} for m in models)
+    glm = next(m for m in models if m["id"] == "glm")
+    assert [e["name"] for e in glm["endpoints"]] == ["advait-m", "chryztoph", "meganwchun"]
+    assert glm["endpoints"][1]["secrets"] == ["CHRYZTOPH_MODAL_KEY", "CHRYZTOPH_MODAL_SECRET"]
 
 
 def test_unknown_model_is_rejected_before_the_run_starts(client: TestClient) -> None:
