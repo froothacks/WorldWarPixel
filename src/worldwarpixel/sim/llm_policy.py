@@ -185,14 +185,14 @@ def palette_legend() -> str:
 def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
     """Free-for-all: who you are, what you can do, nothing about what you should do."""
     return (
-        f"You are {agent.persona}\n\n"
         f"You share a {width}x{height} pixel canvas (x grows right, y grows down, 0-based) and a "
         "public message board with many other people. "
-        f"Each turn you may paint up to {pixels} pixels and make up to {posts} post or reply. "
-        f"Colours: {palette_legend()}. You started near ({agent.home_x}, {agent.home_y}).\n\n"
+        "Your current budget and tool availability are in the latest observation. "
+        f"Colours: {palette_legend()}.\n\n"
         "Each turn you see the canvas and the top threads on the board. "
         "Do whatever you want.\n\n"
-        "Write one or two short sentences of thought in first person, then use the tools."
+        "Write one or two short sentences of thought in first person, then use the tools.\n\n"
+        f"You are {agent.persona}"
     )
 
 
@@ -211,11 +211,9 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
     )
     concern = "you" if event else "your country"
     return (
-        f"You are {agent.persona}\n\n"
-        f"{setting}"
-        f"Nobody is in charge and nothing is pre-planned. Each turn you may paint "
-        f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
-        f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
+        "Nobody is in charge and nothing is pre-planned. You may paint anywhere. "
+        "Your current budget and tool availability are in the latest observation. "
+        f"Colours: {palette_legend()}.\n\n"
         "In events like this people have done all sorts of things: drawn pixel-art mascots, "
         "animals, anime or game characters, memes, hearts, rainbows, religious symbols, "
         "portraits of heroes or musicians; painted a city skyline, a landmark, a sports club "
@@ -232,7 +230,7 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "you side with or against, and pursue it over many turns. Each turn you see the whole "
         "canvas as an image plus a short list of the busiest areas with their coordinates.\n\n"
         "Practical notes:\n"
-        f"- Use your whole pixel budget every turn ({pixels} pixels). place_pixels is your only "
+        "- Use your whole pixel budget every turn. place_pixels is your only "
         "brush: plan a picture as rows of coordinates and paint part of it each turn, continuing "
         "next turn where you left off (that also repairs damage). Look at the canvas image to line "
         "new pixels up with what is already there.\n"
@@ -248,7 +246,8 @@ def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int,
         "replying in an existing thread to starting a new one; address people by @Name. "
         "Never reuse another thread's title.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
-        "intend; do not describe colour numbers, the image format or the tools."
+        "intend; do not describe colour numbers, the image format or the tools.\n\n"
+        f"You are {agent.persona}\n\n{setting}"
     )
 
 
@@ -358,14 +357,30 @@ def budget_line(agent: AgentSpec, obs: Observation) -> str:
     )
 
 
+def availability_lines(agent: AgentSpec, obs: Observation, guided: bool = False) -> str:
+    societies = (
+        "Society tools are available."
+        if obs.society is not None
+        else "Society tools are unavailable: there are no societies in this world."
+    )
+    if guided:
+        societies = "Society tools are unavailable in this mode."
+    return (
+        f"{budget_line(agent, obs)}"
+        "Last painting position (initial position before painting): "
+        f"({agent.home_x}, {agent.home_y}).\n"
+        f"{societies} Post and reply require remaining post budget."
+    )
+
+
 def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
     """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
     board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
     look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
     where = "your society's threads" if obs.society else "the board"
     return (
-        f"{budget_line(agent, obs)}"
-        f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}"
+        f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}\n\n"
+        f"{availability_lines(agent, obs)}"
     )
 
 
@@ -378,10 +393,11 @@ def guided_user_prompt(
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
     board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
-        f"{budget_line(agent, obs)}{view}\n\nSome current threads:\n{board}\n\n"
+        f"{view}\n\nSome current threads:\n{board}\n\n"
         "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
         "you are pursuing. If a thread above matters to you, answer it with "
-        "reply(thread_id=..., body=...) rather than starting a new one."
+        "reply(thread_id=..., body=...) rather than starting a new one.\n\n"
+        f"{availability_lines(agent, obs, guided=True)}"
     )
 
 
@@ -635,16 +651,7 @@ class LLMPolicy:
         return json.dumps(result)
 
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
-        """Guided only: once the board is busy, usually hide post_thread so agents reply."""
-        free = TOOLS + SOCIETY_TOOLS if obs.society else TOOLS
-        tools = TOOLS if self._guided else free
-        if obs.budget.posts == 0:
-            return [t for t in tools if t["function"]["name"] not in ("post_thread", "reply")]
-        if not self._guided:
-            return tools
-        if len(obs.board) >= 6 and self._rng.random() < 0.75:
-            return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
-        return TOOLS
+        return TOOLS + SOCIETY_TOOLS
 
     def _note_error(self, text: str) -> None:
         """Keep the last few tool errors so run summaries show what the model gets wrong."""
@@ -655,6 +662,8 @@ class LLMPolicy:
     def _dispatch(
         self, agent: AgentSpec, tools: ToolSet, name: str, a: dict[str, Any]
     ) -> dict[str, Any]:
+        if self._guided and any(t["function"]["name"] == name for t in SOCIETY_TOOLS):
+            raise ToolError("society tools are not available in this mode")
         # The small model is sloppy with numbers and lengths: clamp instead of rejecting.
         w, h = tools.canvas_size
 
