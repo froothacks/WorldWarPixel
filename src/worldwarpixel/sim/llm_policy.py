@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 
 from openai import NOT_GIVEN, AsyncOpenAI, RateLimitError
 from openai.types.chat import (
+    ChatCompletion,
     ChatCompletionContentPartParam,
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
@@ -426,6 +427,8 @@ class LLMPolicy:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
+        max_concurrency: int | None = None,
+        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._pool = as_pool(client, model)
         # Sticky routing key prefix: each agent of this run keeps hitting one endpoint.
@@ -437,6 +440,10 @@ class LLMPolicy:
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
+        # Some shared endpoints 429 above a concurrency ceiling (e.g. DeepSeek ~16);
+        # the preset carries it so a run never exceeds what the endpoint tolerates.
+        # A shared semaphore (one per preset across all runs) wins over a per-run cap.
+        self._sem = semaphore or (asyncio.Semaphore(max_concurrency) if max_concurrency else None)
         self._rng = random.Random()
         self.stats: dict[str, Any] = {
             "calls": 0,
@@ -457,6 +464,43 @@ class LLMPolicy:
             **self.stats,
             "latency": {k: latency_summary(v) for k, v in self._latency.items()},
         }
+
+    async def _complete(
+        self, agent: AgentSpec, messages: list[ChatCompletionMessageParam], obs: Observation
+    ) -> ChatCompletion:
+        # Endpoint quirks live in models.py: OpenAI reasoning models want
+        # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
+        # whenever tools are attached; the Modal vLLM endpoints want the reverse.
+        extra_body = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._chat_template_kwargs
+            else None
+        )
+        reasoning: Any = self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
+        route_key = f"{self._route_prefix}:{agent.id}"
+        if self._token_param == "max_completion_tokens":
+            return await self._pool.create(
+                route_key,
+                messages=messages,
+                tools=self._tools_for(obs),
+                tool_choice="auto",
+                max_completion_tokens=self._max_tokens,
+                temperature=1.0,
+                timeout=self._timeout,
+                reasoning_effort=reasoning,
+                extra_body=extra_body,
+            )
+        return await self._pool.create(
+            route_key,
+            messages=messages,
+            tools=self._tools_for(obs),
+            tool_choice="auto",
+            max_tokens=self._max_tokens,
+            temperature=1.0,
+            timeout=self._timeout,
+            reasoning_effort=reasoning,
+            extra_body=extra_body,
+        )
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         turn_t0 = time.monotonic()
@@ -502,41 +546,12 @@ class LLMPolicy:
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                # Endpoint quirks live in models.py: OpenAI reasoning models want
-                # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
-                # whenever tools are attached; the Modal vLLM endpoints want the reverse.
-                extra_body = (
-                    {"chat_template_kwargs": {"enable_thinking": False}}
-                    if self._chat_template_kwargs
-                    else None
-                )
-                reasoning: Any = (
-                    self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
-                )
-                if self._token_param == "max_completion_tokens":
-                    response = await self._pool.create(
-                        f"{self._route_prefix}:{agent.id}",
-                        messages=messages,
-                        tools=self._tools_for(obs),
-                        tool_choice="auto",
-                        max_completion_tokens=self._max_tokens,
-                        temperature=1.0,
-                        timeout=self._timeout,
-                        reasoning_effort=reasoning,
-                        extra_body=extra_body,
-                    )
+                if self._sem is not None:
+                    async with self._sem:
+                        call_t0 = time.monotonic()  # latency measures the call, not the queue wait
+                        response = await self._complete(agent, messages, obs)
                 else:
-                    response = await self._pool.create(
-                        f"{self._route_prefix}:{agent.id}",
-                        messages=messages,
-                        tools=self._tools_for(obs),
-                        tool_choice="auto",
-                        max_tokens=self._max_tokens,
-                        temperature=1.0,
-                        timeout=self._timeout,
-                        reasoning_effort=reasoning,
-                        extra_body=extra_body,
-                    )
+                    response = await self._complete(agent, messages, obs)
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1

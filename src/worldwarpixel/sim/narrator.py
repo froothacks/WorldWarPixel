@@ -87,6 +87,7 @@ class OpenAINarratorModel:
         token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
+        semaphore: asyncio.Semaphore | None = None,
         vision: bool = True,
     ) -> None:
         self._pool = as_pool(client, model)
@@ -98,8 +99,16 @@ class OpenAINarratorModel:
         self._token_param = token_param
         self._chat_template_kwargs = chat_template_kwargs
         self._reasoning_effort = reasoning_effort
+        # Shares the preset's endpoint cap with the agents so narrations count too.
+        self._semaphore = semaphore
 
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
+        if self._semaphore is None:
+            return await self._complete(messages)
+        async with self._semaphore:
+            return await self._complete(messages)
+
+    async def _complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         # Same endpoint quirks as the agent policy; see models.py.
         if not self._vision:
             messages = [_text_only(m) for m in messages]

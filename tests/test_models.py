@@ -44,6 +44,13 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert qwen.reasoning_effort is None
     assert qwen.max_tokens is None  # falls back to AGENT_MAX_TOKENS
 
+    deepseek = specs["deepseek"]
+    assert deepseek.max_tokens == 3000
+    # The shared DeepSeek endpoint 429s above ~16 concurrent calls; the preset caps it.
+    assert deepseek.concurrency == 16
+    assert specs["gpt-6-luna"].concurrency is None
+    assert specs["qwen"].concurrency is None
+
     glm = specs["glm"]
     assert glm.model == "nvidia/GLM-5.3-Flash-NVFP4"
     assert not glm.vision and not glm.chat_template_kwargs

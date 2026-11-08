@@ -66,6 +66,8 @@ class ModelSpec:
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
     vision: bool = True
     """Show the model the canvas image (GLM reasons for minutes over images, so it gets text)."""
+    concurrency: int | None = None
+    """Cap on simultaneous model calls per preset; None means no preset cap."""
 
     @property
     def model(self) -> str:
@@ -114,6 +116,8 @@ def model_registry() -> list[ModelSpec]:
             ),
             max_tokens=3000,
             narrator_max_tokens=3000,
+            # The shared endpoint 429s above ~16 concurrent calls.
+            concurrency=16,
         ),
         ModelSpec(
             id="glm",
