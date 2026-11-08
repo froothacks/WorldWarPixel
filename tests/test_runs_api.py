@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
+from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.hub import FRAME_PIXELS, FRAME_SNAPSHOT
 
 SMALL = {
@@ -25,7 +26,6 @@ SMALL = {
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("EVENT_LOG_PATH", ":memory:")
     get_settings.cache_clear()
     with TestClient(app) as c:
@@ -64,6 +64,57 @@ def test_run_lifecycle(client: TestClient) -> None:
     assert client.delete(f"/runs/{run_id}").status_code == 204
     assert client.get("/runs").json() == []
     assert client.delete(f"/runs/{run_id}").status_code == 404
+
+
+def test_models_endpoint_lists_presets(client: TestClient) -> None:
+    models = client.get("/models").json()
+    assert {m["id"] for m in models} == {
+        "gpt-6-luna",
+        "qwen",
+        "deepseek",
+        "glm",
+        "qwen-c",
+        "glm-5.3-flash",
+    }
+    assert all(set(m) == {"id", "label", "model", "available"} for m in models)
+
+
+def test_unknown_model_is_rejected_before_the_run_starts(client: TestClient) -> None:
+    body = {**SMALL, "policy": "llm", "model": "no-such-model"}
+    response = client.post("/runs", json=body)
+    assert response.status_code == 422
+    assert "no-such-model" in response.json()["detail"]
+    assert client.get("/runs").json() == []
+
+
+def test_god_model_switches_a_running_llm_run(client: TestClient) -> None:
+    manager = client.app.state.runs  # type: ignore[attr-defined]
+    manager.make_policy = lambda _cfg: RandomWalkPolicy(seed=1)
+    manager.make_narrator = lambda _cfg: None
+    run_id = client.post("/runs", json={**SMALL, "policy": "llm", "model": "qwen"}).json()["id"]
+
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "glm-5.3-flash"})
+    assert response.status_code == 200 and response.json()["config"]["model"] == "glm-5.3-flash"
+    run = manager.runs[run_id]
+    assert run.config.model == "glm-5.3-flash" and isinstance(run.policy, RandomWalkPolicy)
+    events = client.get(f"/runs/{run_id}/events", params={"limit": 100}).json()
+    assert any(
+        e["kind"] == "god.model_changed" and e["payload"]["model"] == "glm-5.3-flash"
+        for e in events
+    )
+    client.post(f"/runs/{run_id}/stop")
+
+
+def test_god_model_rejects_random_runs(client: TestClient) -> None:
+    run_id = client.post("/runs", json=SMALL).json()["id"]
+    response = client.post(f"/runs/{run_id}/god/model", json={"model": "qwen"})
+    assert response.status_code == 409
+    client.post(f"/runs/{run_id}/stop")
+
+
+def test_random_runs_ignore_the_model_field(client: TestClient) -> None:
+    body = {**SMALL, "model": "no-such-model"}
+    assert client.post("/runs", json=body).status_code == 201
 
 
 def test_active_run_cap(client: TestClient) -> None:
@@ -143,3 +194,36 @@ def test_spa_fallback_does_not_swallow_api_404s(
     with pytest.raises(HTTPException) as exc:
         asyncio.run(app_module.frontend("runs/nope/unknown"))
     assert exc.value.status_code == 404
+
+
+def test_thread_votes_reorder_the_board(client: TestClient) -> None:
+    run_id = client.post("/runs", json={**SMALL, "posts_per_turn": 0}).json()["id"]
+    first = client.post(f"/runs/{run_id}/god/announce", json={"title": "A", "body": "a"}).json()
+    second = client.post(f"/runs/{run_id}/god/announce", json={"title": "B", "body": "b"}).json()
+    order = [t["thread_id"] for t in client.get(f"/runs/{run_id}/threads").json()]
+    assert order == [second["id"], first["id"]]
+    r = client.post(f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1})
+    assert r.status_code == 200 and r.json() == {"thread_id": first["id"], "votes": 1}
+    threads = client.get(f"/runs/{run_id}/threads").json()
+    assert [t["thread_id"] for t in threads] == [first["id"], second["id"]]
+    assert threads[0]["votes"] == 1
+    again = client.post(
+        f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 1}
+    )
+    assert again.json()["votes"] == 2
+    assert (
+        client.post(f"/runs/{run_id}/threads/999/vote", json={"voter": "v1", "vote": 1}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/runs/{run_id}/threads/{first['id']}/vote", json={"voter": "v1", "vote": 2}
+        ).status_code
+        == 422
+    )
+    client.post(f"/runs/{run_id}/stop")
+
+
+def test_rosters_endpoint_lists_the_hackathon(client: TestClient) -> None:
+    rosters = client.get("/rosters").json()
+    assert {"id": "hackathon", "size": 86}.items() <= rosters[0].items()

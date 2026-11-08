@@ -1,33 +1,29 @@
-"""Host WorldWarPixel on Modal: the app runs in a long-lived CPU Sandbox.
+"""Deploy WorldWarPixel through an in-process ASGI app in one always-on Modal container.
 
-Sandboxes are capped at 24h and get a new tunnel URL each time, so this module also deploys an
-hourly ``keep_alive`` job (restarts the sandbox if it died, replaces it before the cap) and a
-``home`` web endpoint with a stable URL that redirects to whichever sandbox is current. The event
-log is SQLite on the sandbox disk, backed up to a Volume (see ``serve.py``). Live runs are held
-in memory, so they end whenever the sandbox is replaced; they reopen as stopped runs from the log.
+The FastAPI app serves directly at a stable ``*.modal.run`` URL, with no 24-hour Sandbox lifetime
+cap. A single WebSocket connection is limited to 24 hours. SQLite is restored from and backed up
+to the ``worldwarpixel-data`` Volume every 60 seconds and on exit. Live runs are held in memory, so
+a deploy replaces the container and live runs reopen as stopped runs. Deploys may briefly overlap
+old and new containers, so up to 60 seconds of events from the old container can be lost.
 
-    uv run --with modal python deploy/modal_app.py launch   # build + publish image, (re)start
-    uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable redirect URL
-    uv run --with modal python deploy/modal_app.py status | restart | backup | stop
+    uv run --with modal==1.6.3 modal deploy deploy/modal_app.py
+    uv run --with modal==1.6.3 python deploy/modal_app.py retire  # retire legacy Sandbox once
 """
 
 import sys
-import time
+import threading
 from pathlib import Path
 from typing import Any
 
 import modal
 
 APP_NAME = "worldwarpixel"
-IMAGE_NAME = "worldwarpixel-sandbox"
 SANDBOX_NAME = "worldwarpixel-web"
 VOLUME_NAME = "worldwarpixel-data"
 SECRET_NAME = "worldwarpixel"
 PORT = 8000
 CPU = 1.0
 MEMORY_MB = 2048
-LIFETIME = 24 * 3600
-REPLACE_AFTER = 23 * 3600
 NODE_VERSION = "22.12.0"
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +32,12 @@ def build_image() -> modal.Image:
     node = f"node-v{NODE_VERSION}-linux-x64"
     return (
         modal.Image.debian_slim(python_version="3.12")
-        .uv_sync(str(ROOT), extra_options="--no-dev")
+        .uv_sync(str(ROOT), extra_options="--no-dev --extra voice")
+        # Society screens' voice clips are transcribed in-process; bake the Whisper weights in.
+        .run_commands(
+            'python -c "from faster_whisper import WhisperModel;'
+            " WhisperModel('base', device='cpu', compute_type='int8')\""
+        )
         .apt_install("curl", "ca-certificates", "xz-utils")
         .run_commands(
             f"curl -fsSL https://nodejs.org/dist/v{NODE_VERSION}/{node}.tar.xz"
@@ -53,6 +54,7 @@ def build_image() -> modal.Image:
                 "PYTHONPATH": "/app/src",
                 "EVENT_LOG_PATH": "/root/state/events.db",
                 "EVENT_LOG_BACKUP": "/data/events.db",
+                "BACKUP_INTERVAL": "60",
             }
         )
     )
@@ -66,31 +68,6 @@ def current() -> modal.Sandbox | None:
     return sb if sb.poll() is None else None
 
 
-def url(sb: modal.Sandbox) -> str:
-    return str(sb.tunnels()[PORT].url)
-
-
-def start() -> modal.Sandbox:
-    sb = modal.Sandbox.create(
-        "python",
-        "/app/deploy/serve.py",
-        app=modal.App.lookup(APP_NAME, create_if_missing=True),
-        name=SANDBOX_NAME,
-        image=modal.Image.from_name(IMAGE_NAME),
-        secrets=[modal.Secret.from_name(SECRET_NAME)],
-        volumes={"/data": modal.Volume.from_name(VOLUME_NAME, create_if_missing=True, version=2)},
-        encrypted_ports=[PORT],
-        readiness_probe=modal.Probe.with_tcp(PORT),
-        timeout=LIFETIME,
-        cpu=CPU,
-        memory=MEMORY_MB,
-        workdir="/app",
-    )
-    sb.set_tags({"started": str(int(time.time()))})
-    sb.wait_until_ready()
-    return sb
-
-
 def backup(sb: modal.Sandbox) -> None:
     p = sb.exec("python", "/app/deploy/serve.py", "backup", timeout=600)
     code = p.wait()
@@ -99,82 +76,65 @@ def backup(sb: modal.Sandbox) -> None:
         raise RuntimeError(f"backup exited with {code}; sandbox left running")
 
 
-def stop(sb: modal.Sandbox) -> None:
-    backup(sb)
-    sb.terminate(wait=True)
-
-
-def age(sb: modal.Sandbox) -> float:
-    return time.time() - int(sb.get_tags().get("started", "0"))
-
-
-def ensure(force: bool = False) -> modal.Sandbox:
-    """The running sandbox, replacing it when forced, nearly at the 24h cap, or gone."""
-    sb = current()
-    if sb is not None and not force and age(sb) < REPLACE_AFTER:
-        return sb
-    if sb is not None:
-        stop(sb)
-    return start()
-
-
 app = modal.App(APP_NAME)
-control_image = modal.Image.debian_slim(python_version="3.12").uv_pip_install("fastapi[standard]")
 
 
-@app.function(image=control_image, schedule=modal.Period(hours=1), timeout=900)
-def keep_alive() -> None:
-    print(url(ensure()))
+@app.cls(
+    image=build_image(),
+    secrets=[modal.Secret.from_name(SECRET_NAME)],
+    volumes={"/data": modal.Volume.from_name(VOLUME_NAME, create_if_missing=True, version=2)},
+    cpu=CPU,
+    memory=MEMORY_MB,
+    nonpreemptible=True,
+    min_containers=1,
+    max_containers=1,
+    timeout=24 * 3600,
+)
+@modal.concurrent(max_inputs=1000)
+class Web:
+    @modal.enter()
+    def start(self) -> None:
+        sys.path.insert(0, "/app/deploy")
+        import serve
 
+        serve.restore()
+        self._serve = serve
+        self._stop = threading.Event()
 
-@app.function(image=control_image)
-@modal.concurrent(max_inputs=100)
-@modal.asgi_app()
-def home() -> Any:
-    from fastapi import FastAPI, Request
-    from fastapi.responses import PlainTextResponse, RedirectResponse, Response
+        def loop() -> None:
+            while not self._stop.wait(serve.INTERVAL):
+                try:
+                    serve.backup()
+                except Exception as exc:
+                    print(f"backup failed: {exc!r}", flush=True)
 
-    web = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-    cache: dict[str, Any] = {"url": None, "at": 0.0}
+        self._backups = threading.Thread(target=loop, daemon=True)
+        self._backups.start()
 
-    @web.get("/{path:path}")
-    def redirect(path: str, request: Request) -> Response:
-        if cache["url"] is None or time.time() - cache["at"] > 30:
-            sb = current()
-            cache["url"], cache["at"] = (url(sb) if sb else None), time.time()
-        if cache["url"] is None:
-            return PlainTextResponse("WorldWarPixel is restarting, try again in a minute.", 503)
-        query = f"?{request.url.query}" if request.url.query else ""
-        return RedirectResponse(f"{cache['url']}/{path}{query}", status_code=307)
+    @modal.asgi_app(label="worldwarpixel-home")
+    def web(self) -> Any:
+        from worldwarpixel.app import app as web_app
 
-    return web
+        return web_app
+
+    @modal.exit()
+    def stop(self) -> None:
+        self._stop.set()
+        self._backups.join()  # never overlap the final backup with a periodic one
+        self._serve.backup()
 
 
 def main(cmd: str) -> None:
-    sb: modal.Sandbox | None
-    if cmd == "launch":
-        with modal.enable_output():
-            build_image().build(modal.App.lookup(APP_NAME, create_if_missing=True)).publish(
-                IMAGE_NAME
-            )
-        sb = ensure(force=True)
-    elif cmd == "restart":
-        sb = ensure(force=True)
-    elif cmd in ("status", "backup", "stop"):
-        sb = current()
-        if sb is None:
-            print("no sandbox running")
-            return
-        if cmd == "backup":
-            backup(sb)
-        elif cmd == "stop":
-            stop(sb)
-            print("stopped")
-            return
-    else:
-        raise SystemExit(f"unknown command {cmd!r}; use launch|restart|status|backup|stop")
-    print(f"sandbox {sb.object_id}, up {age(sb) / 3600:.1f}h: {url(sb)}")
+    if cmd != "retire":
+        raise SystemExit(f"unknown command {cmd!r}; use retire")
+    sb = current()
+    if sb is None:
+        print("no sandbox running")
+        return
+    backup(sb)
+    sb.terminate(wait=True)
+    print("stopped")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "status")
+    main(sys.argv[1] if len(sys.argv) > 1 else "")

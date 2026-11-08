@@ -23,7 +23,6 @@ class FakeChatService(ChatService):
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     get_settings.cache_clear()
     app.dependency_overrides[get_chat_service] = FakeChatService
     with TestClient(app) as c:

@@ -1,31 +1,35 @@
 import asyncio
 import contextlib
 import random
+import re
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
-from worldwarpixel.sim.board import Board
+from worldwarpixel.personas.roster import load_roster
+from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents, seed_roster
+from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
+from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
+from worldwarpixel.sim.societies import Societies
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
 
 RunState = Literal["created", "running", "paused", "stopped"]
 
-MIN_PIXEL_INTERVAL = 0.05
+MIN_PIXEL_INTERVAL = 0.01
 MAX_AGENTS = 10_000
 """Agent ids are uint16 in the owners map (65535 is reserved for god mode). 10k keeps the agent
 list cheap to ship to every browser; actual throughput is bounded by max_concurrency (LLM) or
 by one core for the random policy (~100 turns/s)."""
 
-LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown")
+LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown", "headline")
 
 
 class RunConfig(BaseModel):
@@ -38,21 +42,58 @@ class RunConfig(BaseModel):
         description="Seconds between the starts of an agent's turns (randomised by jitter)",
     )
     pixel_interval: float = Field(
-        default=0.05,
+        default=0.01,
         ge=MIN_PIXEL_INTERVAL,
         le=5,
         description=(
-            "Seconds between an agent's successive pixels (at least 50 ms so batches animate in)"
+            "Seconds between an agent's successive pixels (at least 10 ms so batches animate in)"
         ),
     )
     jitter: float = Field(default=0.3, ge=0, le=1, description="Cooldown jitter fraction")
     pixels_per_turn: int = Field(default=200, ge=1, le=1024)
     posts_per_turn: int = Field(default=1, ge=0, le=10)
-    max_concurrency: int = Field(default=16, ge=1, le=1000, description="Turns in flight at once")
+    dispatch_interval: float | None = Field(
+        default=None,
+        ge=0,
+        le=3600,
+        description="Seconds between World News dispatches (0 = off; None = off in free-for-all, "
+        "else 30)",
+    )
+    post_cooldown_turns: int = Field(
+        default=3, ge=0, le=100, description="Turns an agent sits out posting after it posts"
+    )
+    max_concurrency: int = Field(default=1000, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
-    policy: Literal["llm", "random"] = "llm"
+    policy: Literal["llm", "llm-guided", "random"] = Field(
+        default="llm",
+        description="llm: free-for-all; llm-guided: adds event framing, examples and hints",
+    )
+    model: str = Field(
+        default="gpt-6-luna",
+        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen-c, glm-5.3-flash)",
+    )
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def _default_model(cls, v: Any) -> Any:
+        # Runs archived before model presets stored model=null.
+        return "gpt-6-luna" if v is None else v
+
+    roster: Literal["world", "hackathon"] = Field(
+        default="world",
+        description=(
+            "Who plays: 'world' seats `agents` people per country by population; 'hackathon' "
+            "is one agent per attendee of the bundled hackathon roster (ignores `agents`)"
+        ),
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
+    )
+    societies: int = Field(
+        default=0,
+        ge=0,
+        le=6,
+        description="Split agents into this many societies, each with its own board (0 = off)",
     )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
@@ -63,6 +104,10 @@ GOD_ID = 65535
 """Owner id for pixels and posts made by the human viewer in god mode."""
 GOD_NAME = "The Hand of God"
 ANNOUNCEMENT_WINDOW = 600.0  # seconds an announcement stays in every agent's observation
+AGENT_VOTE_WINDOW = 600.0  # seconds before an agent may vote on the same thread again
+MEMORY_TURNS = 3  # own past turns shown to an agent
+CONTACTS_SHOWN = 5
+MENTION = re.compile(r"@(\w+(?:-\w+)*)")
 MAX_GOD_PIXELS = 50_000
 PREFETCH_LEAD = 1.0
 """Start an agent's next model call when this many seconds of queued pixels remain, so the
@@ -91,27 +136,61 @@ class Run:
         self._sleep = sleep
         self.state: RunState = "created"
         self.created_at = clock()
+        self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
         self.canvas = Canvas(config.width, config.height)
         self.board = Board()
         self._announcements: list[dict[str, Any]] = []
         self.hub = Hub()
         self.rng = random.Random(config.seed)
+        if agents is None and config.roster != "world":
+            roster = load_roster(config.roster)
+            agents = seed_roster(
+                roster.people, roster.event, config.width, config.height, config.cooldown, self.rng
+            )
+            self.config = config = config.model_copy(update={"agents": len(agents)})
         self.agents = agents or seed_agents(
-            config.agents, config.width, config.height, config.cooldown, self.rng
+            config.agents,
+            config.width,
+            config.height,
+            config.cooldown,
+            self.rng,
+            by_country=config.policy != "llm",
         )
         self.world = World(self.agents, self.board)
+        self.societies: Societies | None = None
+        if config.societies:
+            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            self.societies.assign([a.id for a in self.agents])
+        self.dispatcher = Dispatcher(
+            self.board,
+            self.world,
+            self.canvas,
+            self.agents,
+            publish=lambda post: self._on_write(DISPATCH_ID, "post", post.to_dict()),
+            interval=(
+                config.dispatch_interval
+                if config.dispatch_interval is not None
+                else 0.0
+                if config.policy == "llm"
+                else 30.0
+            ),
+        )
+        self._agent_turns: dict[int, int] = dict.fromkeys(self.by_id, 0)
+        self._last_post_turn: dict[int, int] = {}
         self.status: dict[int, str] = dict.fromkeys(self.by_id, "idle")
         self.thoughts: dict[int, deque[dict[str, Any]]] = {
             a.id: deque(maxlen=20) for a in self.agents
         }
+        self.contacts: dict[int, dict[int, float]] = {a.id: {} for a in self.agents}
+        """Who each agent has recently talked with (shared threads, @mentions, invitations)."""
         self.stats = {"pixels": 0, "posts": 0, "turns": 0, "errors": 0}
         self._running = asyncio.Event()
         self._sem = asyncio.Semaphore(config.max_concurrency)
         self._tasks: list[asyncio.Task[None]] = []
         self.narrator = Narrator(
             self,
-            narrator_model if config.policy == "llm" else None,
+            narrator_model if config.policy != "random" else None,
             self._running,
             interval=config.narrator_interval,
             include_image=config.narrator_canvas_image,
@@ -123,7 +202,35 @@ class Run:
     def by_id(self) -> dict[int, AgentSpec]:
         return {a.id: a for a in self.agents}
 
+    def find_agent(self, name: str) -> int | None:
+        """Resolve a name as agents write it: full name, or a unique first name or prefix."""
+        key = " ".join(name.strip().lstrip("@").split()).lower()
+        if not key:
+            return None
+        names = [(a.id, a.name.lower()) for a in self.agents]
+        for hits in (
+            [i for i, n in names if n == key],
+            [i for i, n in names if n.split()[0] == key],
+            [i for i, n in names if n.startswith(key)],
+        ):
+            if len(hits) == 1:
+                return hits[0]
+        return None
+
+    def meet(self, a: int, b: int) -> None:
+        if a == b or a not in self.contacts or b not in self.contacts:
+            return
+        now = self._clock()
+        for x, y in ((a, b), (b, a)):
+            seen = self.contacts[x]
+            seen[y] = now
+            if len(seen) > 16:
+                for old in sorted(seen, key=seen.__getitem__)[:-8]:
+                    del seen[old]
+
     def agent_name(self, agent_id: int) -> str:
+        if agent_id == DISPATCH_ID:
+            return DISPATCH_NAME
         if agent_id == GOD_ID:
             return GOD_NAME
         agent = self.by_id.get(agent_id)
@@ -160,9 +267,18 @@ class Run:
 
     def god_clear_board(self) -> None:
         self.board.clear()
+        self._agent_votes.clear()
+        self.dispatcher.reset_threads()
         self._announcements.clear()
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
+
+    def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
+        """Switch the LLM preset mid-run; agents and the narrator pick it up on next use."""
+        self.policy = policy
+        self.narrator.set_model(narrator_model)
+        self.config = self.config.model_copy(update={"model": model})
+        self._record("god.model_changed", GOD_ID, {"model": model})
 
     def god_announce(self, title: str, body: str) -> dict[str, Any]:
         """Post a thread as the human; agents see it on the board like any other thread."""
@@ -172,6 +288,27 @@ class Run:
             {"thread_id": post.thread_id, "title": title, "body": body, "ts": post.created_at}
         )
         return post.to_dict()
+
+    def vote_thread(self, thread_id: int, voter: str, value: int) -> int:
+        """A viewer's up/down click on a thread; it shifts where the board ranks it."""
+        votes = self.board.vote(thread_id, voter, value)
+        self._record("board.vote", None, {"thread_id": thread_id, "value": value, "votes": votes})
+        self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
+        return votes
+
+    def agent_vote(self, agent_id: int, thread_id: int, up: bool) -> int:
+        """An agent's vote counts like one viewer click, at most once per thread per window."""
+        now = self._clock()
+        last = self._agent_votes.get((agent_id, thread_id))
+        if last is not None and now - last < AGENT_VOTE_WINDOW:
+            raise ToolError(f"you already voted on thread {thread_id} recently")
+        try:
+            votes = self.board.vote(thread_id, f"agent:{agent_id}", 1 if up else -1)
+        except BoardError as e:
+            raise ToolError(str(e)) from e
+        self._agent_votes[(agent_id, thread_id)] = now
+        self.hub.publish("thread.voted", thread_id=thread_id, votes=votes)
+        return votes
 
     def god_reply(self, thread_id: int, body: str) -> dict[str, Any]:
         """Reply in an existing thread as the human; pinned for agents like an announcement."""
@@ -209,10 +346,7 @@ class Run:
                     "(answer this in that thread before anything else)"
                 )
             else:
-                title = (
-                    f"📢 ANNOUNCEMENT: {a['title']} — {a['body']} "
-                    "(everyone sees this; react however your persona would)"
-                )
+                title = f"📢 ANNOUNCEMENT: {a['title']} — {a['body']}"
             out.append(
                 {
                     "thread_id": a["thread_id"],
@@ -220,9 +354,39 @@ class Run:
                     "author": GOD_NAME,
                     "replies": replies,
                     "latest": None,
+                    "tag": "announcement",
                 }
             )
         return out
+
+    def _feed(
+        self, agent: AgentSpec, now: float, society: int | None = None
+    ) -> list[dict[str, Any]]:
+        announcements = self._announcement_digest()
+        dispatches = self.dispatcher.feed_entries(now)
+        excluded = {cast(int, entry["thread_id"]) for entry in [*announcements, *dispatches]}
+        digest = [
+            entry
+            for entry in self.board.digest(limit=40, name_of=self.agent_name, society=society)
+            if cast(int, entry["thread_id"]) not in excluded and entry["author"] != DISPATCH_NAME
+        ]
+        first_name = agent.name.split()[0].casefold()
+        mentions = []
+        hot = []
+        for order, entry in enumerate(digest):
+            latest = entry.get("latest")
+            latest_body = latest.get("body", "") if isinstance(latest, dict) else ""
+            text = f"{entry.get('title') or ''} {latest_body}".casefold()
+            if (
+                agent.country.casefold() in text
+                or f"@{first_name}" in text
+                or (entry["author"] == agent.name and cast(int, entry["replies"]) > 0)
+            ):
+                mentions.append({**entry, "tag": "mention"})
+            else:
+                hot.append((order, entry))
+        hot.sort(key=lambda item: (-cast(int, item[1]["replies"]), item[0]))
+        return [*announcements, *dispatches, *mentions[:3], *[entry for _, entry in hot[:6]]]
 
     def god_set_pace(
         self,
@@ -344,7 +508,16 @@ class Run:
         queue: asyncio.Queue[PixelWrite] | None = None,
         pending: dict[tuple[int, int], tuple[int, int]] | None = None,
     ) -> None:
-        budget = TurnBudget(self.config.pixels_per_turn, self.config.posts_per_turn)
+        self.dispatcher.maybe_tick(self._clock())
+        turn = self._agent_turns[agent.id] + 1
+        self._agent_turns[agent.id] = turn
+        posts = self.config.posts_per_turn
+        if turn <= self._last_post_turn.get(agent.id, -self.config.post_cooldown_turns - 1) + (
+            self.config.post_cooldown_turns
+        ):
+            posts = 0
+        budget = TurnBudget(self.config.pixels_per_turn, posts)
+        initial_posts = budget.posts
         sink = lambda kind, payload: self._on_write(agent.id, kind, payload)  # noqa: E731
 
         def writer(writes: list[PixelWrite]) -> None:
@@ -357,15 +530,40 @@ class Run:
                     pending[(w.x, w.y)] = (w.color, w.agent_id)
 
         tools = ToolSet(
-            self.canvas, self.board, agent.id, budget, sink, self._clock, writer, pending
+            self.canvas,
+            self.board,
+            agent.id,
+            budget,
+            sink,
+            self._clock,
+            writer,
+            societies=_SocietyAccess(self, agent.id) if self.societies else None,
+            vote=lambda thread_id, up: self.agent_vote(agent.id, thread_id, up),
         )
+        society = self.societies.of(agent.id) if self.societies else None
         obs = Observation(
             elapsed=elapsed,
             budget=budget,
             canvas_width=self.canvas.width,
             canvas_height=self.canvas.height,
-            board=self._announcement_digest() + self.board.digest(name_of=self.agent_name),
+            board=self._feed(agent, self._clock(), society),
         )
+        now = self._clock()
+        obs.memory = [
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
+        ]
+        if self.societies is not None and society is not None:
+            obs.society = {
+                **self.societies.get(society).to_dict(),
+                "members": self.societies.size(society),
+                "murmur": self.societies.murmur(society, now),
+                **self._social_facts(agent.id, society, now),
+            }
+            obs.societies = [
+                {**s.to_dict(), "members": self.societies.size(s.id)}
+                for s in self.societies.societies
+            ]
         self._set_status(agent.id, "thinking")
         async with self._sem:
             try:
@@ -373,6 +571,8 @@ class Run:
             except ToolError as e:
                 thought = f"Tool call rejected: {e}"
                 self.stats["errors"] += 1
+        if budget.posts < initial_posts:
+            self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
         entry = {"ts": self._clock(), "thought": thought}
@@ -380,6 +580,52 @@ class Run:
         self._record("agent.thought", agent.id, entry)
         self.hub.publish("agent.thought", agent_id=agent.id, **entry)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
+
+    # -- societies -------------------------------------------------------------------------
+
+    def _social_facts(self, agent_id: int, society: int, now: float) -> dict[str, list[str]]:
+        """Plain facts about the agent's people: where its contacts are, who moved, invitations."""
+        assert self.societies is not None
+        socs = self.societies
+
+        def where(s: int) -> str:
+            return "here" if s == society else f'in {s} "{socs.get(s).name}"'
+
+        seen = self.contacts.get(agent_id, {})
+        recent = sorted(seen, key=seen.__getitem__, reverse=True)[:CONTACTS_SHOWN]
+        moves = []
+        for m in socs.recent_moves(society, now):
+            if m.agent_id == agent_id:
+                continue
+            who = self.agent_name(m.agent_id)
+            if m.dst == society:
+                moves.append(f'{who} arrived from {m.src} "{socs.get(m.src).name}"')
+            else:
+                moves.append(f'{who} left for {m.dst} "{socs.get(m.dst).name}"')
+        return {
+            "contacts": [f"{self.agent_name(c)} ({where(socs.of(c))})" for c in recent],
+            "moves": moves,
+            "invites": [
+                f'{self.agent_name(i.src)} invited you to {i.society} "{socs.get(i.society).name}"'
+                for i in socs.pending(agent_id, now)
+            ],
+        }
+
+    def society_summary(self) -> list[dict[str, Any]]:
+        return self.societies.summary(self._clock()) if self.societies else []
+
+    def society_threads(self, society_id: int, limit: int = 10) -> list[dict[str, object]]:
+        return self.board.digest(limit=limit, name_of=self.agent_name, society=society_id)
+
+    def set_murmur(self, society_id: int, murmur: str, transcript: str) -> dict[str, Any]:
+        """A human voice reached this society; members notice `murmur` in their next turns."""
+        if self.societies is None:
+            raise ValueError("this run has no societies")
+        s = self.societies.set_murmur(society_id, murmur, transcript, self._clock())
+        payload = {"society": s.id, "murmur": murmur, "transcript": transcript}
+        self._record("society.murmur", None, payload)
+        self.hub.publish("society.murmur", **payload)
+        return payload
 
     def _set_status(self, agent_id: int, status: str) -> None:
         self.status[agent_id] = status
@@ -390,12 +636,22 @@ class Run:
         self.narrator.observe_write(agent_id, kind, payload)
         if kind == "pixel":
             self.stats["pixels"] += 1
-            self.world.observe_pixel(agent_id, int(payload.get("prev_owner", 0)))
+            self.world.observe_pixel(
+                agent_id,
+                int(payload.get("prev_owner", 0)),
+                int(payload["x"]),
+                int(payload["y"]),
+            )
             owner = int(payload.get("owner", agent_id))
             self.hub.push_pixel(payload["x"], payload["y"], payload["color"], owner)
         elif kind == "post":
             self.stats["posts"] += 1
             self.world.observe_post(payload)
+            for p in self.board.thread(int(payload["thread_id"]))[-6:]:
+                self.meet(agent_id, p.author_id)
+            for word in MENTION.findall(str(payload.get("body", ""))):
+                if (other := self.find_agent(word)) is not None:
+                    self.meet(agent_id, other)
             self.hub.publish("post.created", post=payload, author=self.agent_name(agent_id))
         elif kind == "action":
             self.hub.publish("agent.action", agent_id=agent_id, **payload)
@@ -423,6 +679,7 @@ class Run:
             "clients": self.hub.client_count,
             "llm": public_stats() if public_stats else None,
             "narrator": dict(self.narrator.stats),
+            "societies": self.society_summary(),
         }
 
     def agent_list(self) -> list[dict[str, Any]]:
@@ -430,6 +687,8 @@ class Run:
         return [
             {
                 **{k: getattr(a, k) for k in LIST_FIELDS},
+                "society": self.societies.of(a.id) if self.societies else None,
+                "affiliation": a.persona_card.get("affiliation", "") if a.headline else "",
                 "status": self.status[a.id],
                 "last_thought": self.thoughts[a.id][-1] if self.thoughts[a.id] else None,
             }
@@ -469,3 +728,74 @@ class Run:
             "threads": self.board.listing(limit=50, name_of=self.agent_name),
             "narrator": self.narrator.state(),
         }
+
+
+class _SocietyAccess:
+    """`SocietyAccess` for one agent's turn, backed by the run."""
+
+    def __init__(self, run: Run, agent_id: int) -> None:
+        self._run = run
+        self._agent_id = agent_id
+        assert run.societies is not None
+        self._societies = run.societies
+
+    def current(self) -> int:
+        return self._societies.of(self._agent_id)
+
+    def peek(self, society_id: int) -> dict[str, Any]:
+        s = self._societies.get(society_id)
+        return {
+            **s.to_dict(),
+            "members": self._societies.size(society_id),
+            "threads": [
+                {k: d[k] for k in ("thread_id", "title", "author", "replies", "latest")}
+                for d in self._run.society_threads(society_id, limit=6)
+            ],
+        }
+
+    def join(self, society_id: int) -> dict[str, Any]:
+        run = self._run
+        m = self._societies.join(self._agent_id, society_id, run._clock())
+        payload = {"agent": run.agent_name(m.agent_id), "from": m.src, "to": m.dst}
+        run._record("society.join", m.agent_id, payload)
+        run.hub.publish("society.joined", agent_id=m.agent_id, **payload)
+        return {"society": m.dst, "name": self._societies.get(m.dst).name}
+
+    def invite(self, name: str) -> dict[str, Any]:
+        run = self._run
+        target = run.find_agent(name)
+        if target is None:
+            raise ValueError(f"nobody here is called {name!r}")
+        if target == self._agent_id:
+            raise ValueError("you cannot invite yourself")
+        inv = self._societies.invite(self._agent_id, target, run._clock())
+        run.meet(self._agent_id, target)
+        payload = {
+            "agent": run.agent_name(self._agent_id),
+            "target_id": target,
+            "target": run.agent_name(target),
+            "society": inv.society,
+        }
+        run._record("society.invite", self._agent_id, payload)
+        run.hub.publish("society.invited", agent_id=self._agent_id, **payload)
+        return {"invited": payload["target"], "society": inv.society}
+
+    def rename(self, name: str) -> dict[str, Any]:
+        run = self._run
+        s = self._societies.rename(self.current(), name)
+        payload = {"society": s.id, "name": s.name}
+        run._record("society.renamed", self._agent_id, payload)
+        run.hub.publish("society.renamed", agent_id=self._agent_id, **payload)
+        return payload
+
+
+def _ago(seconds: float) -> str:
+    return f"{seconds:.0f} s" if seconds < 90 else f"{seconds / 60:.0f} min"
+
+
+def _recall(thought: str, limit: int = 200) -> str:
+    """Shorten a remembered thought but keep its trailing "[what I did]" summary."""
+    text, sep, actions = thought.rpartition(" [")
+    if not (sep and actions.endswith("]")):
+        return thought[:limit]
+    return f"{text[:limit]}{sep}{actions}"

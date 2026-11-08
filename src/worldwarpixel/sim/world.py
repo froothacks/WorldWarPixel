@@ -30,11 +30,14 @@ class World:
         self.posts_by: Counter[int] = Counter()
         self.talk: Counter[tuple[int, int]] = Counter()
         self.raids: Counter[tuple[int, int]] = Counter()
+        self.raid_at: dict[tuple[int, int], tuple[int, int]] = {}
         self.agent_talk: Counter[tuple[int, int]] = Counter()
 
     # -- observe ---------------------------------------------------------------------------
 
-    def observe_pixel(self, agent_id: int, prev_owner: int) -> None:
+    def observe_pixel(
+        self, agent_id: int, prev_owner: int, x: int | None = None, y: int | None = None
+    ) -> None:
         me = self.country_of.get(agent_id)
         if me is None:
             return
@@ -42,6 +45,9 @@ class World:
         them = self.country_of.get(prev_owner)
         if them is not None and them != me:
             self.raids[(me, them)] += 1
+            if x is not None and y is not None:
+                pair = (min(me, them), max(me, them))
+                self.raid_at[pair] = (x, y)
 
     def observe_post(self, post: dict[str, Any]) -> None:
         author = int(post["author_id"])

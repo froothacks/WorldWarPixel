@@ -49,6 +49,21 @@ def test_god_paint_erase_and_clear() -> None:
     asyncio.run(main())
 
 
+def test_swap_model_replaces_policy_and_records_event() -> None:
+    async def main() -> None:
+        config = CONFIG.model_copy(update={"policy": "llm", "model": "qwen"})
+        run = Run("m", config, EventLog(), RandomWalkPolicy(seed=1))
+        new_policy = RandomWalkPolicy(seed=2)
+        run.swap_model(new_policy, None, "glm-5.3-flash")
+        assert run.config.model == "glm-5.3-flash"
+        assert run.policy is new_policy
+        events = run.log.read("m")
+        changed = [e for e in events if e.kind == "god.model_changed"]
+        assert changed and changed[-1].payload["model"] == "glm-5.3-flash"
+
+    asyncio.run(main())
+
+
 def test_god_board_and_pace() -> None:
     async def main() -> None:
         run = Run("g", CONFIG, EventLog(), RandomWalkPolicy(seed=1))
@@ -102,7 +117,7 @@ def test_god_endpoints() -> None:
         assert bad.status_code == 422
         r = client.post(f"/runs/{rid}/god/pace", json={"cooldown": 2.5})
         assert r.status_code == 200 and r.json()["config"]["cooldown"] == 2.5
-        for pixel_interval in (0, 0.01):
+        for pixel_interval in (0, 0.005):
             assert (
                 client.post(
                     f"/runs/{rid}/god/pace", json={"pixel_interval": pixel_interval}

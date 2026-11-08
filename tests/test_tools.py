@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from worldwarpixel.sim.board import Board
-from worldwarpixel.sim.canvas import Canvas, PixelWrite
+from worldwarpixel.sim.canvas import Canvas
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
@@ -28,23 +28,6 @@ def test_pixel_budget_is_enforced_per_turn() -> None:
     assert len(events) == 3
     with pytest.raises(ToolError, match="no pixel budget"):
         tools.place_pixels([(4, 0, 1)])
-
-
-def test_fill_rect_charges_every_cell() -> None:
-    tools, events = make(TurnBudget(pixels=8))
-    tools.fill_rect(0, 0, 2, 2, 5)
-    assert [e[1] for e in events] == [
-        {"x": 0, "y": 0, "color": 5, "prev_owner": 0},
-        {"x": 1, "y": 0, "color": 5, "prev_owner": 0},
-        {"x": 0, "y": 1, "color": 5, "prev_owner": 0},
-        {"x": 1, "y": 1, "color": 5, "prev_owner": 0},
-    ]
-    with pytest.raises(ToolError, match="budget exceeded"):
-        tools.fill_rect(0, 0, 3, 3, 5)
-    with pytest.raises(ToolError, match="off the canvas"):
-        tools.fill_rect(31, 31, 2, 1, 5)
-    with pytest.raises(ToolError, match="budget exceeded"):
-        tools.fill_rect(0, 0, 32, 32, 5)
 
 
 def test_invalid_pixels_are_rejected_before_writing() -> None:
@@ -80,29 +63,6 @@ def test_posting_shares_one_budget_and_wraps_board_errors() -> None:
         tools.read_thread(5)
 
 
-def test_stencil_skips_pixels_already_queued_for_painting() -> None:
-    canvas = Canvas(16, 16)
-    queued: list[PixelWrite] = []
-    pending: dict[tuple[int, int], tuple[int, int]] = {}
-
-    def writer(writes: list[PixelWrite]) -> None:
-        for w in writes:
-            queued.append(w)
-            pending[(w.x, w.y)] = (w.color, w.agent_id)
-
-    def tools() -> ToolSet:
-        budget = TurnBudget(2, 1)
-        return ToolSet(canvas, Board(), 1, budget, lambda k, p: None, lambda: 0.0, writer, pending)
-
-    stencil = [(0, 0, 3), (1, 0, 3), (2, 0, 3)]
-    assert tools().paint_stencil(stencil)["remaining"] == 1
-    # Nothing has landed on the canvas yet, but the next turn must not re-select the queued cells.
-    assert canvas.get(0, 0) == 0
-    out = tools().paint_stencil(stencil)
-    assert out["placed"] == 1 and out["done"]
-    assert [(w.x, w.y) for w in queued] == [(0, 0), (1, 0), (2, 0)]
-
-
 def test_posts_must_not_parrot_the_organiser_or_reuse_a_title() -> None:
     board = Board()
     tools = ToolSet(Canvas(8, 8), board, 1, TurnBudget(0, 5), lambda k, p: None, lambda: 0.0)
@@ -115,3 +75,14 @@ def test_posts_must_not_parrot_the_organiser_or_reuse_a_title() -> None:
         tools.reply(tid, "📢 ANNOUNCEMENT: Hearts — paint hearts")
     assert tools.reply(tid, "On my way.")["post_id"]
     assert tools.budget.posts == 3, "rejected posts cost nothing"
+
+
+def test_duplicate_replies_and_world_news_copy_are_rejected_without_spending_budget() -> None:
+    tools, _ = make(TurnBudget(posts=4))
+    thread_id = tools.post_thread("A plan", "Hold this corner.")["thread_id"]
+    tools.reply(thread_id, "Let's hold the line.")
+    with pytest.raises(ToolError, match="already said in this thread"):
+        tools.reply(thread_id, "  LET'S  HOLD \n THE   LINE. ")
+    with pytest.raises(ToolError, match="do not copy the 🗞 news"):
+        tools.reply(thread_id, "🗞 A and B are talking")
+    assert tools.budget.posts == 2

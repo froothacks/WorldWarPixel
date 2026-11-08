@@ -1,9 +1,11 @@
+import math
 import random
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 from worldwarpixel.personas import nemotron
+from worldwarpixel.personas import roster as roster_mod
 from worldwarpixel.personas.allocation import allocate_seats
 from worldwarpixel.personas.pool import RespondentPool, default_pool
 from worldwarpixel.personas.proxy import survey_country
@@ -12,6 +14,8 @@ from worldwarpixel.personas.wpp import Country, load_countries
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.names import random_name
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
+
+CLAIM_MOVE_PX = 30
 
 
 @dataclass(slots=True)
@@ -25,6 +29,7 @@ class AgentSpec:
     cooldown: float
     persona: str = ""
     persona_card: dict[str, Any] = field(default_factory=dict)
+    headline: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -37,6 +42,12 @@ class Observation:
     canvas_width: int
     canvas_height: int
     board: list[dict[str, Any]]
+    society: dict[str, Any] | None = None
+    """The agent's own society: id, name, members and the current murmur (if any)."""
+    societies: list[dict[str, Any]] | None = None
+    """Every society's id, name and member count, when the run has societies."""
+    memory: list[str] | None = None
+    """The agent's own last few turns (thought plus what it did), oldest first."""
 
 
 class Policy(Protocol):
@@ -53,10 +64,12 @@ def seed_agents(
     rng: random.Random,
     pool: RespondentPool | None = None,
     countries: Sequence[Country] | None = None,
+    by_country: bool = True,
 ) -> list[AgentSpec]:
     """Agents representative of the world: seats per country from UN WPP 2024 population
     (largest remainder), each seat filled by a weighted-sampled WVS7 respondent (or a synthetic
-    stand-in) whose answers become the agent's persona. Agents cluster per country on the canvas.
+    stand-in) whose answers become the agent's persona. With by_country, compatriots share a
+    colour and start clustered; otherwise every agent gets its own spot and colour.
     """
     pool = pool or default_pool()
     countries = countries or load_countries()
@@ -74,6 +87,12 @@ def seed_agents(
             source = next(iter(sorted(pool.countries)))
         cx, cy, color = rng.randrange(width), rng.randrange(height), 2 + i % visible
         for _ in range(seats[iso3]):
+            if not by_country:
+                cx, cy, color = (
+                    rng.randrange(width),
+                    rng.randrange(height),
+                    2 + rng.randrange(visible),
+                )
             respondent = nemotron.enrich(pool.sample(source, rng), iso3, rng)
             name = random_name(country.name, rng, used, respondent.sex, country.subregion)
             survey_name = by_iso3[source].name if source in by_iso3 else source
@@ -96,12 +115,46 @@ def seed_agents(
     return agents
 
 
+def seed_roster(
+    people: Sequence[roster_mod.Person],
+    event: str,
+    width: int,
+    height: int,
+    cooldown: float,
+    rng: random.Random,
+) -> list[AgentSpec]:
+    """One agent per real person, each playing for themselves: an agent's "country" is its own
+    name, so territory and alliances are per person and any groups form on the board."""
+    visible = len(PALETTE) - 2
+    agents = [
+        AgentSpec(
+            id=i,
+            name=person.name,
+            country=person.name,
+            color=2 + rng.randrange(visible),
+            home_x=rng.randrange(width),
+            home_y=rng.randrange(height),
+            cooldown=cooldown,
+            persona=roster_mod.persona_text(person, event),
+            persona_card=roster_mod.persona_card(person, event),
+            headline=person.headline,
+        )
+        for i, person in enumerate(people, start=1)
+    ]
+    rng.shuffle(agents)
+    for i, agent in enumerate(agents, start=1):
+        agent.id = i
+    return agents
+
+
 class RandomWalkPolicy:
     """No LLM: paints a drifting blob in the agent's colour and occasionally posts."""
 
     def __init__(self, seed: int, post_chance: float = 0.05) -> None:
         self._rng = random.Random(seed)
         self._post_chance = post_chance
+        self._reacted: set[tuple[int, int]] = set()
+        self._claims: dict[int, tuple[int, int, int]] = {}
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         rng = self._rng
@@ -118,19 +171,81 @@ class RandomWalkPolicy:
             thought += " " + self._post(agent, tools, obs.board, rng)
         return thought
 
-    @staticmethod
+    def _claim(self, agent: AgentSpec, tools: ToolSet, x: int, y: int) -> str:
+        result = tools.post_thread(
+            f"{agent.country} claims ({x}, {y})",
+            "Anyone nearby want to coordinate colours?",
+        )
+        thread_id = int(str(result["thread_id"]))
+        self._claims[agent.id] = (thread_id, x, y)
+        return "Started a thread to claim my area."
+
     def _post(
-        agent: AgentSpec, tools: ToolSet, board: Sequence[dict[str, Any]], rng: random.Random
+        self,
+        agent: AgentSpec,
+        tools: ToolSet,
+        board: Sequence[dict[str, Any]],
+        rng: random.Random,
     ) -> str:
         try:
-            if board and rng.random() < 0.7:
-                tid = int(str(board[rng.randrange(len(board))]["thread_id"]))
-                tools.reply(tid, f"{agent.country} here, we're building near my corner.")
+            news = [
+                d
+                for d in board
+                if d.get("tag") == "dispatch"
+                and agent.country in d.get("countries", [])
+                and (agent.id, int(str(d["thread_id"]))) not in self._reacted
+            ]
+            if news:
+                thread = news[0]
+                tid = int(str(thread["thread_id"]))
+                x, y = agent.home_x, agent.home_y
+                other = next(
+                    (
+                        country
+                        for country in thread.get("countries", [])
+                        if country != agent.country
+                    ),
+                    "our rivals",
+                )
+                match thread.get("kind"):
+                    case "war":
+                        body = rng.choice(
+                            [
+                                f"{agent.country} is not backing down near ({x}, {y}).",
+                                f"Allies of {agent.country}: help us hold ({x}, {y})!",
+                                f"{agent.country} will accept a truce if {other} stops at "
+                                f"({x}, {y}).",
+                            ]
+                        )
+                    case "talk":
+                        body = (
+                            f"{agent.country} agrees. Let's keep building together near ({x}, {y})."
+                        )
+                    case "territory":
+                        body = f"{agent.country} is coming for that top spot from ({x}, {y})."
+                    case "art":
+                        body = f"Nice work. {agent.country} will leave it alone."
+                    case _:
+                        return "Stayed quiet."
+                tools.reply(tid, body)
+                self._reacted.add((agent.id, tid))
                 return f"Replied in thread {tid}."
-            tools.post_thread(
-                f"{agent.country} claims ({agent.home_x}, {agent.home_y})",
-                "Anyone nearby want to coordinate colours?",
-            )
-            return "Started a thread to claim my area."
+            if rng.random() < 0.2:
+                x, y = agent.home_x, agent.home_y
+                claim = self._claims.get(agent.id)
+                if claim is None:
+                    return self._claim(agent, tools, x, y)
+                thread_id, claim_x, claim_y = claim
+                if math.dist((x, y), (claim_x, claim_y)) >= CLAIM_MOVE_PX:
+                    try:
+                        tools.reply(thread_id, f"{agent.country} now also holds ({x}, {y}).")
+                    except ToolError as e:
+                        if "does not exist" not in str(e):
+                            raise
+                        del self._claims[agent.id]
+                        return self._claim(agent, tools, x, y)
+                    self._claims[agent.id] = (thread_id, x, y)
+                    return f"Updated my claim in thread {thread_id}."
+            return "Stayed quiet."
         except ToolError as e:
             return f"Post failed: {e}"

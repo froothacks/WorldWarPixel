@@ -19,6 +19,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
+from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
@@ -41,11 +42,13 @@ class RunManager:
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
+        make_narrator: Callable[[RunConfig], NarratorModel | None] | None = None,
     ) -> None:
         self.log = log
         self.max_active_runs = max_active_runs
         self.make_policy = make_policy or random_policy
         self.narrator_model = narrator_model
+        self.make_narrator = make_narrator
         self.runs: dict[str, Run] = {}
         self._restored: list[str] = []
         self._loading: dict[str, asyncio.Task[Run | None]] = {}
@@ -58,7 +61,10 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
-        run = Run(run_id, config, self.log, policy, narrator_model=self.narrator_model)
+        narrator = (
+            self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
+        )
+        run = Run(run_id, config, self.log, policy, narrator_model=narrator)
         self.runs[run_id] = run
         await run.start()
         return run
@@ -125,6 +131,13 @@ def get_manager(request: Request) -> RunManager:
 ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+
+
+@rosters_router.get("")
+async def list_rosters() -> list[dict[str, Any]]:
+    """Bundled attendee rosters a run can use instead of the population-seeded world."""
+    return roster_summaries()
 
 
 @router.post("", status_code=201)
@@ -172,6 +185,11 @@ def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
 
 
 GodDep = Annotated[None, Depends(require_god)]
+
+
+class ThreadVote(BaseModel):
+    voter: str = Field(min_length=1, max_length=64, description="Stable per-browser viewer id")
+    vote: int = Field(ge=-1, le=1, description="+1 up or -1 down (each call adds), 0 withdraws")
 
 
 class GodPixels(BaseModel):
@@ -249,6 +267,29 @@ async def god_pace(run_id: str, body: GodPace, manager: ManagerDep, _god: GodDep
     return run.summary()
 
 
+class GodModel(BaseModel):
+    model: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/{run_id}/god/model")
+async def god_model(
+    run_id: str, body: GodModel, manager: ManagerDep, _god: GodDep
+) -> dict[str, Any]:
+    """Switch a running LLM run to another model preset; agents use it from their next turn."""
+    run = await manager.fetch(run_id)
+    if run.config.policy not in ("llm", "llm-guided"):
+        raise HTTPException(409, "model switching only applies to LLM runs")
+    new_config = run.config.model_copy(update={"model": body.model})
+    policy = manager.make_policy(new_config)  # raises 400/422 for unknown or unavailable presets
+    narrator = (
+        manager.make_narrator(new_config)
+        if manager.make_narrator is not None
+        else manager.narrator_model
+    )
+    run.swap_model(policy, narrator, body.model)
+    return run.summary()
+
+
 @router.delete("/{run_id}", status_code=204)
 async def delete_run(run_id: str, manager: ManagerDep) -> None:
     """Stop the run (if needed) and drop it from memory; its event log is kept."""
@@ -280,6 +321,17 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
+
+
+@router.post("/{run_id}/threads/{thread_id}/vote")
+async def vote_thread(
+    run_id: str, thread_id: int, body: ThreadVote, manager: ManagerDep
+) -> dict[str, Any]:
+    try:
+        votes = manager.get(run_id).vote_thread(thread_id, body.voter, body.vote)
+    except BoardError as e:
+        raise HTTPException(404, str(e)) from e
+    return {"thread_id": thread_id, "votes": votes}
 
 
 @router.get("/{run_id}/world")

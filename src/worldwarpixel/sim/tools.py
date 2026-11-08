@@ -1,6 +1,6 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
@@ -15,12 +15,28 @@ class ToolError(Exception):
     """Raised for a rejected tool call; the message is meant to be shown to the agent."""
 
 
+class SocietyAccess(Protocol):
+    """What one agent may do with societies during a turn (implemented by the run)."""
+
+    def current(self) -> int: ...
+
+    def peek(self, society_id: int) -> dict[str, Any]: ...
+
+    def join(self, society_id: int) -> dict[str, Any]: ...
+
+    def rename(self, name: str) -> dict[str, Any]: ...
+
+    def invite(self, name: str) -> dict[str, Any]: ...
+
+
 @dataclass(slots=True)
 class TurnBudget:
     pixels: int = 8
     posts: int = 1
     views: int = 3
     reads: int = 3
+    votes: int = 1
+    invites: int = 1
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -28,6 +44,8 @@ class TurnBudget:
             "posts": self.posts,
             "views": self.views,
             "reads": self.reads,
+            "votes": self.votes,
+            "invites": self.invites,
         }
 
 
@@ -42,7 +60,10 @@ def apply_writes(
 
 
 class ToolSet:
-    """The tools one agent may call during one turn, enforcing that turn's budget."""
+    """The tools one agent may call during one turn, enforcing that turn's budget.
+
+    Agents only get pixel-level painting; see the design rule in llm_policy.py.
+    """
 
     def __init__(
         self,
@@ -53,8 +74,11 @@ class ToolSet:
         sink: EventSink,
         clock: Callable[[], float],
         writer: Callable[[list[PixelWrite]], None] | None = None,
-        pending: Mapping[tuple[int, int], tuple[int, int]] | None = None,
+        societies: SocietyAccess | None = None,
+        vote: Callable[[int, bool], int] | None = None,
     ) -> None:
+        self.societies = societies
+        self._vote = vote
         self._canvas = canvas
         self._board = board
         self._agent_id = agent_id
@@ -62,16 +86,6 @@ class ToolSet:
         self._sink = sink
         self._clock = clock
         self._writer = writer
-        self._pending = pending if pending is not None else {}
-        """(x, y) -> (color, owner) of pixels handed to the writer but not yet on the canvas."""
-
-    def _get(self, x: int, y: int) -> int:
-        hit = self._pending.get((x, y))
-        return hit[0] if hit else self._canvas.get(x, y)
-
-    def _owner(self, x: int, y: int) -> int:
-        hit = self._pending.get((x, y))
-        return hit[1] if hit else self._canvas.owner(x, y)
 
     def _check(self, kind: str, n: int) -> None:
         left = getattr(self.budget, kind)
@@ -113,49 +127,6 @@ class ToolSet:
             out["note"] = f"only {len(writes)} fit the budget; {dropped} pixels were dropped"
         return out
 
-    def fill_rect(self, x: int, y: int, w: int, h: int, color: int) -> dict[str, Any]:
-        if w <= 0 or h <= 0:
-            raise ToolError("width and height must be positive")
-        if not (self._canvas.in_bounds(x, y) and self._canvas.in_bounds(x + w - 1, y + h - 1)):
-            raise ToolError("rectangle goes off the canvas")
-        self._check("pixels", w * h)
-        cells = [(xx, yy, color) for yy in range(y, y + h) for xx in range(x, x + w)]
-        return self.place_pixels(cells)
-
-    def paint_stencil(self, cells: Sequence[tuple[int, int, int]]) -> dict[str, Any]:
-        """Paint towards a target picture: only cells that differ, in raster order, up to budget.
-
-        Calling again with the same stencil continues (or repairs) it, so big drawings take
-        several turns and a raided drawing can be restored.
-        """
-        # Visible progress first: cells whose colour changes, then same-coloured cells we merely
-        # claim from other agents (or from the blank background).
-        wanted = [
-            (x, y, c) for x, y, c in cells if self._canvas.in_bounds(x, y) and self._get(x, y) != c
-        ] + [
-            (x, y, c)
-            for x, y, c in cells
-            if self._canvas.in_bounds(x, y)
-            and self._get(x, y) == c
-            and self._owner(x, y) != self._agent_id
-        ]
-        if not cells:
-            raise ToolError("the stencil is empty")
-        if not any(self._canvas.in_bounds(x, y) for x, y, _ in cells):
-            raise ToolError("the drawing would be entirely off the canvas")
-        if not wanted:
-            return {"placed": 0, "remaining": 0, "done": True, "note": "already complete"}
-        if self.budget.pixels <= 0:
-            raise ToolError("no pixel budget left this turn")
-        out = self.place_pixels(wanted[: self.budget.pixels])
-        out.pop("dropped", None)
-        out.pop("note", None)
-        remaining = len(wanted) - int(out["placed"])
-        out.update({"remaining": remaining, "done": remaining == 0})
-        if remaining:
-            out["note"] = f"{remaining} px still to paint; call the same tool again next turn"
-        return out
-
     def record_action(self, tool: str, args: dict[str, Any], result: dict[str, Any]) -> None:
         """Log a successful tool call as a structured event (for the narrator and replay)."""
         self._sink("action", {"tool": tool, "args": args, "result": result})
@@ -184,6 +155,10 @@ class ToolSet:
 
     def _own_words(self, *texts: str) -> None:
         """Reject posts that parrot the organiser's pinned 📢 notices instead of answering them."""
+        if any("🗞" in t for t in texts):
+            raise ToolError(
+                "do not copy the 🗞 news; react to it in your own words with reply(thread_id=...)"
+            )
         if any("📢" in t or "ANNOUNCEMENT:" in t for t in texts):
             raise ToolError(
                 "do not copy the 📢 notice; answer it in your own words with reply(thread_id=...)"
@@ -193,23 +168,35 @@ class ToolSet:
         self._check("posts", 1)
         self._own_words(title, body)
         norm = title.strip().casefold()
+        society = self.societies.current() if self.societies else None
         for t in self._board.threads():
+            if self._board.society_of(t.id) not in (None, society):
+                continue
             if (t.title or "").casefold() == norm:
                 raise ToolError(
                     f"a thread titled {title.strip()!r} already exists (thread {t.id}); "
                     "reply in it instead of starting another"
                 )
         try:
-            post = self._board.post_thread(self._agent_id, title, body, self._clock())
+            post = self._board.post_thread(self._agent_id, title, body, self._clock(), society)
         except BoardError as e:
             raise ToolError(str(e)) from e
         self._spend("posts", 1)
-        self._sink("post", post.to_dict())
+        payload = post.to_dict()
+        if society is not None:
+            payload["society"] = society
+        self._sink("post", payload)
         return {"thread_id": post.id, "post_id": post.id}
 
     def reply(self, thread_id: int, body: str, parent_id: int | None = None) -> dict[str, Any]:
         self._check("posts", 1)
         self._own_words(body)
+        normalized = " ".join(body.casefold().split())
+        if any(
+            " ".join(post.body.casefold().split()) == normalized
+            for post in self._board.thread(thread_id)[-20:]
+        ):
+            raise ToolError("that was already said in this thread; say something new or stay quiet")
         try:
             post = self._board.reply(self._agent_id, thread_id, body, self._clock(), parent_id)
         except BoardError as e:
@@ -217,6 +204,40 @@ class ToolSet:
         self._spend("posts", 1)
         self._sink("post", post.to_dict())
         return {"thread_id": thread_id, "post_id": post.id}
+
+    def vote_thread(self, thread_id: int, up: bool = True) -> dict[str, Any]:
+        if self._vote is None:
+            raise ToolError("voting is not available")
+        self._check("votes", 1)
+        votes = self._vote(thread_id, up)
+        self._spend("votes", 1)
+        return {"thread_id": thread_id, "votes": votes}
+
+    def _society_call(self, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        if self.societies is None:
+            raise ToolError("there are no societies in this world")
+        try:
+            return fn()
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+
+    def peek_society(self, society_id: int) -> dict[str, Any]:
+        self._check("reads", 1)
+        out = self._society_call(lambda: self.societies.peek(society_id))  # type: ignore[union-attr]
+        self._spend("reads", 1)
+        return out
+
+    def join_society(self, society_id: int) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.join(society_id))  # type: ignore[union-attr]
+
+    def name_society(self, name: str) -> dict[str, Any]:
+        return self._society_call(lambda: self.societies.rename(name))  # type: ignore[union-attr]
+
+    def invite(self, name: str) -> dict[str, Any]:
+        self._check("invites", 1)
+        out = self._society_call(lambda: self.societies.invite(name))  # type: ignore[union-attr]
+        self._spend("invites", 1)
+        return out
 
     def read_thread(self, thread_id: int) -> dict[str, Any]:
         self._check("reads", 1)

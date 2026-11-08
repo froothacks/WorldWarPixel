@@ -9,9 +9,13 @@ export interface RunConfig {
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
-  policy: "llm" | "random";
+  policy: "llm" | "llm-guided" | "random";
+  model: string;
+  /** "world" seats `agents` people by population; a roster id plays one agent per real attendee. */
+  roster: "world" | "hackathon";
   narrator_interval: number;
   narrator_canvas_image: boolean;
+  societies: number;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -21,14 +25,35 @@ export const DEFAULT_CONFIG: RunConfig = {
   cooldown: 0.5,
   jitter: 0.3,
   pixels_per_turn: 200,
-  pixel_interval: 0.05,
+  pixel_interval: 0.01,
   posts_per_turn: 1,
-  max_concurrency: 16,
+  max_concurrency: 1000,
   seed: null,
   policy: "llm",
+  model: "gpt-6-luna",
+  roster: "world",
   narrator_interval: 60,
   narrator_canvas_image: true,
+  societies: 3,
 };
+
+export interface Society {
+  id: number;
+  name: string;
+  color: string;
+  members: number;
+  joined: number;
+  left: number;
+  murmur: string | null;
+  transcript: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  model: string;
+  available: boolean;
+}
 
 export type RunState = "created" | "running" | "paused" | "stopped";
 
@@ -52,6 +77,7 @@ export interface LLMStats {
   tool_errors: number;
   no_tools: number;
   failures: number;
+  last_error?: string;
   latency?: { model: LatencySummary | null; turn: LatencySummary | null };
 }
 
@@ -73,6 +99,7 @@ export interface RunSummary {
   clients: number;
   llm: LLMStats | null;
   narrator: NarratorStats;
+  societies?: Society[];
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -90,8 +117,13 @@ export interface Agent {
   home_x: number;
   home_y: number;
   cooldown: number;
+  /** One-line profile for roster runs; empty for world runs. */
+  headline?: string;
+  /** Roster runs: school or company, so the people list can filter by it. */
+  affiliation?: string;
   status: AgentStatus;
   last_thought: Thought | null;
+  society?: number | null;
 }
 
 export interface AgentDetail extends Agent {
@@ -110,6 +142,8 @@ export interface ThreadDigest {
   last_activity: number;
   participants: number;
   replies: number;
+  votes: number;
+  society: number | null;
   latest: { author: string; author_id: number; body: string } | null;
 }
 
@@ -208,11 +242,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export const DISPATCH_ID = 65534;
+export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
+export interface RosterSummary {
+  id: Exclude<RunConfig["roster"], "world">;
+  title: string;
+  event: string;
+  size: number;
+}
+
 export const api = {
+  rosters: () => request<RosterSummary[]>("/rosters"),
   listRuns: () => request<RunSummary[]>("/runs"),
+  listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
     request<RunSummary>("/runs", {
       method: "POST",
@@ -231,6 +276,11 @@ export const api = {
   world: (id: string) => request<WorldGraph>(`/runs/${id}/world`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
+  vote: (id: string, threadId: number, voter: string, vote: number) =>
+    request<{ thread_id: number; votes: number }>(
+      `/runs/${id}/threads/${threadId}/vote`,
+      { method: "POST", body: JSON.stringify({ voter, vote }) },
+    ),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>
     request<NarratorUpdate>(`/runs/${id}/narrator/ask`, {
@@ -263,5 +313,10 @@ export const api = {
     request<RunSummary>(`/runs/${id}/god/pace`, {
       method: "POST",
       body: JSON.stringify(pace),
+    }),
+  godModel: (id: string, model: string) =>
+    request<RunSummary>(`/runs/${id}/god/model`, {
+      method: "POST",
+      body: JSON.stringify({ model }),
     }),
 };

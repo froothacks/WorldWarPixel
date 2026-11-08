@@ -12,7 +12,7 @@ import {
 import { openRunStream, type ServerEvent } from "./ws";
 import { PixelStore } from "./pixelStore";
 import GodBar, { type GodTool } from "./GodBar";
-import { GOD_ID, GOD_NAME } from "./api";
+import { DISPATCH_ID, DISPATCH_NAME, GOD_ID, GOD_NAME } from "./api";
 import CanvasView, { type Region } from "./CanvasView";
 import AgentList from "./AgentList";
 import AgentDrawer from "./AgentDrawer";
@@ -56,6 +56,18 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   const paletteRef = useRef<string[]>([]);
   const storeRef = useRef<PixelStore | null>(null);
   const refreshTimer = useRef<number | null>(null);
+
+  const runTimer = useRef<number | null>(null);
+  const scheduleRunRefresh = useCallback(() => {
+    if (runTimer.current !== null) return;
+    runTimer.current = window.setTimeout(() => {
+      runTimer.current = null;
+      api
+        .getRun(initial.id)
+        .then(setRun)
+        .catch(() => undefined);
+    }, 300);
+  }, [initial.id]);
 
   const scheduleThreadRefresh = useCallback(() => {
     if (refreshTimer.current !== null) return;
@@ -119,7 +131,16 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           });
           break;
         case "post.created":
+        case "thread.voted":
           scheduleThreadRefresh();
+          break;
+        case "society.joined":
+          setAgents((list) => list.map((a) => (a.id === ev.agent_id ? { ...a, society: ev.to } : a)));
+          scheduleRunRefresh();
+          break;
+        case "society.renamed":
+        case "society.murmur":
+          scheduleRunRefresh();
           break;
         case "board.cleared":
           setThreads([]);
@@ -150,7 +171,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       if (refreshTimer.current !== null)
         window.clearTimeout(refreshTimer.current);
     };
-  }, [initial.id, scheduleThreadRefresh]);
+  }, [initial.id, scheduleThreadRefresh, scheduleRunRefresh]);
 
   // Stats come with run.state events; poll a little for the counters in between.
   useEffect(() => {
@@ -172,13 +193,23 @@ export default function LiveView({ run: initial, onLeave }: Props) {
   );
   const agentName = useCallback(
     (id: number) =>
-      id === GOD_ID ? GOD_NAME : (agentMap.get(id)?.name ?? `agent ${id}`),
+      id === DISPATCH_ID
+        ? DISPATCH_NAME
+        : id === GOD_ID
+          ? GOD_NAME
+          : (agentMap.get(id)?.name ?? `agent ${id}`),
     [agentMap],
   );
   const agentColor = useCallback(
     (id: number) => {
       const a = agentMap.get(id);
-      return a ? (palette[a.color] ?? "#888") : id === GOD_ID ? "#c9a7ff" : "#888";
+      return a
+        ? (palette[a.color] ?? "#888")
+        : id === DISPATCH_ID
+          ? "#e0b341"
+          : id === GOD_ID
+            ? "#c9a7ff"
+            : "#888";
     },
     [agentMap, palette],
   );
@@ -268,6 +299,8 @@ export default function LiveView({ run: initial, onLeave }: Props) {
       (turnLatency ? ` · turn p50 ${turnLatency.p50.toFixed(2)}s / p95 ${turnLatency.p95.toFixed(2)}s` : "")
     : undefined;
   const live = connection === "live";
+  // Roster runs play real attendees as individuals; each agent's "country" is its own name.
+  const people = (run.config.roster ?? "world") !== "world";
 
   return (
     <div className="live">
@@ -279,6 +312,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           <span className="slash">/</span>
           <span className="mono">{run.id}</span>
           <span className={`state state-${run.state}`}>{run.state}</span>
+          {people && <span className="roster-tag">{run.agents} attendees</span>}
         </span>
         <dl className="stats" title={llmTitle}>
           <Stat k="agents" v={run.agents} />
@@ -316,6 +350,11 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
         </div>
       </header>
+      {llm?.last_error && (
+        <div className="errbar" role="alert">
+          Model calls failing ({llm.failures}): {llm.last_error}
+        </div>
+      )}
       <div className="live-grid">
         <section className="stage">
           {god ? (
@@ -357,6 +396,9 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           totalThreads={run.threads}
           open={openThread}
           onOpen={setOpenThread}
+          onVoted={scheduleThreadRefresh}
+          societies={run.societies ?? []}
+          agents={agents}
         />
         <div className="side">
           <nav className="tabs">
@@ -369,7 +411,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
                   setSelected(null);
                 }}
               >
-                {label}
+                {people && id === "agents" ? "People" : label}
               </button>
             ))}
           </nav>
@@ -385,11 +427,13 @@ export default function LiveView({ run: initial, onLeave }: Props) {
           )}
           <AgentList
             agents={agents}
+            societies={run.societies ?? []}
             palette={palette}
             selected={selected}
             lastThought={lastThought}
             onSelect={setSelected}
             hidden={selectedAgent !== undefined || tab !== "agents"}
+            people={people}
           />
           <Territory
             store={store}
@@ -399,6 +443,7 @@ export default function LiveView({ run: initial, onLeave }: Props) {
             highlight={country}
             onHighlight={setCountry}
             hidden={selectedAgent !== undefined || tab !== "territory"}
+            units={people ? "people" : "countries"}
           />
           <Alliances
             runId={initial.id}

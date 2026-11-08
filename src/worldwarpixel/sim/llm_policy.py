@@ -1,22 +1,22 @@
+import asyncio
 import base64
 import json
 import logging
 import random
 import re
 import time
-from collections.abc import Iterable
-from typing import Any, cast
+from typing import Any, Literal, cast
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import (
     ChatCompletionContentPartParam,
+    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
 )
 
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
-from worldwarpixel.sim.stencils import FLAGS, SHAPES, flag_cells, shape_cells, text_cells
 from worldwarpixel.sim.tools import ToolError, ToolSet
 
 log = logging.getLogger(__name__)
@@ -40,111 +40,29 @@ COLOR_NAMES = (
     "purple",
 )
 
+# Design rule: agents draw only with place_pixels. Do NOT add tools that draw flags, text,
+# shapes, rectangles or other stencils; agents compose bigger pictures from pixels by
+# looking at the canvas.
 TOOLS: list[ChatCompletionToolParam] = [
     {
         "type": "function",
         "function": {
             "name": "place_pixels",
-            "description": "Paint up to your remaining pixel budget. Coordinates are 0-based.",
+            "description": (
+                "Paint any number of pixels, up to your remaining pixel budget. "
+                "Coordinates are 0-based."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "pixels": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "x": {"type": "integer"},
-                                "y": {"type": "integer"},
-                                "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                            },
-                            "required": ["x", "y", "color"],
-                        },
+                        "type": "string",
+                        "description": (
+                            'Space-separated x,y,colour triples, e.g. "10,5,3 11,5,3 12,5,3 13,6,8"'
+                        ),
                     }
                 },
                 "required": ["pixels"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fill_rect",
-            "description": "Fill a w by h rectangle with one colour. Costs w*h pixels of budget.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "x": {"type": "integer"},
-                    "y": {"type": "integer"},
-                    "w": {"type": "integer", "minimum": 1},
-                    "h": {"type": "integer", "minimum": 1},
-                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                },
-                "required": ["x", "y", "w", "h", "color"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "draw_flag",
-            "description": (
-                "Paint a simplified national flag with its top-left corner at (x, y). Paints as "
-                "many pixels as your budget allows; call it again next turn with the same "
-                "arguments to continue or repair it. Known flags: " + ", ".join(FLAGS) + "."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "country": {"type": "string"},
-                    "x": {"type": "integer"},
-                    "y": {"type": "integer"},
-                    "width": {"type": "integer", "minimum": 9, "maximum": 36},
-                },
-                "required": ["country", "x", "y", "width"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "draw_text",
-            "description": (
-                "Write a short word or slogan in 3x5 pixel letters starting at (x, y); each "
-                "letter is 4*scale pixels wide and 5*scale tall. Progressive like draw_flag."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "maxLength": 24},
-                    "x": {"type": "integer"},
-                    "y": {"type": "integer"},
-                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                    "scale": {"type": "integer", "minimum": 1, "maximum": 4},
-                },
-                "required": ["text", "x", "y", "color"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "draw_shape",
-            "description": (
-                "Paint a pixel-art shape (about 7*scale pixels) with top-left at (x, y). "
-                "Progressive like draw_flag. Shapes: " + ", ".join(SHAPES) + "."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "shape": {"type": "string"},
-                    "x": {"type": "integer"},
-                    "y": {"type": "integer"},
-                    "color": {"type": "integer", "minimum": 0, "maximum": 15},
-                    "color2": {"type": "integer", "minimum": 0, "maximum": 15},
-                    "scale": {"type": "integer", "minimum": 1, "maximum": 4},
-                },
-                "required": ["shape", "x", "y", "color"],
             },
         },
     },
@@ -201,10 +119,60 @@ TOOLS: list[ChatCompletionToolParam] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "vote_thread",
+            "description": "Upvote or downvote a thread; votes move threads up or down the board.",
+            "parameters": {
+                "type": "object",
+                "properties": {"thread_id": {"type": "integer"}, "up": {"type": "boolean"}},
+                "required": ["thread_id", "up"],
+            },
+        },
+    },
 ]
 
-READ_TOOLS = {"view_canvas", "read_thread"}
+
+def _fn(name: str, description: str, props: dict[str, Any]) -> ChatCompletionToolParam:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": props, "required": list(props)},
+        },
+    }
+
+
+SOCIETY_TOOLS: list[ChatCompletionToolParam] = [
+    _fn(
+        "peek_society",
+        "Look at another society: its name, size and top threads.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn(
+        "join_society",
+        "Leave your society and join another one.",
+        {"society_id": {"type": "integer"}},
+    ),
+    _fn("name_society", "Rename the society you are in.", {"name": {"type": "string"}}),
+    _fn(
+        "invite",
+        "Invite someone (by name) to join the society you are in.",
+        {"name": {"type": "string"}},
+    ),
+]
+
+READ_TOOLS = {"view_canvas", "read_thread", "peek_society"}
 MAX_ROUNDS = 2
+PAINT_ROUNDS = 2
+"""Extra model calls in a turn while the agent keeps painting and has pixels left."""
+_XML_CALL_RE = re.compile(r"<tool_call>\s*([\w.-]+)(.*?)(?=</tool_call>|<tool_call>|$)", re.S)
+_XML_ARG_RE = re.compile(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>", re.S)
+RATE_LIMIT_BACKOFF = (3.0, 8.0)
+"""Seconds (min, max) an agent waits after a 429 so a shared endpoint is not hammered."""
+BOARD_THREADS = 8
 
 
 def palette_legend() -> str:
@@ -212,21 +180,46 @@ def palette_legend() -> str:
 
 
 def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Free-for-all: who you are, what you can do, nothing about what you should do."""
     return (
         f"You are {agent.persona}\n\n"
-        f"You have joined a global r/place-style event: a {width}x{height} shared pixel canvas "
-        f"(x grows right, y grows down, 0-based) and a public message board, open to people from "
-        f"every country. Nobody is in charge and nothing is pre-planned. Each turn you may paint "
+        f"You share a {width}x{height} pixel canvas (x grows right, y grows down, 0-based) and a "
+        "public message board with many other people. "
+        f"Each turn you may paint up to {pixels} pixels and make up to {posts} post or reply. "
+        f"Colours: {palette_legend()}. You started near ({agent.home_x}, {agent.home_y}).\n\n"
+        "Each turn you see the canvas and the top threads on the board. "
+        "Do whatever you want.\n\n"
+        "Write one or two short sentences of thought in first person, then use the tools."
+    )
+
+
+def guided_system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
+    """Opt-in scaffolding: r/place framing, examples, stencil tools and spot hints."""
+    event = agent.persona_card.get("event")
+    setting = (
+        f"You have joined an r/place-style game at {event}: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board shared with "
+        f"the other attendees. Everyone plays as themselves: there are no assigned teams, so any "
+        f"alliances or rivalries are up to you and the people you talk to. "
+        if event
+        else f"You have joined a global r/place-style event: a {width}x{height} shared pixel "
+        f"canvas (x grows right, y grows down, 0-based) and a public message board, open to "
+        f"people from every country. "
+    )
+    concern = "you" if event else "your country"
+    return (
+        f"You are {agent.persona}\n\n"
+        f"{setting}"
+        f"Nobody is in charge and nothing is pre-planned. Each turn you may paint "
         f"up to {pixels} pixels and make {posts} post or reply. Colours: {palette_legend()}. "
-        f"Your usual colour is {agent.color} ({COLOR_NAMES[agent.color]}). "
         f"You started near ({agent.home_x}, {agent.home_y}) but may paint anywhere.\n\n"
-        "In events like this people have done all sorts of things: painted their national or "
-        "regional flag, a city skyline, a sports club crest or a university logo; drawn pixel-art "
-        "mascots, animals, anime or game characters, memes, hearts, rainbows, religious symbols, "
-        "portraits of heroes or musicians; written slogans, jokes, names, protest messages, "
+        "In events like this people have done all sorts of things: drawn pixel-art mascots, "
+        "animals, anime or game characters, memes, hearts, rainbows, religious symbols, "
+        "portraits of heroes or musicians; painted a city skyline, a landmark, a sports club "
+        "crest or a university logo; written slogans, jokes, names, protest messages, "
         "lyrics, QR codes or a tiny webcomic; built roads, borders, flowers and landscapes "
         "connecting their region to neighbours. Groups have formed around a shared idea and "
-        "recruited on the board, negotiated land swaps and peace treaties, merged rival flags "
+        "recruited on the board, negotiated land swaps and peace treaties, merged rival murals "
         "into one, formed alliances to defend a mural against raids, or launched raids to "
         "overwrite someone else's work, spread a single colour like a void, troll a neighbour, "
         "camouflage graffiti into a bigger picture, or ambush an unfinished drawing. Others "
@@ -236,16 +229,21 @@ def system_prompt(agent: AgentSpec, width: int, height: int, pixels: int, posts:
         "you side with or against, and pursue it over many turns. Each turn you see the whole "
         "canvas as an image plus a short list of the busiest areas with their coordinates.\n\n"
         "Practical notes:\n"
-        f"- Use your whole pixel budget every turn ({pixels} pixels). draw_flag, draw_text and "
-        "draw_shape paint real pictures a bit at a time: call the same one again each turn until "
-        "it is done (that also repairs damage). Use place_pixels or fill_rect for details, "
-        "borders and backgrounds.\n"
-        "- Posts marked 📢 are from The Hand of God, the organiser speaking to everyone. Treat "
-        "them as the most important thing on the board: read them first, reply in that thread "
-        "and act on what they ask before anything else, in whatever way your persona would.\n"
-        "- Give coordinates when you coordinate with others. Prefer replying in an existing "
-        "thread to starting a new one; address people by @Name. Never reuse another thread's "
-        "title; say something of your own.\n"
+        f"- Use your whole pixel budget every turn ({pixels} pixels). place_pixels is your only "
+        "brush: plan a picture as rows of coordinates and paint part of it each turn, continuing "
+        "next turn where you left off (that also repairs damage). Look at the canvas image to line "
+        "new pixels up with what is already there.\n"
+        "- Flags are the most overdone, least memorable thing on a canvas like this. Avoid flags "
+        "and make something original instead: a creature, a scene, a symbol, a joke or a slogan "
+        "that says something about you. To show where you are from, draw what your place is known "
+        "for (a landmark, food, animal, team or hero) rather than its flag.\n"
+        "- Posts marked 🗞 are World News: automatic reports of real wars, alliances, "
+        "territory changes and raids on this canvas. If one concerns "
+        f"{concern}, react to it in that thread: defend, retaliate, negotiate or celebrate.\n"
+        "- Only post when it matters to others: a claim with coordinates, a call for help, "
+        "a threat, a deal, or an answer to someone. No greetings or status chatter. Prefer "
+        "replying in an existing thread to starting a new one; address people by @Name. "
+        "Never reuse another thread's title.\n"
         "- Your thought is one or two short sentences in first person about what you see and "
         "intend; do not describe colour numbers, the image format or the tools."
     )
@@ -287,38 +285,100 @@ def region_view(
 def pick_threads(
     board: list[dict[str, Any]], rng: random.Random, k: int = 6
 ) -> list[dict[str, Any]]:
-    """A few of the most active threads plus a random sample, so agents don't all pile onto one."""
-    head, rest = board[:3], board[3:]
-    return head + rng.sample(rest, min(len(rest), k - len(head)))
+    """Keep important threads first, then mix a couple of recent ones with random choices."""
+    if k <= 0:
+        return []
+    tagged = [entry for entry in board if entry.get("tag")][:k]
+    untagged = [entry for entry in board if not entry.get("tag")]
+    count = min(2, max(0, k - len(tagged)), len(untagged))
+    picked = [*tagged, *untagged[:count]]
+    remaining = untagged[count:]
+    picked.extend(rng.sample(remaining, min(len(remaining), k - len(picked))))
+    return picked
 
 
-def user_prompt(
+TAG_PREFIXES = {"dispatch": "[WORLD NEWS] ", "mention": "[about you] "}
+
+
+def board_lines(threads: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"{TAG_PREFIXES.get(str(d.get('tag')), '')}- thread {d['thread_id']} "
+        f'"{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
+        + (
+            f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
+            if d["latest"]
+            else ""
+        )
+        for d in threads
+    )
+
+
+def society_lines(obs: Observation) -> str:
+    """Facts only: where the agent is, what else exists, and any murmur in its society."""
+    if obs.society is None:
+        return ""
+    me = obs.society
+    others = ", ".join(
+        f'{s["id"]} "{s["name"]}" ({s["members"]} people)'
+        for s in obs.societies or []
+        if s["id"] != me["id"]
+    )
+    text = (
+        f"The people here are split into societies; each has its own threads. You are in society "
+        f'{me["id"]} "{me["name"]}" ({me["members"]} people). Other societies: {others}. '
+        "You can peek_society, join_society, name_society or invite someone to your society.\n"
+    )
+    for key, label in (
+        ("invites", "Invitations"),
+        ("moves", "Recent moves"),
+        ("contacts", "People you have talked with recently"),
+    ):
+        if me.get(key):
+            text += f"{label}: {'; '.join(me[key])}.\n"
+    if me.get("murmur"):
+        text += f"People in your society have been saying: {me['murmur']}\n"
+    return text
+
+
+def memory_lines(obs: Observation) -> str:
+    if not obs.memory:
+        return ""
+    return "Your last turns:\n" + "\n".join(f"- {m}" for m in obs.memory) + "\n"
+
+
+def budget_line(agent: AgentSpec, obs: Observation) -> str:
+    b = obs.budget
+    posts = "no posts this turn (you posted recently)" if b.posts == 0 else f"{b.posts} post"
+    return (
+        f"Turn for {agent.name}. Budget: {b.pixels} pixels, {posts}, {b.votes} vote. "
+        "Unused pixels don't carry over to the next turn.\n"
+    )
+
+
+def user_prompt(agent: AgentSpec, obs: Observation, vision: bool = True) -> str:
+    """Free-for-all turn: budget and the board in its own order (recent activity + votes)."""
+    board = board_lines(obs.board[:BOARD_THREADS]) or "- (no threads yet)"
+    look = "" if vision else "No canvas image: call view_canvas(x, y, w, h) to look at any area.\n"
+    where = "your society's threads" if obs.society else "the board"
+    return (
+        f"{budget_line(agent, obs)}"
+        f"{look}{memory_lines(obs)}{society_lines(obs)}\nTop threads on {where}:\n{board}"
+    )
+
+
+def guided_user_prompt(
     agent: AgentSpec,
     obs: Observation,
     view: str,
     rng: random.Random | None = None,
-    project: str = "",
 ) -> str:
     threads = pick_threads(obs.board, rng or random.Random(agent.id))
-    board = (
-        "\n".join(
-            f'- thread {d["thread_id"]} "{d["title"]}" by {d["author"]} ({d["replies"]} replies)'
-            + (
-                f"; latest {d['latest']['author']}: {str(d['latest']['body'])[:160]}"
-                if d["latest"]
-                else ""
-            )
-            for d in threads
-        )
-        or "- (no threads yet; you could start one)"
-    )
+    board = board_lines(threads) or "- (no threads yet; you could start one)"
     return (
-        f"Turn for {agent.name}. Budget: {obs.budget.pixels} pixels, {obs.budget.posts} post.\n"
-        f"{view}\n\n{project}Some current threads:\n{board}\n\n"
-        "One or two sentences of thought, then call a drawing tool (draw_flag, draw_text, "
-        "draw_shape, fill_rect or place_pixels) on whatever you are pursuing. If a thread above "
-        "matters to you, answer it with reply(thread_id=..., body=...) rather than starting a "
-        "new one. Anything marked 📢 from The Hand of God comes first: answer it and act on it."
+        f"{budget_line(agent, obs)}{view}\n\nSome current threads:\n{board}\n\n"
+        "One or two sentences of thought, then call place_pixels (not a flag) on whatever "
+        "you are pursuing. If a thread above matters to you, answer it with "
+        "reply(thread_id=..., body=...) rather than starting a new one."
     )
 
 
@@ -347,17 +407,34 @@ def latency_summary(samples: list[float]) -> dict[str, float] | None:
 
 
 class LLMPolicy:
-    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text."""
+    """One LLM call per turn (plus a follow-up after a read tool); thoughts come from the text.
+
+    By default agents get a neutral prompt and only the basic tools. ``guided=True`` adds the
+    r/place framing, stencil tools, drawing memory and busy/quiet-area hints.
+    """
 
     def __init__(
-        self, client: AsyncOpenAI, model: str, timeout: float = 45.0, vision: bool = True
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        timeout: float = 45.0,
+        vision: bool = True,
+        guided: bool = False,
+        max_tokens: int = 700,
+        token_param: Literal["max_tokens", "max_completion_tokens"] = "max_tokens",
+        chat_template_kwargs: bool = True,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._client = client
+        self._guided = guided
         self._model = model
         self._timeout = timeout
         self._vision = vision
+        self._max_tokens = max_tokens
+        self._token_param = token_param
+        self._chat_template_kwargs = chat_template_kwargs
+        self._reasoning_effort = reasoning_effort
         self._rng = random.Random()
-        self._projects: dict[int, tuple[str, dict[str, Any], int]] = {}
         self.stats: dict[str, Any] = {
             "calls": 0,
             "tool_calls": 0,
@@ -368,7 +445,8 @@ class LLMPolicy:
         self._latency: dict[str, list[float]] = {"model": [], "turn": []}
 
     def describe(self, agent: AgentSpec, width: int, height: int, pixels: int, posts: int) -> str:
-        return system_prompt(agent, width, height, pixels, posts)
+        prompt = guided_system_prompt if self._guided else system_prompt
+        return prompt(agent, width, height, pixels, posts)
 
     def public_stats(self) -> dict[str, Any]:
         """Counters plus latency percentiles of the recent model calls and whole turns."""
@@ -379,12 +457,15 @@ class LLMPolicy:
 
     async def act(self, agent: AgentSpec, tools: ToolSet, obs: Observation) -> str:
         turn_t0 = time.monotonic()
-        text = user_prompt(
-            agent,
-            obs,
-            region_view(agent, tools.regions(limit=None), self._rng),
-            self._rng,
-            self._project_note(agent),
+        text = (
+            guided_user_prompt(
+                agent,
+                obs,
+                region_view(agent, tools.regions(limit=None), self._rng),
+                self._rng,
+            )
+            if self._guided
+            else user_prompt(agent, obs, self._vision)
         )
         content: list[ChatCompletionContentPartParam] = [{"type": "text", "text": text}]
         if self._vision:
@@ -405,7 +486,7 @@ class LLMPolicy:
         messages: list[ChatCompletionMessageParam] = [
             {
                 "role": "system",
-                "content": system_prompt(
+                "content": self.describe(
                     agent, obs.canvas_width, obs.canvas_height, obs.budget.pixels, obs.budget.posts
                 ),
             },
@@ -413,31 +494,62 @@ class LLMPolicy:
         ]
         thoughts: list[str] = []
         actions: list[str] = []
-        for round_no in range(MAX_ROUNDS):
+        read_rounds = paint_rounds = 0
+        for round_no in range(MAX_ROUNDS + PAINT_ROUNDS):
             self.stats["calls"] += 1
             call_t0 = time.monotonic()
             try:
-                response = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,
-                    tools=self._tools_for(obs),
-                    tool_choice="auto",
-                    max_tokens=700,
-                    temperature=1.0,
-                    timeout=self._timeout,
-                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                # Endpoint quirks live in models.py: OpenAI reasoning models want
+                # max_completion_tokens, no chat_template_kwargs, and reasoning_effort="none"
+                # whenever tools are attached; the Modal vLLM endpoints want the reverse.
+                extra_body = (
+                    {"chat_template_kwargs": {"enable_thinking": False}}
+                    if self._chat_template_kwargs
+                    else None
                 )
+                reasoning = cast(Any, self._reasoning_effort)
+                if self._token_param == "max_completion_tokens":
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        tools=self._tools_for(obs),
+                        tool_choice="auto",
+                        max_completion_tokens=self._max_tokens,
+                        temperature=1.0,
+                        timeout=self._timeout,
+                        reasoning_effort=reasoning,
+                        extra_body=extra_body,
+                    )
+                else:
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        tools=self._tools_for(obs),
+                        tool_choice="auto",
+                        max_tokens=self._max_tokens,
+                        temperature=1.0,
+                        timeout=self._timeout,
+                        reasoning_effort=reasoning,
+                        extra_body=extra_body,
+                    )
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
+                self.stats["last_error"] = str(e)[:200]
                 log.warning("agent %s LLM call failed: %s", agent.id, e)
-                thoughts.append(f"(model call failed: {type(e).__name__})")
+                thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
+                if isinstance(e, RateLimitError):
+                    await asyncio.sleep(self._rng.uniform(*RATE_LIMIT_BACKOFF))
                 break
             _sample(self._latency["model"], time.monotonic() - call_t0)
+            self.stats.pop("last_error", None)
             msg = response.choices[0].message
-            if msg.content:
-                thoughts.append(msg.content.strip())
-            calls = msg.tool_calls or []
+            said = msg.content or ""
+            calls: list[Any] = list(msg.tool_calls or [])
+            if not calls and "<tool_call>" in said:
+                said, calls = _text_tool_calls(said)
+            if said.strip():
+                thoughts.append(said.strip())
             if not calls:
                 if round_no == 0:
                     self.stats["no_tools"] += 1
@@ -447,12 +559,13 @@ class LLMPolicy:
                     ChatCompletionMessageParam,
                     {
                         "role": "assistant",
-                        "content": msg.content or "",
+                        "content": said,
                         "tool_calls": [c.model_dump() for c in calls],
                     },
                 )
             )
             used_read = False
+            pixels_before = tools.budget.pixels
             for call in calls:
                 if call.type != "function":
                     continue
@@ -461,8 +574,14 @@ class LLMPolicy:
                 result = self._execute(agent, tools, name, call.function.arguments, actions)
                 used_read |= name in READ_TOOLS
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
-            if not used_read:
+            left = tools.budget.pixels
+            if left < pixels_before and left > 0 and paint_rounds < PAINT_ROUNDS:
+                paint_rounds += 1
+                messages.append({"role": "user", "content": f"{left} pixels left this turn."})
+                continue
+            if not used_read or read_rounds >= MAX_ROUNDS - 1:
                 break
+            read_rounds += 1
         thought = " ".join(t for t in thoughts if t)
         if actions:
             thought = f"{thought} [{'; '.join(actions)}]" if thought else "; ".join(actions)
@@ -475,15 +594,15 @@ class LLMPolicy:
         try:
             args: dict[str, Any] = json.loads(raw_args or "{}")
         except json.JSONDecodeError:
-            self.stats["tool_errors"] += 1
-            return "error: arguments were not valid JSON"
+            # Reasoning models sometimes hit the token cap mid-arguments; salvage the
+            # complete pixel objects instead of losing the whole turn.
+            salvaged = _salvage_place_pixels(name, raw_args)
+            if salvaged is None:
+                self.stats["tool_errors"] += 1
+                return "error: arguments were not valid JSON"
+            args = salvaged
         try:
             result = self._dispatch(agent, tools, name, args)
-            if name in ("draw_flag", "draw_text", "draw_shape"):
-                if result.get("done"):
-                    self._projects.pop(agent.id, None)
-                else:
-                    self._projects[agent.id] = (name, args, int(result.get("remaining", 0)))
         except ToolError as e:
             self.stats["tool_errors"] += 1
             self._note_error(f"{name}: {e}")
@@ -499,56 +618,17 @@ class LLMPolicy:
             tools.record_action(name, _public_args(name, args), result)
         return json.dumps(result)
 
-    def _avoid_collision(
-        self, agent: AgentSpec, a: dict[str, Any], size: tuple[int, int], canvas: tuple[int, int]
-    ) -> None:
-        """Starting a new drawing exactly where someone else is drawing? Shift it alongside.
-
-        Small models copy the coordinates they see; this turns a pile-up into a row of drawings.
-        Continuing one's own drawing (same args as the remembered project) is never moved.
-        """
-        mine = self._projects.get(agent.id)
-        if mine and mine[1].get("x") == a["x"] and mine[1].get("y") == a["y"]:
-            return
-        taken = {
-            (p[1].get("x"), p[1].get("y")): p
-            for aid, p in self._projects.items()
-            if aid != agent.id
-        }
-        width, height = size
-        w, h = canvas
-        for _ in range(8):
-            other = taken.get((a["x"], a["y"]))
-            if other is None:
-                return
-            ow, oh = _footprint(other[0], other[1])
-            if a["x"] + ow + 2 + width <= w:
-                a["x"] = a["x"] + ow + 2
-            elif a["x"] - width - 2 >= 0:
-                a["x"] = a["x"] - width - 2
-            elif a["y"] + oh + 2 + height <= h:
-                a["y"] = a["y"] + oh + 2
-            else:
-                return  # nowhere to go; paint where asked rather than off the canvas
-            a["moved"] = True
-
     def _tools_for(self, obs: Observation) -> list[ChatCompletionToolParam]:
-        """Once the board is busy, usually hide post_thread so agents reply instead of piling on."""
+        """Guided only: once the board is busy, usually hide post_thread so agents reply."""
+        free = TOOLS + SOCIETY_TOOLS if obs.society else TOOLS
+        tools = TOOLS if self._guided else free
+        if obs.budget.posts == 0:
+            return [t for t in tools if t["function"]["name"] not in ("post_thread", "reply")]
+        if not self._guided:
+            return tools
         if len(obs.board) >= 6 and self._rng.random() < 0.75:
             return [t for t in TOOLS if t["function"]["name"] != "post_thread"]
         return TOOLS
-
-    def _project_note(self, agent: AgentSpec) -> str:
-        if agent.id not in self._projects:
-            return ""
-        name, args, remaining = self._projects[agent.id]
-        keep = ("country", "text", "shape", "x", "y", "width", "color", "color2", "scale")
-        shown = {k: v for k, v in args.items() if k in keep}
-        return (
-            f"Your unfinished drawing: {name}({json.dumps(shown)}), about {remaining} px left; "
-            "call it again with exactly these arguments to continue, unless you have changed "
-            "your mind.\n\n"
-        )
 
     def _note_error(self, text: str) -> None:
         """Keep the last few tool errors so run summaries show what the model gets wrong."""
@@ -569,72 +649,134 @@ class LLMPolicy:
                 return agent.color
             return c if 0 <= c < len(PALETTE) else agent.color
 
+        # Design rule: agents draw only with place_pixels. Do NOT add tools that draw flags, text,
+        # shapes, rectangles or other stencils; agents compose bigger pictures from pixels by
+        # looking at the canvas.
         match name:
             case "place_pixels":
-                if isinstance(a["pixels"], str):  # the model often double-encodes the list
-                    a["pixels"] = _parse_pixel_list(a["pixels"])
-                a["pixels"] = [
-                    {"x": _clamp(p["x"], w), "y": _clamp(p["y"], h), "color": colour(p["color"])}
-                    for p in map(_pixel_fields, a["pixels"])
-                ]
-                return tools.place_pixels([(p["x"], p["y"], p["color"]) for p in a["pixels"]])
-            case "fill_rect":
-                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
-                a["w"], a["h"] = min(int(a["w"]), w - a["x"]), min(int(a["h"]), h - a["y"])
-                return tools.fill_rect(a["x"], a["y"], a["w"], a["h"], colour(a["color"]))
-            case "draw_flag":
-                a["country"] = _match_name(str(a.get("country", "")), FLAGS, agent.country)
-                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
-                a["width"] = min(max(int(a.get("width", 24)), 9), 36)
-                self._avoid_collision(agent, a, _footprint("draw_flag", a), (w, h))
-                return tools.paint_stencil(flag_cells(a["country"], a["x"], a["y"], a["width"]))
-            case "draw_text":
-                a["text"] = str(a["text"])[:24]
-                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
-                a["color"] = colour(a.get("color"))
-                a["scale"] = _scale(a.get("scale", 1))
-                self._avoid_collision(agent, a, _footprint("draw_text", a), (w, h))
-                return tools.paint_stencil(
-                    text_cells(a["text"], a["x"], a["y"], a["color"], a["scale"])
-                )
-            case "draw_shape":
-                a["shape"] = _match_name(str(a.get("shape", "")), SHAPES, "heart")
-                a["x"], a["y"] = _clamp(a["x"], w), _clamp(a["y"], h)
-                a["color"], a["color2"] = colour(a.get("color")), colour(a.get("color2", 3))
-                a["scale"] = _scale(a.get("scale", 1))
-                self._avoid_collision(agent, a, _footprint("draw_shape", a), (w, h))
-                return tools.paint_stencil(
-                    shape_cells(a["shape"], a["x"], a["y"], a["color"], a["color2"], a["scale"])
-                )
+                if "pixels" not in a and "x" in a and "y" in a:  # one bare pixel
+                    a["pixels"] = [{k: a[k] for k in ("x", "y", "color") if k in a}]
+                raw_pixels = a["pixels"]
+                if isinstance(raw_pixels, str):  # the model often double-encodes the list
+                    raw_pixels = _parse_pixel_list(raw_pixels)
+                # Skip malformed pixels instead of failing the whole turn: big models
+                # occasionally emit a pixel without y or with x as an object.
+                pixels: list[dict[str, int]] = []
+                skipped = 0
+                for raw in raw_pixels:
+                    try:
+                        fields = _pixel_fields(raw)
+                        xy = _pixel_coords(fields, w, h)
+                    except (KeyError, TypeError, ValueError):
+                        xy = None
+                    if xy is None:
+                        skipped += 1
+                        continue
+                    x, y = xy
+                    pixels.append({"x": x, "y": y, "color": colour(fields["color"])})
+                if not pixels:
+                    raise ToolError("place_pixels had no valid pixels")
+                a["pixels"] = pixels  # downstream summaries and tracking read the clean list
+                result = tools.place_pixels([(p["x"], p["y"], p["color"]) for p in pixels])
+                if skipped:
+                    result["skipped_invalid"] = skipped
+                return result
             case "post_thread":
                 return tools.post_thread(str(a["title"])[:120], str(a["body"])[:600])
             case "reply":
                 return tools.reply(int(a["thread_id"]), str(a["body"])[:600])
+            case "vote_thread":
+                up = a.get("up", True) not in (False, 0, "false", "False", "down")
+                return tools.vote_thread(int(a["thread_id"]), up)
             case "view_canvas":
                 return tools.view_canvas(int(a["x"]), int(a["y"]), int(a["w"]), int(a["h"]))
             case "read_thread":
                 return tools.read_thread(int(a["thread_id"]))
+            case "peek_society":
+                return tools.peek_society(int(a["society_id"]))
+            case "join_society":
+                return tools.join_society(int(a["society_id"]))
+            case "name_society":
+                return tools.name_society(str(a["name"]))
+            case "invite":
+                return tools.invite(str(a["name"]))
         raise ToolError(f"unknown tool {name}")
 
 
 _FIELD_RE = {k: re.compile(rf"(?<![A-Za-z_]){k}\\?\"?\s*:\s*(-?\d+)") for k in ("x", "y", "color")}
 
 
+_TRIPLE_RE = re.compile(r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)")
+
+
+def _text_tool_calls(content: str) -> tuple[str, list[ChatCompletionMessageFunctionToolCall]]:
+    """Tool calls some endpoints leave in the text (GLM style:
+    <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>). Returns the text
+    before the first call and the complete calls; a call cut off mid-value is dropped."""
+    calls: list[ChatCompletionMessageFunctionToolCall] = []
+    for m in _XML_CALL_RE.finditer(content):
+        body = m.group(2)
+        if body.count("<arg_value>") != body.count("</arg_value>"):
+            continue
+        args: dict[str, Any] = {}
+        for key, value in _XML_ARG_RE.findall(body):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                parsed = None
+            numeric = isinstance(parsed, int | float) and not isinstance(parsed, bool)
+            args[key] = parsed if numeric or isinstance(parsed, list | dict) else value
+        calls.append(
+            ChatCompletionMessageFunctionToolCall(
+                id=f"text{len(calls)}",
+                type="function",
+                function={"name": m.group(1), "arguments": json.dumps(args)},  # type: ignore[arg-type]
+            )
+        )
+    return content.split("<tool_call>", 1)[0], calls
+
+
+def _pixel_coords(fields: dict[str, Any], w: int, h: int) -> tuple[int, int] | None:
+    """Clamp a pixel's coordinates into the canvas, or None when they are not numbers."""
+    try:
+        x, y = int(fields["x"]), int(fields["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return min(max(x, 0), w - 1), min(max(y, 0), h - 1)
+
+
+def _salvage_place_pixels(name: str, raw: str) -> dict[str, Any] | None:
+    """Recover a truncated place_pixels payload from its complete pixel objects."""
+    if name != "place_pixels":
+        return None
+    try:
+        pixels = _parse_pixel_list(raw)
+    except ToolError:
+        return None
+    return {"pixels": pixels} if pixels else None
+
+
 def _parse_pixel_list(text: str) -> list[dict[str, int]]:
-    """Decode a stringified pixel list, salvaging truncated or sloppy JSON object by object."""
+    """Decode "x,y,c x,y,c" triples or a stringified (possibly truncated) JSON pixel list."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, list):
             return parsed
     except ValueError:
         pass
+    if "{" not in text:
+        triples = [
+            {"x": int(x), "y": int(y), "color": int(c)} for x, y, c in _TRIPLE_RE.findall(text)
+        ]
+        if triples:
+            return triples
     found: list[dict[str, int]] = []
     for obj in re.findall(r"\{[^{}]*\}", text):  # only complete {...} objects, any key order
         fields = {k: rx.search(obj) for k, rx in _FIELD_RE.items()}
         if all(fields.values()):
             found.append({k: int(m.group(1)) for k, m in fields.items() if m})
     if not found:
-        raise ToolError("pixels must be a list of {x, y, color}")
+        raise ToolError('pixels must be x,y,colour triples like "10,5,3 11,5,3"')
     return found
 
 
@@ -645,51 +787,9 @@ def _pixel_fields(p: Any) -> dict[str, Any]:
     return {"x": p["x"], "y": p["y"], "color": p.get("color", "default")}
 
 
-_ALIASES = {
-    "united_states": "usa",
-    "america": "usa",
-    "us": "usa",
-    "britain": "uk",
-    "united_kingdom": "uk",
-    "england": "uk",
-    "korea": "south_korea",
-    "dr_congo": "congo",
-    "czech_republic": "czechia",
-    "rainbow": "pride",
-    "united_nations": "un",
-}
-
-
-def _match_name(raw: str, options: Iterable[str], default: str) -> str:
-    """Map sloppy model strings ("United States", "Flag of India") onto a known key."""
-    key = re.sub(r"[^a-z]+", "_", raw.lower()).strip("_")
-    opts = list(options)
-    if key in opts:
-        return key
-    for k, v in _ALIASES.items():
-        if f"_{k}_" in f"_{key}_" and v in opts:
-            return v
-    for o in opts:
-        if f"_{o}_" in f"_{key}_" or (len(key) > 3 and key in o):
-            return o
-    return default if default in opts else opts[0]
-
-
-def _scale(v: Any) -> int:
-    try:
-        return min(max(int(float(v)), 1), 4)
-    except (TypeError, ValueError):
-        return 1
-
-
 _TOOL_HINTS = (
     ("view_thread", "read_thread"),
     ("read", "read_thread"),
-    ("flag", "draw_flag"),
-    ("text", "draw_text"),
-    ("write", "draw_text"),
-    ("shape", "draw_shape"),
-    ("rect", "fill_rect"),
     ("pixel", "place_pixels"),
     ("paint", "place_pixels"),
     ("canvas", "view_canvas"),
@@ -697,6 +797,7 @@ _TOOL_HINTS = (
     ("see", "view_canvas"),
     ("look", "view_canvas"),
     ("view", "view_canvas"),
+    ("vote", "vote_thread"),
     ("reply", "reply"),
     ("thread", "post_thread"),
     ("post", "post_thread"),
@@ -709,21 +810,12 @@ def _canonical_tool(name: str) -> str:
     if name in known:
         return name
     low = name.lower()
+    if (low.startswith("draw_") and "image" not in low) or low.startswith("fill_"):
+        return name
     for hint, real in _TOOL_HINTS:
         if hint in low:
             return real
     return name
-
-
-def _footprint(tool: str, args: dict[str, Any]) -> tuple[int, int]:
-    """(width, height) in pixels of a draw_* call, from its arguments."""
-    scale = _scale(args.get("scale", 1))
-    if tool == "draw_flag":
-        fw = int(args.get("width") or 24)
-        return fw, max(3, round(fw * 2 / 3))
-    if tool == "draw_text":
-        return max(1, len(str(args.get("text") or "?"))) * 4 * scale, 5 * scale
-    return 9 * scale, 9 * scale
 
 
 def _clamp(v: Any, size: int) -> int:
@@ -738,8 +830,6 @@ def _track_position(
     if name == "place_pixels" and args.get("pixels") and placed:
         last = args["pixels"][min(placed, len(args["pixels"])) - 1]
         agent.home_x, agent.home_y = int(last["x"]), int(last["y"])
-    elif name in ("fill_rect", "draw_flag", "draw_text", "draw_shape"):
-        agent.home_x, agent.home_y = int(args["x"]), int(args["y"])
 
 
 def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -747,9 +837,8 @@ def _public_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "place_pixels":
         px = args.get("pixels") or []
         return {"count": len(px), "x": px[0]["x"], "y": px[0]["y"]} if px else {"count": 0}
-    keep = ("x", "y", "w", "h", "width", "color", "color2", "scale", "country", "text", "shape")
-    out = {k: v for k, v in args.items() if k in keep}
-    if name in ("post_thread", "reply"):
+    out: dict[str, Any] = {k: v for k, v in args.items() if k in ("society_id", "name", "up")}
+    if name in ("post_thread", "reply", "vote_thread"):
         out["thread_id"] = args.get("thread_id")
         out["title"] = str(args.get("title", ""))[:80] or None
     return out
@@ -761,23 +850,22 @@ def _summarise(name: str, args: dict[str, Any], result: dict[str, Any]) -> str:
             px = args.get("pixels") or []
             first = f" near ({px[0]['x']}, {px[0]['y']})" if px else ""
             return f"placed {result.get('placed', 0)} px{first}"
-        case "fill_rect":
-            return f"filled {args['w']}x{args['h']} at ({args['x']}, {args['y']})"
-        case "draw_flag" | "draw_text" | "draw_shape":
-            what = args.get("country") or args.get("text") or args.get("shape")
-            tail = "done" if result.get("done") else f"{result.get('remaining')} px to go"
-            if args.get("moved"):
-                tail += ", shifted sideways because someone is already drawing there"
-            return (
-                f"{name.removeprefix('draw_')} {what!r} at ({args['x']}, {args['y']}): "
-                f"+{result.get('placed', 0)} px, {tail}"
-            )
         case "post_thread":
             return f"posted thread {result.get('thread_id')}"
         case "reply":
             return f"replied in thread {args.get('thread_id')}"
+        case "vote_thread":
+            return f"{'up' if args.get('up', True) else 'down'}voted thread {args.get('thread_id')}"
         case "view_canvas":
             return "looked at the canvas"
         case "read_thread":
             return f"read thread {args.get('thread_id')}"
+        case "peek_society":
+            return f"peeked at society {args.get('society_id')}"
+        case "join_society":
+            return f'joined society {result.get("society")} "{result.get("name")}"'
+        case "name_society":
+            return f'renamed my society to "{result.get("name")}"'
+        case "invite":
+            return f"invited {result.get('invited')} to society {result.get('society')}"
     return name
