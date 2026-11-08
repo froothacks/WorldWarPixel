@@ -40,6 +40,28 @@ def test_modal_headers_for_only_on_modal_hosts(monkeypatch: pytest.MonkeyPatch) 
     assert settings.modal_headers_for(None) == {}
 
 
+def test_modal_headers_for_workspace_uses_its_own_env_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = "https://chryztoph--ep-x-server.us-west.modal.direct/v1"
+    monkeypatch.setenv("MODAL_KEY", "default-k")
+    monkeypatch.setenv("MODAL_SECRET", "default-s")
+    monkeypatch.setenv("CHRYZTOPH_MODAL_KEY", "ck")
+    monkeypatch.setenv("CHRYZTOPH_MODAL_SECRET", "cs")
+    settings = Settings()
+    assert settings.modal_headers_for(url, "chryztoph") == {"Modal-Key": "ck", "Modal-Secret": "cs"}
+    assert settings.modal_headers_for(url) == {
+        "Modal-Key": "default-k",
+        "Modal-Secret": "default-s",
+    }
+    # A workspace without credentials gets no headers rather than another workspace's.
+    assert settings.modal_headers_for(url, "other") == {}
+    # Credentials never leave Modal hosts, whatever the workspace.
+    assert settings.modal_headers_for("https://evil.example.com/v1", "chryztoph") == {}
+    monkeypatch.delenv("CHRYZTOPH_MODAL_SECRET")
+    assert Settings().modal_headers_for(url, "chryztoph") == {}
+
+
 @pytest.mark.parametrize("var", ["AGENT_MAX_TOKENS", "NARRATOR_MAX_TOKENS"])
 def test_max_tokens_must_be_positive(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
     monkeypatch.setenv(var, "0")

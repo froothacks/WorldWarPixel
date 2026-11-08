@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from urllib.parse import urlparse
 
@@ -47,10 +48,19 @@ class Settings(BaseSettings):
         key, secret = self.modal_key.get_secret_value(), self.modal_secret.get_secret_value()
         return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
 
-    def modal_headers_for(self, url: str | None) -> dict[str, str]:
+    def modal_headers_for(self, url: str | None, workspace: str | None = None) -> dict[str, str]:
         """Modal headers only when the destination is a Modal host, so an overridden
-        preset base URL can never receive the Modal credentials."""
-        return self.modal_headers() if is_modal_url(url) else {}
+        preset base URL can never receive the Modal credentials. ``workspace`` selects
+        another workspace's proxy-auth pair from ``<WORKSPACE>_MODAL_KEY`` and
+        ``<WORKSPACE>_MODAL_SECRET`` (for endpoints in a different Modal workspace)."""
+        if not is_modal_url(url):
+            return {}
+        if workspace is None:
+            return self.modal_headers()
+        prefix = workspace.upper().replace("-", "_")
+        key = os.environ.get(f"{prefix}_MODAL_KEY", "")
+        secret = os.environ.get(f"{prefix}_MODAL_SECRET", "")
+        return {"Modal-Key": key, "Modal-Secret": secret} if key and secret else {}
 
     def default_headers(self) -> dict[str, str]:
         """Modal proxy-auth headers, only when the base URL actually points at a Modal host."""

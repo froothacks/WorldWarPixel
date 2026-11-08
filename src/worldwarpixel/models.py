@@ -31,6 +31,8 @@ class ModelSpec:
     base_url: str | None
     auth: Literal["modal", "bearer"]
     """modal: Modal-Key/Modal-Secret headers; bearer: OPENAI_API_KEY as the bearer token."""
+    auth_workspace: str | None = None
+    """Modal workspace whose proxy-auth pair to use; None uses MODAL_KEY/MODAL_SECRET."""
     token_param: TokenParam = "max_tokens"
     chat_template_kwargs: bool = True
     """Send extra_body chat_template_kwargs.enable_thinking=False (vLLM/Qwen only)."""
@@ -83,7 +85,5 @@ def find_model(settings: Settings, model_id: str) -> ModelSpec | None:
 def model_available(settings: Settings, spec: ModelSpec) -> bool:
     """Whether this server holds the credentials the model's auth style needs."""
     if spec.auth == "modal":
-        return bool(
-            settings.modal_key.get_secret_value() and settings.modal_secret.get_secret_value()
-        )
+        return bool(settings.modal_headers_for(spec.base_url, spec.auth_workspace))
     return bool(settings.openai_api_key.get_secret_value())
