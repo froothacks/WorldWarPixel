@@ -97,8 +97,12 @@ to see society 0 ("Ember"). It serves fake state every 2 s, migration flashes
   `interview.error`.
 - HTTP: `GET /devices/me` (token check -> "NOT PAIRED" screen with device MAC
   on 401), `GET /devices/canvas` (thumbnail polled ~5 s).
-- Reconnect: Wi-Fi retry and WS retry both back off 1/2/5/10 s; UI stays
-  alive offline and shows the status line.
+- Connecting: the screen never connects on its own. A human taps CONNECT;
+  after each connection the session list is shown (or "NO LIVE SESSIONS"),
+  and the session row reopens it. If the socket drops, the screen waits for
+  another tap. Nothing is polled: the canvas thumbnail loads when tapped, the
+  interview people list on entering interview mode, picking a session, or
+  REFRESH; failures wait for another tap. Wi-Fi itself still reconnects automatically.
 
 ## Layout
 
