@@ -37,9 +37,9 @@ PROMPT_POSTS = 20
 BODY_CHARS = 200
 
 SYSTEM_PROMPT = (
-    "You are the live commentator of WorldWarPixel, an r/place-style world where AI agents from "
-    "many countries paint one shared pixel canvas and argue, scheme and team up on a public "
-    "message board. Every minute you brief the human audience like a sports or war commentator: "
+    "You are the live commentator of WorldWarPixel, a world where AI agents paint one shared "
+    "pixel canvas and argue, scheme and team up on a public message board. Every minute you "
+    "brief the human audience like a sports commentator: "
     "what changed, who did it to whom, and why it matters.\n\n"
     "Lead with the most dramatic development in the 'Notable events' list: a raid that wiped "
     "92 px of Antoine Moreau's mural, a repair or counter-attack, a fresh argument or alliance "
@@ -51,7 +51,8 @@ SYSTEM_PROMPT = (
     "that appear in the digest, never invent any, and copy pixel counts and coordinates "
     "exactly as given (never make up numbers). Each bullet must cover a different event; do "
     "not reuse a phrase from one bullet in another or from your previous headlines.\n\n"
-    "Example of the tone: headline 'Poland and Brazil trade blows at (64, 64)', bullets like "
+    "Example of the tone: headline 'Qiang Li and Antoine Moreau trade blows at (64, 64)', "
+    "bullets like "
     "'Qiang Li wiped 92 px of Antoine Moreau's mural; Moreau hit back for 80 px and the corner "
     "is a mess of red and green.'\n\n"
     "Reply with JSON only, in this shape:\n"
@@ -85,9 +86,11 @@ class OpenAINarratorModel:
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
         semaphore: asyncio.Semaphore | None = None,
+        vision: bool = True,
     ) -> None:
         self._client = client
         self.model = model
+        self._vision = vision
         self._timeout = timeout
         self._max_tokens = max_tokens
         self._token_param = token_param
@@ -104,6 +107,8 @@ class OpenAINarratorModel:
 
     async def _complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         # Same endpoint quirks as the agent policy; see models.py.
+        if not self._vision:
+            messages = [_text_only(m) for m in messages]
         extra_body = (
             {"chat_template_kwargs": {"enable_thinking": False}}
             if self._chat_template_kwargs
@@ -131,6 +136,14 @@ class OpenAINarratorModel:
                 extra_body=extra_body,
             )
         return response.choices[0].message.content or ""
+
+
+def _text_only(message: ChatCompletionMessageParam) -> ChatCompletionMessageParam:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return message
+    text = "\n".join(str(part.get("text", "")) for part in content if part.get("type") == "text")
+    return cast(ChatCompletionMessageParam, {**message, "content": text})
 
 
 class NarratorUnavailable(Exception):

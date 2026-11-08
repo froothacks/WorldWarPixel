@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 from worldwarpixel.personas import nemotron
+from worldwarpixel.personas import roster as roster_mod
 from worldwarpixel.personas.allocation import allocate_seats
 from worldwarpixel.personas.pool import RespondentPool, default_pool
 from worldwarpixel.personas.proxy import survey_country
@@ -28,6 +29,7 @@ class AgentSpec:
     cooldown: float
     persona: str = ""
     persona_card: dict[str, Any] = field(default_factory=dict)
+    headline: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -40,6 +42,12 @@ class Observation:
     canvas_width: int
     canvas_height: int
     board: list[dict[str, Any]]
+    society: dict[str, Any] | None = None
+    """The agent's own society: id, name, members and the current murmur (if any)."""
+    societies: list[dict[str, Any]] | None = None
+    """Every society's id, name and member count, when the run has societies."""
+    memory: list[str] | None = None
+    """The agent's own last few turns (thought plus what it did), oldest first."""
 
 
 class Policy(Protocol):
@@ -56,10 +64,12 @@ def seed_agents(
     rng: random.Random,
     pool: RespondentPool | None = None,
     countries: Sequence[Country] | None = None,
+    by_country: bool = True,
 ) -> list[AgentSpec]:
     """Agents representative of the world: seats per country from UN WPP 2024 population
     (largest remainder), each seat filled by a weighted-sampled WVS7 respondent (or a synthetic
-    stand-in) whose answers become the agent's persona. Agents cluster per country on the canvas.
+    stand-in) whose answers become the agent's persona. With by_country, compatriots share a
+    colour and start clustered; otherwise every agent gets its own spot and colour.
     """
     pool = pool or default_pool()
     countries = countries or load_countries()
@@ -77,6 +87,12 @@ def seed_agents(
             source = next(iter(sorted(pool.countries)))
         cx, cy, color = rng.randrange(width), rng.randrange(height), 2 + i % visible
         for _ in range(seats[iso3]):
+            if not by_country:
+                cx, cy, color = (
+                    rng.randrange(width),
+                    rng.randrange(height),
+                    2 + rng.randrange(visible),
+                )
             respondent = nemotron.enrich(pool.sample(source, rng), iso3, rng)
             name = random_name(country.name, rng, used, respondent.sex, country.subregion)
             survey_name = by_iso3[source].name if source in by_iso3 else source
@@ -93,6 +109,38 @@ def seed_agents(
                     persona_card=persona_card(respondent, country.name, survey_name),
                 )
             )
+    rng.shuffle(agents)
+    for i, agent in enumerate(agents, start=1):
+        agent.id = i
+    return agents
+
+
+def seed_roster(
+    people: Sequence[roster_mod.Person],
+    event: str,
+    width: int,
+    height: int,
+    cooldown: float,
+    rng: random.Random,
+) -> list[AgentSpec]:
+    """One agent per real person, each playing for themselves: an agent's "country" is its own
+    name, so territory and alliances are per person and any groups form on the board."""
+    visible = len(PALETTE) - 2
+    agents = [
+        AgentSpec(
+            id=i,
+            name=person.name,
+            country=person.name,
+            color=2 + rng.randrange(visible),
+            home_x=rng.randrange(width),
+            home_y=rng.randrange(height),
+            cooldown=cooldown,
+            persona=roster_mod.persona_text(person, event),
+            persona_card=roster_mod.persona_card(person, event),
+            headline=person.headline,
+        )
+        for i, person in enumerate(people, start=1)
+    ]
     rng.shuffle(agents)
     for i, agent in enumerate(agents, start=1):
         agent.id = i

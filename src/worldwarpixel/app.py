@@ -12,9 +12,10 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
-from worldwarpixel.api import RunManager, random_policy
+from worldwarpixel.api import RunManager, random_policy, rosters_router
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import get_settings
+from worldwarpixel.devices import router as devices_router
 from worldwarpixel.llm import ChatService
 from worldwarpixel.models import ModelSpec, find_model, model_available, model_registry
 from worldwarpixel.sim.agents import Policy
@@ -22,6 +23,7 @@ from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.voice import Murmurer, WhisperTranscriber
 
 
 class Message(BaseModel):
@@ -70,7 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     timeout=settings.request_timeout,
                     # Modal presets authenticate with their own headers, scoped to Modal
                     # hosts so an overridden preset URL never receives the credentials.
-                    default_headers=settings.modal_headers_for(spec.base_url) or None,
+                    default_headers=settings.modal_headers_for(spec.base_url, spec.auth_workspace)
+                    or None,
                 )
             else:
                 client = AsyncOpenAI(
@@ -113,13 +116,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return sem
 
         def make_policy(config: RunConfig) -> Policy:
-            if config.policy == "llm":
+            if config.policy in ("llm", "llm-guided"):
                 spec = resolve_model(config)
                 return LLMPolicy(
                     client_for(spec),
                     spec.model,
                     timeout=settings.request_timeout,
-                    vision=settings.agent_vision,
+                    vision=settings.agent_vision and spec.vision,
+                    guided=config.policy == "llm-guided",
                     max_tokens=(
                         spec.max_tokens
                         if spec.max_tokens is not None
@@ -133,8 +137,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             return random_policy(config)
 
+        app.state.transcriber = WhisperTranscriber(settings.whisper_model)
+        app.state.murmurer = Murmurer(
+            client if settings.murmur_condense else None,
+            settings.openai_model,
+            settings.request_timeout,
+        )
+
         def make_narrator(config: RunConfig) -> NarratorModel | None:
-            if config.policy != "llm":
+            if config.policy == "random":
                 return None
             spec = resolve_model(config)
             return OpenAINarratorModel(
@@ -150,6 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 chat_template_kwargs=spec.chat_template_kwargs,
                 reasoning_effort=spec.reasoning_effort,
                 semaphore=semaphore_for(spec),
+                vision=spec.vision,
             )
 
         app.state.runs = RunManager(
@@ -168,6 +180,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="WorldWarPixel", lifespan=lifespan)
 app.include_router(runs_router)
+app.include_router(devices_router)
+app.include_router(rosters_router)
 
 
 def get_chat_service(request: Request) -> ChatService:
@@ -227,7 +241,7 @@ async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchCh
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-API_PREFIXES = {"runs", "chat", "health", "models", "docs", "redoc", "openapi.json"}
+API_PREFIXES = {"runs", "devices", "chat", "health", "models", "docs", "redoc", "openapi.json"}
 
 
 async def frontend(path: str) -> FileResponse:

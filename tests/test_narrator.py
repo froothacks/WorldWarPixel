@@ -41,6 +41,18 @@ def test_narrator_max_tokens_is_passed_to_the_model() -> None:
     assert completions.requests[0]["max_tokens"] == 3000
 
 
+def test_text_only_narrator_model_drops_the_canvas_image() -> None:
+    completions = _FakeCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    model = OpenAINarratorModel(client, "m", vision=False)  # type: ignore[arg-type]
+    content = [
+        {"type": "text", "text": "digest"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+    ]
+    asyncio.run(model.complete([{"role": "user", "content": content}]))  # type: ignore[list-item,misc]
+    assert completions.requests[0]["messages"] == [{"role": "user", "content": "digest"}]
+
+
 def test_narrator_openai_reasoning_model_params() -> None:
     completions = _FakeCompletions()
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))

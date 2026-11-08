@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DEFAULT_CONFIG, type ModelInfo, type RunConfig, type RunSummary } from "./api";
+import { api, DEFAULT_CONFIG, type ModelInfo, type RosterSummary, type RunConfig, type RunSummary } from "./api";
 import PixelField from "./PixelField";
 
 interface Props {
@@ -21,7 +21,12 @@ const RANDOM_TURNS_PER_SEC = 100;
 const PRESETS = [50, 100, 250, 500, 1000, 2000, 5000];
 
 const BRAINS: { value: RunConfig["policy"]; title: string; hint: string }[] = [
-  { value: "llm", title: "Language model", hint: "Each turn is one call to the configured model." },
+  { value: "llm", title: "Free-for-all", hint: "Language model, no steering. Each turn is one call to the configured model." },
+  {
+    value: "llm-guided",
+    title: "Guided",
+    hint: "Language model with event framing, examples and free-spot hints. One call per turn.",
+  },
   { value: "random", title: "Random", hint: "No model calls. Agents paint random blobs. Good for testing." },
 ];
 
@@ -39,6 +44,7 @@ export default function StartScreen({ onStarted }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [existing, setExisting] = useState<RunSummary[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [rosters, setRosters] = useState<RosterSummary[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
@@ -49,13 +55,14 @@ export default function StartScreen({ onStarted }: Props) {
         // Fall back to the first available preset when the current choice is unusable
         // (e.g. a Modal-only server where the gpt-6-luna default has no OpenAI key).
         setCfg((c) => {
-          if (c.policy !== "llm" || ms.length === 0) return c;
+          if (c.policy === "random" || ms.length === 0) return c;
           if (ms.some((m) => m.id === c.model && m.available)) return c;
           const first = ms.find((m) => m.available);
           return first ? { ...c, model: first.id } : c;
         });
       })
       .catch(() => setModels([]));
+    api.rosters().then(setRosters).catch(() => setRosters([]));
   }, []);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
@@ -74,16 +81,18 @@ export default function StartScreen({ onStarted }: Props) {
 
   // With premoving an agent's next turn starts when ~1 s of its queued pixels remain, so the
   // real period is the longer of the cooldown and the time its batch takes to drain.
+  const roster = rosters.find((r) => r.id === cfg.roster);
+  const agents = roster ? roster.size : cfg.agents;
   const period = Math.max(cfg.cooldown, cfg.pixels_per_turn * cfg.pixel_interval - 1);
-  const turnsPerMin = Math.round((cfg.agents * 60) / period);
+  const turnsPerMin = Math.round((agents * 60) / period);
   const pxPerMin = turnsPerMin * cfg.pixels_per_turn;
   const brain = BRAINS.find((b) => b.value === cfg.policy) ?? BRAINS[0];
-  const turnsPerSec = cfg.agents / period;
+  const turnsPerSec = agents / period;
   const warning =
     cfg.policy === "random" && turnsPerSec > RANDOM_TURNS_PER_SEC
       ? `${Math.round(turnsPerSec)} random turns a second will saturate one CPU core; raise the cooldown or use fewer agents.`
       : cfg.policy !== "random" && turnsPerSec > cfg.max_concurrency
-        ? `Turns are capped by "Turns in flight" (${cfg.max_concurrency}); with ${cfg.agents.toLocaleString()} agents each one will wait longer than its ${cfg.cooldown}s cooldown between model calls.`
+        ? `Turns are capped by "Turns in flight" (${cfg.max_concurrency}); with ${agents.toLocaleString()} agents each one will wait longer than its ${cfg.cooldown}s cooldown between model calls.`
         : null;
   const runs = [...existing].sort((a, b) => b.created_at - a.created_at);
 
@@ -100,7 +109,7 @@ export default function StartScreen({ onStarted }: Props) {
           <dl className="hero-stats">
             <div>
               <dt>Agents</dt>
-              <dd>{cfg.agents.toLocaleString()}</dd>
+              <dd>{agents.toLocaleString()}</dd>
             </div>
             <div>
               <dt>Canvas</dt>
@@ -132,7 +141,7 @@ export default function StartScreen({ onStarted }: Props) {
             <span className="hint">{brain.hint}</span>
           </div>
 
-          {cfg.policy === "llm" && models.length > 0 && (
+          {cfg.policy !== "random" && models.length > 0 && (
             <div className="field">
               <span className="field-label">Model</span>
               <select value={cfg.model} onChange={(e) => set("model", e.target.value)}>
@@ -150,6 +159,28 @@ export default function StartScreen({ onStarted }: Props) {
             </div>
           )}
 
+          {rosters.length > 0 && (
+            <div className="field">
+              <span className="field-label">Players</span>
+              <div className="segmented">
+                <button type="button" className={cfg.roster === "world" ? "on" : ""} onClick={() => set("roster", "world")}>
+                  The world
+                </button>
+                {rosters.map((r) => (
+                  <button key={r.id} type="button" className={cfg.roster === r.id ? "on" : ""} onClick={() => set("roster", r.id)}>
+                    {r.title} · {r.size}
+                  </button>
+                ))}
+              </div>
+              <span className="hint">
+                {roster
+                  ? `One agent per attendee of ${roster.event}, each playing as themselves with a persona from their public profile. No teams: any alliances form on the board.`
+                  : "Agents are seated per country by world population."}
+              </span>
+            </div>
+          )}
+
+          {!roster && (
           <label className="field">
             <span className="field-label agent-label">
               Agents
@@ -182,6 +213,7 @@ export default function StartScreen({ onStarted }: Props) {
             </div>
             <span className="hint">Up to {MAX_AGENTS.toLocaleString()}. Agents are seated per country by population, so more agents means more countries show up.</span>
           </label>
+          )}
 
           <div className="field">
             <span className="field-label">Canvas</span>
@@ -206,6 +238,22 @@ export default function StartScreen({ onStarted }: Props) {
                 );
               })}
             </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Societies</span>
+            <div className="segmented">
+              {[0, 2, 3, 4].map((n) => (
+                <button key={n} type="button" className={cfg.societies === n ? "on" : ""} onClick={() => set("societies", n)}>
+                  {n === 0 ? "Off" : n}
+                </button>
+              ))}
+            </div>
+            <span className="hint">
+              {cfg.societies
+                ? "Agents are split into groups, each with its own board. They can peek at other groups and move. Each group has a screen that listens to people in the room."
+                : "One shared board for everyone."}
+            </span>
           </div>
 
           <details className="advanced">

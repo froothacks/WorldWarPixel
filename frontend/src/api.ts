@@ -9,10 +9,13 @@ export interface RunConfig {
   posts_per_turn: number;
   max_concurrency: number;
   seed: number | null;
-  policy: "llm" | "random";
+  policy: "llm" | "llm-guided" | "random";
   model: string;
+  /** "world" seats `agents` people by population; a roster id plays one agent per real attendee. */
+  roster: "world" | "hackathon";
   narrator_interval: number;
   narrator_canvas_image: boolean;
+  societies: number;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {
@@ -28,9 +31,22 @@ export const DEFAULT_CONFIG: RunConfig = {
   seed: null,
   policy: "llm",
   model: "gpt-6-luna",
+  roster: "world",
   narrator_interval: 60,
   narrator_canvas_image: true,
+  societies: 3,
 };
+
+export interface Society {
+  id: number;
+  name: string;
+  color: string;
+  members: number;
+  joined: number;
+  left: number;
+  murmur: string | null;
+  transcript: string | null;
+}
 
 export interface ModelInfo {
   id: string;
@@ -83,6 +99,7 @@ export interface RunSummary {
   clients: number;
   llm: LLMStats | null;
   narrator: NarratorStats;
+  societies?: Society[];
 }
 
 export type AgentStatus = "idle" | "thinking" | "acting";
@@ -100,8 +117,13 @@ export interface Agent {
   home_x: number;
   home_y: number;
   cooldown: number;
+  /** One-line profile for roster runs; empty for world runs. */
+  headline?: string;
+  /** Roster runs: school or company, so the people list can filter by it. */
+  affiliation?: string;
   status: AgentStatus;
   last_thought: Thought | null;
+  society?: number | null;
 }
 
 export interface AgentDetail extends Agent {
@@ -120,6 +142,8 @@ export interface ThreadDigest {
   last_activity: number;
   participants: number;
   replies: number;
+  votes: number;
+  society: number | null;
   latest: { author: string; author_id: number; body: string } | null;
 }
 
@@ -223,7 +247,15 @@ export const DISPATCH_NAME = "World News";
 export const GOD_ID = 65535;
 export const GOD_NAME = "The Hand of God";
 
+export interface RosterSummary {
+  id: Exclude<RunConfig["roster"], "world">;
+  title: string;
+  event: string;
+  size: number;
+}
+
 export const api = {
+  rosters: () => request<RosterSummary[]>("/rosters"),
   listRuns: () => request<RunSummary[]>("/runs"),
   listModels: () => request<ModelInfo[]>("/models"),
   createRun: (config: RunConfig) =>
@@ -244,6 +276,11 @@ export const api = {
   world: (id: string) => request<WorldGraph>(`/runs/${id}/world`),
   thread: (id: string, threadId: number) =>
     request<Post[]>(`/runs/${id}/threads/${threadId}`),
+  vote: (id: string, threadId: number, voter: string, vote: number) =>
+    request<{ thread_id: number; votes: number }>(
+      `/runs/${id}/threads/${threadId}/vote`,
+      { method: "POST", body: JSON.stringify({ voter, vote }) },
+    ),
   narrator: (id: string) => request<NarratorState>(`/runs/${id}/narrator`),
   ask: (id: string, question: string) =>
     request<NarratorUpdate>(`/runs/${id}/narrator/ask`, {

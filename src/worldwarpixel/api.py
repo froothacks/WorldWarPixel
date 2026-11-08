@@ -19,6 +19,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
+from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
@@ -130,6 +131,13 @@ def get_manager(request: Request) -> RunManager:
 ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+
+
+@rosters_router.get("")
+async def list_rosters() -> list[dict[str, Any]]:
+    """Bundled attendee rosters a run can use instead of the population-seeded world."""
+    return roster_summaries()
 
 
 @router.post("", status_code=201)
@@ -177,6 +185,11 @@ def require_god(x_god_token: Annotated[str | None, Header()] = None) -> None:
 
 
 GodDep = Annotated[None, Depends(require_god)]
+
+
+class ThreadVote(BaseModel):
+    voter: str = Field(min_length=1, max_length=64, description="Stable per-browser viewer id")
+    vote: int = Field(ge=-1, le=1, description="+1 up or -1 down (each call adds), 0 withdraws")
 
 
 class GodPixels(BaseModel):
@@ -264,7 +277,7 @@ async def god_model(
 ) -> dict[str, Any]:
     """Switch a running LLM run to another model preset; agents use it from their next turn."""
     run = await manager.fetch(run_id)
-    if run.config.policy != "llm":
+    if run.config.policy not in ("llm", "llm-guided"):
         raise HTTPException(409, "model switching only applies to LLM runs")
     new_config = run.config.model_copy(update={"model": body.model})
     policy = manager.make_policy(new_config)  # raises 400/422 for unknown or unavailable presets
@@ -308,6 +321,17 @@ async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[d
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
+
+
+@router.post("/{run_id}/threads/{thread_id}/vote")
+async def vote_thread(
+    run_id: str, thread_id: int, body: ThreadVote, manager: ManagerDep
+) -> dict[str, Any]:
+    try:
+        votes = manager.get(run_id).vote_thread(thread_id, body.voter, body.vote)
+    except BoardError as e:
+        raise HTTPException(404, str(e)) from e
+    return {"thread_id": thread_id, "votes": votes}
 
 
 @router.get("/{run_id}/world")

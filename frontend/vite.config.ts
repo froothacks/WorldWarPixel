@@ -8,6 +8,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/runs": { target: backend, ws: true },
+      "/devices": { target: backend, ws: true },
+      "/rosters": backend,
       "/health": backend,
       "/models": backend,
     },

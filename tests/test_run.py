@@ -210,3 +210,23 @@ def test_feed_orders_announcements_dispatch_mentions_then_hot_threads() -> None:
     assert entries[2]["thread_id"] == mention.id
     assert entries[3]["thread_id"] == hot.id
     assert run.agent_name(65534) == "World News"
+
+
+def test_world_news_is_off_by_default_only_in_free_for_all() -> None:
+    def interval(**update: object) -> float:
+        cfg = CONFIG.model_copy(update=update)
+        return Run("w", cfg, EventLog(), RandomWalkPolicy(0)).dispatcher.interval
+
+    assert interval(policy="llm") == 0
+    assert interval(policy="llm-guided") == 30 and interval(policy="random") == 30
+    assert interval(policy="llm", dispatch_interval=15.0) == 15
+
+
+def test_hackathon_roster_run_has_one_agent_per_attendee() -> None:
+    config = RunConfig(width=64, height=64, agents=5, roster="hackathon", seed=1)
+    run = Run("h", config, EventLog(), RandomWalkPolicy(seed=1))
+    assert len(run.agents) == run.config.agents == 86
+    row = run.agent_list()[0]
+    assert row["headline"] and row["country"] and row["affiliation"]
+    stokes = next(r for r in run.agent_list() if r["name"] == "Matt Stokes")
+    assert stokes["affiliation"] == "Waterloo"
