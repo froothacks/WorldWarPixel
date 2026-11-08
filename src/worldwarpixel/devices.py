@@ -3,9 +3,10 @@
 Any bearer token in ``DEVICE_TOKENS`` admits a device; the society it maps to is only the default.
 A screen picks which society it shows and speaks to with ``?society=`` (HTTP and WebSocket) or a
 ``society.select`` WebSocket message, and which run with ``?run=`` or ``run.select`` (by default it
-follows the newest live run with societies; ``GET /devices/runs`` lists the choices). It receives
-that society's live state and can send a short voice clip; the clip is transcribed and condensed
-into the society's unattributed murmur. In interview mode the screen instead picks one agent
+follows the newest live run, preferring ones with societies; ``GET /devices/runs`` lists the
+choices, and runs without societies are interview-only). It receives that society's live state
+and can send a short voice clip; the clip is transcribed and condensed into the society's
+unattributed murmur. In interview mode the screen instead picks one agent
 (``agents.list`` / ``interview.select``, or a clip with ``"purpose": "pick"`` naming them) and
 asks it questions (``"purpose": "interview"``); the agent's answer comes back as
 ``interview.reply`` followed by binary 16 kHz PCM frames and ``interview.audio_end``. With no
@@ -141,6 +142,13 @@ def screen_name(society: dict[str, Any]) -> str:
     return " ".join(interview.ascii_text(society["name"]).split()) or f"Society {society['id'] + 1}"
 
 
+def society_briefs(societies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {"id": s["id"], "name": screen_name(s), "color": s["color"], "members": s["members"]}
+        for s in societies
+    ]
+
+
 def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, Any]:
     societies = run.society_summary()
     mine = societies[device.society]
@@ -151,15 +159,7 @@ def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, A
             **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
             "name": screen_name(mine),
         },
-        "societies": [
-            {
-                "id": s["id"],
-                "name": screen_name(s),
-                "color": s["color"],
-                "members": s["members"],
-            }
-            for s in societies
-        ],
+        "societies": society_briefs(societies),
         "threads": [
             {"title": d["title"], "author": d["author"], "replies": d["replies"]}
             for d in run.society_threads(device.society, limit=3)
@@ -390,8 +390,15 @@ async def device_socket(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
             return
         if run.societies is None or me.society >= run.societies.count:
+            briefs = society_briefs(run.society_summary()) if run.societies else []
             await websocket.send_json(
-                {"type": "state", "run": run.id, "society": None, "societies": [], "voice": voice}
+                {
+                    "type": "state",
+                    "run": run.id,
+                    "society": None,
+                    "societies": briefs,
+                    "voice": voice,
+                }
             )
             return
         migs = list(run.societies.migrations)

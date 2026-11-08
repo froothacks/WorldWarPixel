@@ -288,6 +288,10 @@ def test_device_picks_its_run(client: TestClient) -> None:
         while (msg := ws.receive_json())["type"] != "run.selected":
             pass
         assert msg["run"] == new and not msg["pinned"]
+    with client.websocket_connect(f"/devices/ws?run={old}&society=2", headers=hdr) as ws:
+        ws.receive_json()
+        state = ws.receive_json()
+        assert state["society"] is None and len(state["societies"]) == 2
 
 
 def test_agent_votes_are_throttled() -> None:
