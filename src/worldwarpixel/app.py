@@ -1,14 +1,15 @@
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
+from openai import NOT_GIVEN, AsyncOpenAI, omit
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,7 @@ from worldwarpixel.api import RunManager, random_policy, rosters_router, videos_
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.devices import router as devices_router
+from worldwarpixel.interview import InterviewError
 from worldwarpixel.llm import ChatService
 from worldwarpixel.models import (
     ModelSpec,
@@ -26,10 +28,11 @@ from worldwarpixel.models import (
 )
 from worldwarpixel.routing import EndpointPool, endpoint_client
 from worldwarpixel.sim.agents import Policy
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import open_event_log
 from worldwarpixel.sim.llm_policy import LLMPolicy
 from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
-from worldwarpixel.sim.run import RunConfig
+from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.societies import naming_messages, parse_names
 from worldwarpixel.sim.speech import OpenAISpeech, SpeechSynth
 from worldwarpixel.videos import VideoStore
 from worldwarpixel.voice import Murmurer, WhisperTranscriber
@@ -154,6 +157,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             return random_policy(config)
 
+        async def complete(
+            spec: ModelSpec, key: str, messages: list[dict[str, str]], temperature: float
+        ) -> str:
+            limit = spec.max_tokens if spec.max_tokens is not None else settings.agent_max_tokens
+            completion = spec.token_param == "max_completion_tokens"
+            reasoning: Any = (
+                spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
+            )
+            response = await pool_for(spec).create(
+                key,
+                messages=cast(list[ChatCompletionMessageParam], messages),
+                temperature=temperature,
+                timeout=settings.request_timeout,
+                max_tokens=omit if completion else limit,
+                max_completion_tokens=limit if completion else omit,
+                reasoning_effort=reasoning,
+                extra_body=(
+                    {"chat_template_kwargs": {"enable_thinking": False}}
+                    if spec.chat_template_kwargs
+                    else None
+                ),
+            )
+            return response.choices[0].message.content or ""
+
+        async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:
+            if run.config.policy not in ("llm", "llm-guided"):
+                raise InterviewError("agents in this world have no language model to talk with")
+            spec = find_model(run.config.model)
+            if spec is None or not model_available(settings, spec):
+                raise InterviewError(f"model {run.config.model!r} is unavailable")
+            return await complete(spec, f"interview-{run.id}", messages, 0.9)
+
+        async def name_societies(config: RunConfig) -> list[str] | None:
+            """Starting society names from the run's model; None falls back to random names."""
+            spec = find_model(config.model)
+            if config.policy == "random" or spec is None or not model_available(settings, spec):
+                return None
+            messages = naming_messages(config.societies, config.society_theme)
+            try:
+                raw = await asyncio.wait_for(complete(spec, "societies", messages, 1.0), 30)
+            except Exception as e:
+                logging.getLogger(__name__).warning("society naming failed: %r", e)
+                return None
+            return parse_names(raw, config.societies) or None
+
+        app.state.interview_chat = interview_chat
         app.state.transcriber = WhisperTranscriber(settings.whisper_model)
         app.state.murmurer = Murmurer(
             client if settings.murmur_condense else None,
@@ -182,11 +231,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         app.state.runs = RunManager(
-            EventLog(settings.event_log_path),
+            open_event_log(settings),
             settings.max_active_runs,
             make_policy,
             make_narrator=make_narrator,
             speech=speech,
+            name_societies=name_societies,
             videos=VideoStore(
                 settings.timelapse_dir,
                 s3_bucket=settings.timelapse_s3_bucket,

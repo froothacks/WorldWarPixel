@@ -1,21 +1,19 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    ts REAL NOT NULL,
-    kind TEXT NOT NULL,
-    agent_id INTEGER,
-    payload TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id);
-"""
+from worldwarpixel.sim.migrations import migrate_sqlite
+
+if TYPE_CHECKING:
+    from worldwarpixel.config import Settings
+
+REJECTED = "Tool call rejected"
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +24,70 @@ class Event:
     kind: str
     agent_id: int | None
     payload: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class RunDelta:
+    pixels: int = 0
+    posts: int = 0
+    turns: int = 0
+    errors: int = 0
+    updates: int = 0
+    answers: int = 0
+    deleted: bool = False
+    config: str | None = None
+
+    @property
+    def has_changes(self) -> bool:
+        return (
+            any((self.pixels, self.posts, self.turns, self.errors, self.updates, self.answers))
+            or self.deleted
+            or self.config is not None
+        )
+
+
+def run_deltas(kind: str, payload: Mapping[str, object]) -> RunDelta:
+    """Return the per-run summary changes represented by one event."""
+    if kind == "pixel":
+        return RunDelta(pixels=1)
+    if kind == "post":
+        return RunDelta(posts=1)
+    if kind == "agent.thought":
+        thought = str(payload.get("thought", ""))
+        return RunDelta(turns=1, errors=int(thought.startswith(REJECTED)))
+    if kind == "narrator.update":
+        if payload.get("kind") == "answer":
+            return RunDelta(answers=1)
+        return RunDelta(updates=1)
+    if kind == "run.deleted":
+        return RunDelta(deleted=True)
+    if kind == "run.created" and "config" in payload:
+        return RunDelta(config=json.dumps(payload["config"], separators=(",", ":")))
+    return RunDelta()
+
+
+class EventStore(Protocol):
+    """The append-only event log interface used by runs, replay and rendering."""
+
+    def append(
+        self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
+    ) -> int: ...
+
+    def batch(self) -> AbstractContextManager[None]: ...
+
+    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]: ...
+
+    def count(self, run_id: str) -> int: ...
+
+    def run_ids(self) -> list[str]: ...
+
+    def run_totals(
+        self,
+    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]: ...
+
+    def reader(self) -> EventStore: ...
+
+    def close(self) -> None: ...
 
 
 class EventLog:
@@ -39,17 +101,51 @@ class EventLog:
         if self.path != ":memory:":
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.executescript(SCHEMA)
+        migrate_sqlite(self._conn)
+        self._known_runs = {str(row[0]) for row in self._conn.execute("SELECT id FROM runs")}
 
     def append(
         self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
     ) -> int:
+        delta = run_deltas(kind, payload)
+        serialized = json.dumps(payload, separators=(",", ":"))
+        if run_id not in self._known_runs or delta.has_changes:
+            self._conn.execute(
+                """
+                INSERT INTO runs (
+                    id, created_at, config, pixels, posts, turns, errors, updates, answers, deleted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    created_at = MIN(runs.created_at, excluded.created_at),
+                    config = COALESCE(runs.config, excluded.config),
+                    pixels = runs.pixels + excluded.pixels,
+                    posts = runs.posts + excluded.posts,
+                    turns = runs.turns + excluded.turns,
+                    errors = runs.errors + excluded.errors,
+                    updates = runs.updates + excluded.updates,
+                    answers = runs.answers + excluded.answers,
+                    deleted = MAX(runs.deleted, excluded.deleted)
+                """,
+                (
+                    run_id,
+                    ts,
+                    delta.config,
+                    delta.pixels,
+                    delta.posts,
+                    delta.turns,
+                    delta.errors,
+                    delta.updates,
+                    delta.answers,
+                    int(delta.deleted),
+                ),
+            )
         cur = self._conn.execute(
             "INSERT INTO events (run_id, ts, kind, agent_id, payload) VALUES (?, ?, ?, ?, ?)",
-            (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":"))),
+            (run_id, ts, kind, agent_id, serialized),
         )
         if not self._batching:
             self._conn.commit()
+        self._known_runs.add(run_id)
         return int(cur.lastrowid or 0)
 
     @contextmanager
@@ -77,32 +173,44 @@ class EventLog:
         return int(row[0])
 
     def run_ids(self) -> list[str]:
-        rows = self._conn.execute("SELECT DISTINCT run_id FROM events ORDER BY run_id").fetchall()
+        rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
         return [str(r[0]) for r in rows]
 
-    def run_totals(
-        self, rejected_prefix: str
-    ) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
-        """Per run: id, first ts, counts of pixels/posts/turns/rejected turns/narrator updates/
-        narrator answers, deleted?, config JSON (if created). Rejected turns are thoughts
-        starting with ``rejected_prefix``."""
-        narrated = "kind = 'narrator.update' AND json_extract(payload, '$.kind')"
+    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+        """Return maintained per-run counters, ordered by run id."""
         rows = self._conn.execute(
-            "SELECT run_id, MIN(ts), SUM(kind = 'pixel'), SUM(kind = 'post'),"
-            " SUM(kind = 'agent.thought'),"
-            " SUM(kind = 'agent.thought' AND substr(json_extract(payload, '$.thought'), 1, ?) = ?),"
-            f" SUM({narrated} IS NOT 'answer'), SUM({narrated} = 'answer'),"
-            " MAX(kind = 'run.deleted'),"
-            " MAX(CASE WHEN kind = 'run.created' THEN json_extract(payload, '$.config') END)"
-            " FROM events GROUP BY run_id ORDER BY run_id",
-            (len(rejected_prefix), rejected_prefix),
+            "SELECT id, created_at, pixels, posts, turns, errors, updates, answers, deleted, config"
+            " FROM runs ORDER BY id"
         ).fetchall()
-        return [(*r[:8], bool(r[8]), r[9]) for r in rows]
+        return [
+            (
+                str(row[0]),
+                float(row[1]),
+                int(row[2]),
+                int(row[3]),
+                int(row[4]),
+                int(row[5]),
+                int(row[6]),
+                int(row[7]),
+                bool(row[8]),
+                None if row[9] is None else str(row[9]),
+            )
+            for row in rows
+        ]
 
-    def reader(self) -> "EventLog":
+    def reader(self) -> EventLog:
         """A log on the same database for use from another thread; ``close`` it when done.
         In-memory logs have no second connection, so the shared one is returned."""
         return self if self.path == ":memory:" else EventLog(self.path)
 
     def close(self) -> None:
         self._conn.close()
+
+
+def open_event_log(settings: Settings) -> EventStore:
+    """Open the configured event store: Postgres when DATABASE_URL is set, else SQLite."""
+    if settings.database_url:
+        from worldwarpixel.sim.events_pg import PostgresEventLog
+
+        return PostgresEventLog(settings.database_url)
+    return EventLog(settings.event_log_path)

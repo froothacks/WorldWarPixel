@@ -14,10 +14,10 @@ from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
-from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.societies import Societies, random_names
 from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
@@ -96,6 +96,16 @@ class RunConfig(BaseModel):
         le=6,
         description="Split agents into this many societies, each with its own board (0 = off)",
     )
+    society_theme: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Optional free-text nudge for what the generated society names are about",
+    )
+    society_names: list[str] | None = Field(
+        default=None,
+        max_length=6,
+        description="Starting society names; random (or model-generated) when omitted",
+    )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
@@ -125,7 +135,7 @@ class Run:
         self,
         run_id: str,
         config: RunConfig,
-        log: EventLog,
+        log: EventStore,
         policy: Policy,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -165,7 +175,13 @@ class Run:
         self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
         if config.societies:
-            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            names = [n for n in config.society_names or [] if n.strip()][: config.societies]
+            rng = random.Random(f"societies-{config.seed}") if config.seed is not None else None
+            names += random_names(config.societies - len(names), rng or random.Random(), names)
+            self.config = config = config.model_copy(update={"society_names": names})
+            self.societies = Societies(
+                config.societies, switch_cooldown=3 * config.cooldown, names=names
+            )
             self.societies.assign([a.id for a in self.agents])
         self.dispatcher = Dispatcher(
             self.board,
@@ -559,10 +575,7 @@ class Run:
             board=self._feed(agent, self._clock(), society),
         )
         now = self._clock()
-        obs.memory = [
-            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
-            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
-        ]
+        obs.memory = self.recall(agent.id)
         if self.societies is not None and society is not None:
             obs.society = {
                 **self.societies.get(society).to_dict(),
@@ -579,17 +592,28 @@ class Run:
             try:
                 thought = await self.policy.act(agent, tools, obs)
             except ToolError as e:
-                thought = f"Tool call rejected: {e}"
+                thought = f"{REJECTED}: {e}"
                 self.stats["errors"] += 1
         if budget.posts < initial_posts:
             self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
-        entry = {"ts": self._clock(), "thought": thought}
-        self.thoughts[agent.id].append(entry)
-        self._record("agent.thought", agent.id, entry)
-        self.hub.publish("agent.thought", agent_id=agent.id, **entry)
+        self.note_thought(agent.id, thought)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
+
+    def recall(self, agent_id: int, turns: int = MEMORY_TURNS) -> list[str]:
+        """An agent's own recent thoughts, as shown back to it."""
+        now = self._clock()
+        return [
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            for t in list(self.thoughts[agent_id])[-turns:]
+        ]
+
+    def note_thought(self, agent_id: int, thought: str) -> None:
+        entry = {"ts": self._clock(), "thought": thought}
+        self.thoughts[agent_id].append(entry)
+        self._record("agent.thought", agent_id, entry)
+        self.hub.publish("agent.thought", agent_id=agent_id, **entry)
 
     # -- societies -------------------------------------------------------------------------
 

@@ -5,8 +5,11 @@ A screen picks which society it shows and speaks to with ``?society=`` (HTTP and
 ``society.select`` WebSocket message, and which run with ``?run=`` or ``run.select`` (by default it
 follows the newest live run with societies; ``GET /devices/runs`` lists the choices). It receives
 that society's live state and can send a short voice clip; the clip is transcribed and condensed
-into the society's unattributed murmur. With no tokens configured the endpoints are open (local
-development only).
+into the society's unattributed murmur. In interview mode the screen instead picks one agent
+(``agents.list`` / ``interview.select``, or a clip with ``"purpose": "pick"`` naming them) and
+asks it questions (``"purpose": "interview"``); the agent's answer comes back as
+``interview.reply`` followed by binary 16 kHz PCM frames and ``interview.audio_end``. With no
+tokens configured the endpoints are open (local development only).
 """
 
 import array
@@ -27,6 +30,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
+from worldwarpixel import interview
 from worldwarpixel.api import RunManager
 from worldwarpixel.config import get_settings
 from worldwarpixel.sim.canvas import PALETTE
@@ -43,6 +47,7 @@ from worldwarpixel.voice import (
 log = logging.getLogger(__name__)
 
 STATE_INTERVAL = 2.0
+AUDIO_CHUNK = 4096
 MAX_THUMB = 320
 
 
@@ -112,7 +117,7 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
             "started_at": r.started_at,
             "agents": len(r.agents),
             "model": r.config.model,
-            "societies": [s["name"] for s in r.society_summary()],
+            "societies": [screen_name(s) for s in r.society_summary()],
         }
         for r in live
     ]
@@ -127,14 +132,30 @@ def _run_for(request: Request, device: Device) -> Run:
     return run
 
 
+def screen_name(society: dict[str, Any]) -> str:
+    """The society's name in the screens' ASCII font (a placeholder if nothing survives)."""
+    return " ".join(interview.ascii_text(society["name"]).split()) or f"Society {society['id'] + 1}"
+
+
 def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, Any]:
     societies = run.society_summary()
     mine = societies[device.society]
     return {
         "type": "state",
         "run": run.id,
-        "society": {k: mine[k] for k in ("id", "name", "color", "members", "joined", "left")},
-        "societies": [{k: s[k] for k in ("id", "name", "color", "members")} for s in societies],
+        "society": {
+            **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
+            "name": screen_name(mine),
+        },
+        "societies": [
+            {
+                "id": s["id"],
+                "name": screen_name(s),
+                "color": s["color"],
+                "members": s["members"],
+            }
+            for s in societies
+        ],
         "threads": [
             {"title": d["title"], "author": d["author"], "replies": d["replies"]}
             for d in run.society_threads(device.society, limit=3)
@@ -304,6 +325,55 @@ async def device_socket(websocket: WebSocket) -> None:
     busy: asyncio.Task[None] | None = None
     clip_run: Run | None = None
     clip_society = me.society
+    clip_purpose = "murmur"
+    clip_agent: Any = None
+    histories: dict[tuple[str, int], list[tuple[str, str]]] = {}
+
+    async def choose(run: Run, agent_id: Any, heard: str | None = None) -> None:
+        agent = run.by_id.get(agent_id) if isinstance(agent_id, int) else None
+        if agent is None:
+            await websocket.send_json(
+                {"type": "interview.error", "error": f"no agent {agent_id!r}", "heard": heard}
+            )
+            return
+        await websocket.send_json(
+            {
+                "type": "interview.agent",
+                "run": run.id,
+                "agent": interview.agent_brief(run, agent),
+                "heard": interview.ascii_text(heard) if heard else heard,
+            }
+        )
+
+    async def converse(run: Run, agent_id: Any, question: str) -> None:
+        agent = run.by_id.get(agent_id) if isinstance(agent_id, int) else None
+        if agent is None:
+            raise interview.InterviewError("pick someone to talk to first")
+        await websocket.send_json(
+            {"type": "interview.heard", "agent": agent.id, "text": interview.ascii_text(question)}
+        )
+        history = histories.setdefault((run.id, agent.id), [])
+        reply = await interview.answer(app.state.interview_chat, run, agent, history, question)
+        try:
+            pcm = await interview.voice(run, agent, reply)
+        except Exception as e:
+            log.warning("interview voice failed: %s", e)
+            pcm = None
+        await websocket.send_json(
+            {
+                "type": "interview.reply",
+                "agent": agent.id,
+                "name": interview.ascii_text(agent.name),
+                "text": interview.ascii_text(reply),
+                "audio": pcm is not None,
+                "rate": interview.RATE,
+                "bytes": len(pcm) if pcm else 0,
+            }
+        )
+        if pcm:
+            for i in range(0, len(pcm), AUDIO_CHUNK):
+                await websocket.send_bytes(pcm[i : i + AUDIO_CHUNK])
+            await websocket.send_json({"type": "interview.audio_end", "agent": agent.id})
 
     async def push() -> None:
         nonlocal seen, listed
@@ -330,22 +400,48 @@ async def device_socket(websocket: WebSocket) -> None:
         seen = run.societies.moves
         await websocket.send_json(device_state(run, me, voice))
 
-    async def finish(pcm: bytes, run: Run | None, society: int) -> None:
-        voice.update(status="transcribing", error=None)
-        log.info("voice clip from %s for society %d: %s", me.id, society, clip_stats(pcm, rate))
+    async def finish(
+        pcm: bytes, run: Run | None, society: int, purpose: str, agent_id: Any
+    ) -> None:
+        voice.update(status="transcribing", error=None, transcript=None)
+        log.info(
+            "voice clip (%s) from %s for society %d: %s",
+            purpose,
+            me.id,
+            society,
+            clip_stats(pcm, rate),
+        )
         with contextlib.suppress(OSError):
             dump_clip(me, pcm, rate)
         try:
             await push()
-            if run is None or run.societies is None or society >= run.societies.count:
-                raise ValueError("no running world with that society")
-            transcript = await transcribe(app, pcm, rate)
-            voice.update(transcript=transcript)
-            await speak(app, run, society, transcript)
+            if purpose in ("pick", "interview"):
+                if run is None:
+                    raise ValueError("no running world")
+                transcript = " ".join((await transcribe(app, pcm, rate)).split())
+                voice.update(transcript=transcript)
+                if not transcript:
+                    raise ValueError("nothing was heard")
+                if purpose == "pick":
+                    picked = interview.pick_agent(run, transcript)
+                    if picked is None:
+                        raise ValueError(f"nobody here matches '{transcript}'")
+                    await choose(run, picked.id, transcript)
+                else:
+                    await converse(run, agent_id, transcript)
+            else:
+                if run is None or run.societies is None or society >= run.societies.count:
+                    raise ValueError("no running world with that society")
+                transcript = await transcribe(app, pcm, rate)
+                voice.update(transcript=transcript)
+                await speak(app, run, society, transcript)
             voice.update(status="done")
-        except (TranscriptionUnavailable, ValueError) as e:
+        except (TranscriptionUnavailable, ValueError, interview.InterviewError) as e:
             log.warning("voice clip from %s failed: %s", me.id, e)
             voice.update(status="error", error=str(e))
+            if purpose != "murmur":
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"type": "interview.error", "error": str(e)})
         except Exception as e:
             log.exception("voice clip failed")
             voice.update(status="error", error=type(e).__name__)
@@ -382,7 +478,27 @@ async def device_socket(websocket: WebSocket) -> None:
                 clip = bytearray()
                 clip_run = current_run(app.state.runs, run_id)
                 clip_society = me.society
+                purpose = data.get("purpose")
+                clip_purpose = purpose if purpose in ("pick", "interview") else "murmur"
+                clip_agent = data.get("agent")
                 voice.update(status="listening", error=None)
+            elif kind == "agents.list":
+                run = current_run(app.state.runs, run_id)
+                await websocket.send_json(
+                    {
+                        "type": "agents",
+                        "run": run.id if run else None,
+                        "agents": interview.agent_list(run) if run else [],
+                    }
+                )
+            elif kind == "interview.select":
+                run = current_run(app.state.runs, run_id)
+                if run is None:
+                    await websocket.send_json(
+                        {"type": "interview.error", "error": "no running world"}
+                    )
+                else:
+                    await choose(run, data.get("agent"))
             elif kind == "run.select":
                 rid = data.get("run")
                 chosen = current_run(app.state.runs, rid) if isinstance(rid, str) else None
@@ -418,7 +534,9 @@ async def device_socket(websocket: WebSocket) -> None:
             elif kind == "voice.end" and clip is not None:
                 pcm, clip = bytes(clip), None
                 if busy is None or busy.done():
-                    busy = asyncio.create_task(finish(pcm, clip_run, clip_society))
+                    busy = asyncio.create_task(
+                        finish(pcm, clip_run, clip_society, clip_purpose, clip_agent)
+                    )
     except WebSocketDisconnect:
         pass
     finally:

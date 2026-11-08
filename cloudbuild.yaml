@@ -1,0 +1,15 @@
+# Kaniko builds the same Dockerfile as a local `docker build`, but reuses pushed layers across
+# Cloud Build runs. Cache manifests live under the `cache` image in the same Artifact Registry
+# repository as the `web` image.
+steps:
+  - name: gcr.io/kaniko-project/executor:v1.24.0
+    args:
+      - --dockerfile=Dockerfile
+      - --context=dir:///workspace
+      - --destination=${_IMAGE}
+      - --cache=true
+      - --cache-repo=${_CACHE_REPO}
+
+substitutions:
+  _IMAGE: us-west1-docker.pkg.dev/world-war-pixel-514101/worldwarpixel/web:latest
+  _CACHE_REPO: us-west1-docker.pkg.dev/world-war-pixel-514101/worldwarpixel/cache

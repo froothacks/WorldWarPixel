@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     """Seconds between autosaves of the in-progress video while a run is live (0 disables).
     Each autosave overwrites the same {run_id}.mp4, so the archive keeps one growing video per
     run instead of a prefix per snapshot."""
-    timelapse_duration: float = Field(default=20.0, ge=2, le=120)
+    timelapse_duration: float = Field(default=30.0, ge=2, le=120)
     """Length of the rendered timelapse in seconds (plus short holds at both ends)."""
     timelapse_s3_bucket: str | None = None
     """Optional S3-compatible bucket to mirror videos into (AWS creds from the environment)."""
@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     max_concurrency: int = 10
     request_timeout: float = 60.0
     event_log_path: str = "events.db"
+    database_url: str | None = None
+    """Postgres DSN for the event log; when set it replaces the SQLite event_log_path."""
     max_active_runs: int = 4
 
     @property

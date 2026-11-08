@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import (
@@ -24,7 +24,7 @@ from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
@@ -42,7 +42,7 @@ class RunManager:
 
     def __init__(
         self,
-        log: EventLog,
+        log: EventStore,
         max_active_runs: int = 4,
         make_policy: Callable[[RunConfig], Policy] | None = None,
         narrator_model: NarratorModel | None = None,
@@ -50,8 +50,10 @@ class RunManager:
         videos: VideoStore | None = None,
         auto_video: bool = False,
         speech: SpeechSynth | None = None,
+        name_societies: Callable[[RunConfig], Awaitable[list[str] | None]] | None = None,
     ) -> None:
         self.log = log
+        self.name_societies = name_societies
         self.videos = videos
         self.auto_video = auto_video and videos is not None
         self.max_active_runs = max_active_runs
@@ -71,6 +73,14 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
+        if config.societies and not config.society_names and self.name_societies is not None:
+            names = await self.name_societies(config)
+            if names:
+                config = config.model_copy(update={"society_names": names})
+            if len(self.active()) >= self.max_active_runs:  # another launch finished meanwhile
+                raise HTTPException(
+                    409, f"{self.max_active_runs} runs already active; stop one first"
+                )
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )

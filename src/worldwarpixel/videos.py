@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventStore, open_event_log
 from worldwarpixel.sim.video import VideoError, render_video
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class VideoStore:
 
     # -- rendering -------------------------------------------------------------------------
 
-    def render_sync(self, log_: EventLog, run_id: str) -> dict[str, Any]:
+    def render_sync(self, log_: EventStore, run_id: str) -> dict[str, Any]:
         """Render, write the sidecar and mirror to S3; blocking, run it in a thread."""
         reader = log_.reader()
         try:
@@ -106,7 +106,7 @@ class VideoStore:
             log.exception("S3 mirror failed for %s; the local copy is kept", run_id)
             return False
 
-    async def render(self, log_: EventLog, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
+    async def render(self, log_: EventStore, run_id: str, *, fresh: bool = False) -> dict[str, Any]:
         """Render in a worker thread; concurrent calls for the same run share one render.
         ``fresh`` waits for an in-flight render to finish and then renders again, so the
         result includes everything logged up to now (used when the run has just stopped)."""
@@ -120,7 +120,7 @@ class VideoStore:
             self._rendering[run_id] = task
         return await task
 
-    def schedule(self, log_: EventLog, run_id: str) -> None:
+    def schedule(self, log_: EventStore, run_id: str) -> None:
         """Fire-and-forget render (used when a run stops); failures are logged, not raised."""
 
         async def go() -> None:
@@ -138,7 +138,7 @@ class VideoStore:
 
     # -- autosave ----------------------------------------------------------------------------
 
-    def start_autosave(self, log_: EventLog, run_id: str) -> None:
+    def start_autosave(self, log_: EventStore, run_id: str) -> None:
         """Re-render the run's video every ``autosave_interval`` seconds, overwriting the same
         {run_id}.mp4/.json (and S3 keys), so a live run's archive entry is always current."""
         if self.autosave_interval <= 0 or run_id in self._autosave:
@@ -215,22 +215,25 @@ def main(argv: list[str] | None = None) -> int:
         duration=settings.timelapse_duration,
         ffmpeg=settings.ffmpeg_path,
     )
-    events = EventLog(settings.event_log_path)
-    wanted = argv if argv is not None else sys.argv[1:]
-    run_ids = wanted or [r for r in events.run_ids() if store.meta(r) is None]
-    failures = 0
-    if store.s3_bucket and not wanted:  # repair mirrors that failed earlier without re-rendering
-        for m in store.list():
-            if "s3" not in m and store.mirror_sync(m["run_id"], m):
-                print(f"{m['run_id']}: mirrored existing video")
-    for run_id in run_ids:
-        try:
-            meta = store.render_sync(events, run_id)
-            print(f"{run_id}: {meta['file']} ({meta['bytes'] / 1e6:.1f} MB)")
-        except VideoError as e:
-            failures += 1
-            print(f"{run_id}: skipped ({e})")
-    return 1 if failures and wanted else 0
+    events = open_event_log(settings)
+    try:
+        wanted = argv if argv is not None else sys.argv[1:]
+        run_ids = wanted or [r for r in events.run_ids() if store.meta(r) is None]
+        failures = 0
+        if store.s3_bucket and not wanted:  # repair failed S3 mirrors without re-rendering
+            for m in store.list():
+                if "s3" not in m and store.mirror_sync(m["run_id"], m):
+                    print(f"{m['run_id']}: mirrored existing video")
+        for run_id in run_ids:
+            try:
+                meta = store.render_sync(events, run_id)
+                print(f"{run_id}: {meta['file']} ({meta['bytes'] / 1e6:.1f} MB)")
+            except VideoError as e:
+                failures += 1
+                print(f"{run_id}: skipped ({e})")
+        return 1 if failures and wanted else 0
+    finally:
+        events.close()
 
 
 if __name__ == "__main__":

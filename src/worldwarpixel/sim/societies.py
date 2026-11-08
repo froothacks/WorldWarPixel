@@ -5,13 +5,72 @@ peek at another society's threads and move there. Humans influence a society onl
 *murmur*: a short unattributed line its members notice in their turn prompt.
 """
 
+import json
+import random
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
 SOCIETY_COLORS = ("#ff4500", "#2450a4", "#00a368", "#ffd635", "#811e9f", "#51e9f4")
 SOCIETY_NAMES = ("Red", "Blue", "Green", "Yellow", "Purple", "Cyan")
-"""Neutral starting names (no numbers, so models don't mix them up with 0-based ids)."""
+"""Starting names of runs logged before names were generated (no numbers, so models don't mix
+them up with 0-based ids)."""
+NAME_WORDS = (
+    (
+        "Amber",
+        "Quiet",
+        "Velvet",
+        "Copper",
+        "Hollow",
+        "Bright",
+        "Drifting",
+        "Paper",
+        "Silver",
+        "Midnight",
+        "Salt",
+        "Little",
+        "Wild",
+        "Lantern",
+        "Electric",
+        "Sleepy",
+        "Golden",
+        "Restless",
+        "Glass",
+        "Wandering",
+        "Neon",
+        "Mossy",
+        "Crooked",
+        "Lucky",
+    ),
+    (
+        "Orchard",
+        "Tide",
+        "Comets",
+        "Foxes",
+        "Harbor",
+        "Moths",
+        "Garden",
+        "Signal",
+        "Static",
+        "Owls",
+        "Ferns",
+        "Kites",
+        "Pebbles",
+        "Sparrows",
+        "Embers",
+        "Lighthouse",
+        "Meadow",
+        "Otters",
+        "Thunder",
+        "Marbles",
+        "Ravens",
+        "Cactus",
+        "Willows",
+        "Lanterns",
+    ),
+)
+"""Random starting names are an adjective and a noun from these lists."""
 MURMUR_WINDOW = 900.0
 """Seconds a murmur stays in members' prompts before it fades."""
 MIGRATION_WINDOW = 60.0
@@ -24,6 +83,63 @@ MAX_NAME = 40
 
 class SocietyError(ValueError):
     pass
+
+
+def random_names(count: int, rng: random.Random, taken: list[str] | None = None) -> list[str]:
+    """``count`` distinct random two-word names, avoiding those in ``taken``."""
+    seen = {n.lower() for n in taken or []}
+    names: list[str] = []
+    while len(names) < count:
+        name = f"{rng.choice(NAME_WORDS[0])} {rng.choice(NAME_WORDS[1])}"
+        if name.lower() not in seen:
+            seen.add(name.lower())
+            names.append(name)
+    return names
+
+
+def naming_messages(count: int, theme: str | None) -> list[dict[str, str]]:
+    """Chat messages asking a model to name ``count`` freshly formed societies."""
+    nudge = (
+        f"What the names should be about: {theme.strip()}"
+        if theme and theme.strip()
+        else "Any style or subject you like; surprise us."
+    )
+    return [
+        {
+            "role": "system",
+            "content": "You name groups of people in a shared online world where everyone "
+            "paints on one big canvas and talks on message boards.",
+        },
+        {
+            "role": "user",
+            "content": f"Invent names for {count} groups that are just forming. Each name is "
+            f"1-3 words, at most {MAX_NAME} characters, and clearly different from the others. "
+            f"{nudge}\nReply with only a JSON array of {count} strings.",
+        },
+    ]
+
+
+def parse_names(text: str, count: int) -> list[str]:
+    """Up to ``count`` distinct names from a model reply (a JSON array, or one name per line)."""
+    found = re.search(r"\[.*\]", text, re.S)
+    raw: list[Any] = []
+    if found:
+        try:
+            parsed = json.loads(found.group(0))
+            raw = parsed if isinstance(parsed, list) else []
+        except ValueError:
+            raw = []
+    if not raw:
+        lines = [ln for ln in text.splitlines() if ln.strip() and not ln.rstrip().endswith(":")]
+        listed = [ln for ln in lines if re.match(r"\s*(?:[-*\u2022]|\d+[.)])\s", ln)]
+        raw = listed or lines
+    names: list[str] = []
+    for item in raw:
+        name = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", str(item)).strip(" \t\"'`,")
+        name = " ".join(name.split())[:MAX_NAME].strip()
+        if name and name.lower() not in {n.lower() for n in names}:
+            names.append(name)
+    return names[:count]
 
 
 @dataclass(slots=True)
@@ -60,6 +176,7 @@ class Societies:
 
     count: int
     switch_cooldown: float
+    names: list[str] | None = None
     societies: list[Society] = field(init=False)
     members: dict[int, int] = field(default_factory=dict)
     last_switch: dict[int, float] = field(default_factory=dict)
@@ -71,7 +188,11 @@ class Societies:
 
     def __post_init__(self) -> None:
         self.societies = [
-            Society(i, SOCIETY_NAMES[i % 6], SOCIETY_COLORS[i % len(SOCIETY_COLORS)])
+            Society(
+                i,
+                self.names[i] if self.names and i < len(self.names) else SOCIETY_NAMES[i % 6],
+                SOCIETY_COLORS[i % len(SOCIETY_COLORS)],
+            )
             for i in range(self.count)
         ]
 
