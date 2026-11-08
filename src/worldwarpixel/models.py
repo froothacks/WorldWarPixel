@@ -86,12 +86,14 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             model="nvidia/GLM-5.3-Flash-NVFP4",
             base_url=settings.glm_base_url,
             auth="modal",
-            # Reasons (reasoning_content) before the tool call, so it needs the large budget.
+            # Reasons (reasoning_content) before the tool call: at the default effort it burns a
+            # 3000-token budget thinking and never calls a tool, so keep effort low and leave room
+            # for a full place_pixels batch.
             chat_template_kwargs=False,
             reasoning_effort="low",
             vision=False,
-            max_tokens=3000,
-            narrator_max_tokens=3000,
+            max_tokens=8000,
+            narrator_max_tokens=8000,
         ),
         # chryztoph workspace endpoints: proxy auth comes from CHRYZTOPH_MODAL_KEY/_SECRET.
         ModelSpec(
@@ -112,8 +114,22 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
             chat_template_kwargs=False,
             reasoning_effort="low",
             vision=False,
-            max_tokens=3000,
-            narrator_max_tokens=3000,
+            max_tokens=8000,
+            narrator_max_tokens=8000,
+        ),
+        # meganwchun workspace: proxy auth comes from MEGANWCHUN_MODAL_KEY/_SECRET.
+        ModelSpec(
+            id="glm-megan",
+            label="GLM 5.3 Flash NVFP4 (meganwchun)",
+            model="nvidia/GLM-5.3-Flash-NVFP4",
+            base_url="https://meganwchun--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1",
+            auth="modal",
+            auth_workspace="meganwchun",
+            chat_template_kwargs=False,
+            reasoning_effort="low",
+            vision=False,
+            max_tokens=8000,
+            narrator_max_tokens=8000,
         ),
     ]
 
