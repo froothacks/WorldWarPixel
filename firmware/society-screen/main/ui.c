@@ -641,7 +641,7 @@ void ui_task(void *arg)
 
         /* session row: open the session list */
         int session_y = interview ? IV_SESSION_Y : 124;
-        if (live && tap && ty >= session_y - 2 && ty <= session_y + 16)
+        if (live && tap && ty > session_y - 2 && ty <= session_y + 16)   /* strip ends at 122 */
             picking = true;
         else if (picking && st.conn == CONN_WS && tap && tx >= IV_REFRESH_X &&
                  ty >= IV_REFRESH_Y && ty < IV_REFRESH_Y + IV_REFRESH_H) {
