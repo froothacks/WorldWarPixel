@@ -80,12 +80,12 @@ bool buildInitOperations() {
 
   for (size_t i = 0; i < sizeof(ST77922_INIT) / sizeof(ST77922_INIT[0]); ++i) {
     const InitCmd &entry = ST77922_INIT[i];
-    if (!appendOperation(WRITE_COMMAND_8, length) ||
-        !appendOperation(entry.cmd, length) ||
-        !appendOperation(WRITE_BYTES, length) ||
-        !appendOperation(entry.len, length)) {
-      return false;
-    }
+    // QSPI needs command + params in one 0x02 transaction; WRITE_BYTES would send them as pixels.
+    const bool ok = entry.len == 0
+                        ? appendOperation(WRITE_COMMAND_8, length) && appendOperation(entry.cmd, length)
+                        : appendOperation(WRITE_C8_BYTES, length) && appendOperation(entry.cmd, length) &&
+                              appendOperation(entry.len, length);
+    if (!ok) return false;
     for (uint8_t j = 0; j < entry.len; ++j) {
       if (!appendOperation(entry.data[j], length)) return false;
     }

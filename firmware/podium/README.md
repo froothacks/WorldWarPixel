@@ -2,7 +2,9 @@
 
 This sketch targets Megan's ESP32-S3 N16R8 board (16 MB flash, 8 MB OPI PSRAM) and its 320×480
 ST77922 QSPI display and ES8311 audio codec. Pin assignments below come from the factory firmware;
-this repository has not verified them on the physical board.
+the board now displays the boot color bars and joins Wi-Fi. The Stage WebSocket connection and
+plain HTTP through a Cloudflare quick tunnel are verified. Speaker output is not verified (no beep
+heard; the amplifier enable pin is still unknown).
 
 ## Pins
 
@@ -59,3 +61,7 @@ and verdict lines with `&narrator=1`. Audio lines are streamed from
 mono PCM into I²S. The canvas frame is fetched from
 `GET /runs/{RUN_ID}/stage/frame?w=320&h=320&podium={PODIUM}` as `320*320*2` bytes of RGB565
 little-endian pixels.
+
+For guest Wi-Fi with client isolation, run `cloudflared tunnel --url http://localhost:8000` on the
+server host. Set `HOST` in the local `config.h` to `<name>.trycloudflare.com` and `SERVER_PORT` to
+`80`; the podium connects through the tunnel using plain HTTP.
