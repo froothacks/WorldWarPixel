@@ -319,14 +319,9 @@ MIGRATIONS = (
             )
             """,
         ),
-        postgres_statements=(
-            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS last_ts DOUBLE PRECISION",
-            """
-            UPDATE runs SET last_ts = (
-                SELECT ts FROM events WHERE events.run_id = runs.id ORDER BY id DESC LIMIT 1
-            )
-            """,
-        ),
+        # No Postgres backfill: on prod's events table it outlasted Cloud Run's startup probe
+        # while locking runs. Older runs keep last_ts NULL.
+        postgres_statements=("ALTER TABLE runs ADD COLUMN IF NOT EXISTS last_ts DOUBLE PRECISION",),
     ),
 )
 

@@ -433,7 +433,7 @@ def test_legacy_postgres_events_are_backfilled_and_constrained(pg_url: str) -> N
         [row] = log.run_totals()
         assert row[:9] == ("legacy", 1.0, 1, 0, 1, 1, 0, 1, False)
         assert row[9] is not None and json.loads(row[9]) == config
-        assert row[10] == 4.0
+        assert row[10] is None  # no last_ts backfill on Postgres
     finally:
         log.close()
 
