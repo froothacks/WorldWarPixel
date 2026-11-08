@@ -254,6 +254,16 @@ export default function StartScreen({ onStarted }: Props) {
                 ? "Agents are split into groups, each with its own board. They can peek at other groups and move. Each group has a screen that listens to people in the room."
                 : "One shared board for everyone."}
             </span>
+            {cfg.societies > 0 && (
+              <input
+                type="text"
+                className="society-theme"
+                maxLength={300}
+                value={cfg.society_theme ?? ""}
+                placeholder="Optional: what the group names should be about (e.g. deep-sea creatures)"
+                onChange={(e) => set("society_theme", e.target.value || null)}
+              />
+            )}
           </div>
 
           <details className="advanced">

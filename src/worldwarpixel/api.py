@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import (
@@ -50,8 +50,10 @@ class RunManager:
         videos: VideoStore | None = None,
         auto_video: bool = False,
         speech: SpeechSynth | None = None,
+        name_societies: Callable[[RunConfig], Awaitable[list[str] | None]] | None = None,
     ) -> None:
         self.log = log
+        self.name_societies = name_societies
         self.videos = videos
         self.auto_video = auto_video and videos is not None
         self.max_active_runs = max_active_runs
@@ -71,6 +73,10 @@ class RunManager:
             raise HTTPException(409, f"{self.max_active_runs} runs already active; stop one first")
         run_id = secrets.token_hex(4)
         policy = self.make_policy(config)
+        if config.societies and not config.society_names and self.name_societies is not None:
+            names = await self.name_societies(config)
+            if names:
+                config = config.model_copy(update={"society_names": names})
         narrator = (
             self.make_narrator(config) if self.make_narrator is not None else self.narrator_model
         )

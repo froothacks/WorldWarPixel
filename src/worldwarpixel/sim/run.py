@@ -17,7 +17,7 @@ from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
 from worldwarpixel.sim.events import EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
-from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.societies import Societies, random_names
 from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
@@ -96,6 +96,16 @@ class RunConfig(BaseModel):
         le=6,
         description="Split agents into this many societies, each with its own board (0 = off)",
     )
+    society_theme: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Optional free-text nudge for what the generated society names are about",
+    )
+    society_names: list[str] | None = Field(
+        default=None,
+        max_length=6,
+        description="Starting society names; random (or model-generated) when omitted",
+    )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
     )
@@ -165,7 +175,13 @@ class Run:
         self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
         if config.societies:
-            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            names = [n for n in config.society_names or [] if n.strip()][: config.societies]
+            rng = random.Random(f"societies-{config.seed}") if config.seed is not None else None
+            names += random_names(config.societies - len(names), rng or random.Random(), names)
+            self.config = config = config.model_copy(update={"society_names": names})
+            self.societies = Societies(
+                config.societies, switch_cooldown=3 * config.cooldown, names=names
+            )
             self.societies.assign([a.id for a in self.agents])
         self.dispatcher = Dispatcher(
             self.board,

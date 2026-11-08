@@ -117,7 +117,7 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
             "started_at": r.started_at,
             "agents": len(r.agents),
             "model": r.config.model,
-            "societies": [s["name"] for s in r.society_summary()],
+            "societies": [interview.ascii_text(s["name"]) for s in r.society_summary()],
         }
         for r in live
     ]
@@ -139,7 +139,15 @@ def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, A
         "type": "state",
         "run": run.id,
         "society": {k: mine[k] for k in ("id", "name", "color", "members", "joined", "left")},
-        "societies": [{k: s[k] for k in ("id", "name", "color", "members")} for s in societies],
+        "societies": [
+            {
+                "id": s["id"],
+                "name": interview.ascii_text(s["name"]),
+                "color": s["color"],
+                "members": s["members"],
+            }
+            for s in societies
+        ],
         "threads": [
             {"title": d["title"], "author": d["author"], "replies": d["replies"]}
             for d in run.society_threads(device.society, limit=3)
