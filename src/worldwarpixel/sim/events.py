@@ -8,9 +8,10 @@ from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from worldwarpixel.sim.migrations import migrate_sqlite
+from worldwarpixel.sim.board import Post
+from worldwarpixel.sim.migrations import CANVAS_KINDS_SQL, migrate_sqlite
 
 if TYPE_CHECKING:
     from worldwarpixel.config import Settings
@@ -28,6 +29,13 @@ class Event:
     kind: str
     agent_id: int | None
     payload: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class RunMeta:
+    created_at: float
+    config: str | None
+    deleted: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,9 +87,17 @@ class EventStore(Protocol):
 
     def batch(self) -> AbstractContextManager[None]: ...
 
-    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]: ...
+    def read(
+        self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+    ) -> list[Event]: ...
 
     def count(self, run_id: str) -> int: ...
+
+    def run_meta(self, run_id: str) -> RunMeta | None: ...
+
+    def posts(self, run_id: str, thread_id: int | None = None) -> list[tuple[Post, int | None]]: ...
+
+    def thread_votes(self, run_id: str) -> dict[int, int]: ...
 
     def run_ids(self) -> list[str]: ...
 
@@ -147,6 +163,37 @@ class EventLog:
             "INSERT INTO events (run_id, ts, kind, agent_id, payload) VALUES (?, ?, ?, ?, ?)",
             (run_id, ts, kind, agent_id, serialized),
         )
+        if kind == "post":
+            self._conn.execute(
+                """
+                INSERT INTO posts (
+                    run_id, id, thread_id, parent_id, author_id, title, body, created_at, society
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (run_id, id) DO NOTHING
+                """,
+                (
+                    run_id,
+                    cast(int, payload["id"]),
+                    cast(int, payload["thread_id"]),
+                    None if payload.get("parent_id") is None else cast(int, payload["parent_id"]),
+                    cast(int, payload["author_id"]),
+                    None if payload.get("title") is None else str(payload["title"]),
+                    str(payload["body"]),
+                    cast(float, payload["created_at"]),
+                    None if payload.get("society") is None else cast(int, payload["society"]),
+                ),
+            )
+        elif kind == "board.vote":
+            self._conn.execute(
+                """
+                INSERT INTO thread_votes (run_id, thread_id, votes) VALUES (?, ?, ?)
+                ON CONFLICT (run_id, thread_id) DO UPDATE SET votes = excluded.votes
+                """,
+                (run_id, cast(int, payload["thread_id"]), cast(int, payload["votes"])),
+            )
+        elif kind == "god.clear_board":
+            self._conn.execute("DELETE FROM posts WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM thread_votes WHERE run_id = ?", (run_id,))
         if not self._batching:
             self._conn.commit()
         self._known_runs.add(run_id)
@@ -162,11 +209,14 @@ class EventLog:
             self._batching = False
             self._conn.commit()
 
-    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+    def read(
+        self, run_id: str, after_id: int = 0, limit: int = 1000, *, canvas_only: bool = False
+    ) -> list[Event]:
         started = time.perf_counter()
+        kind_filter = f" AND kind IN ({CANVAS_KINDS_SQL})" if canvas_only else ""
         rows = self._conn.execute(
             "SELECT id, run_id, ts, kind, agent_id, payload FROM events"
-            " WHERE run_id = ? AND id > ? ORDER BY run_id, id LIMIT ?",
+            f" WHERE run_id = ? AND id > ?{kind_filter} ORDER BY run_id, id LIMIT ?",
             (run_id, after_id, limit),
         ).fetchall()
         events = [Event(r[0], r[1], r[2], r[3], r[4], json.loads(r[5])) for r in rows]
@@ -187,6 +237,36 @@ class EventLog:
             "SELECT COUNT(*) FROM events WHERE run_id = ?", (run_id,)
         ).fetchone()
         return int(row[0])
+
+    def run_meta(self, run_id: str) -> RunMeta | None:
+        row = self._conn.execute(
+            "SELECT created_at, config, deleted FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return RunMeta(
+            created_at=float(row[0]),
+            config=None if row[1] is None else str(row[1]),
+            deleted=bool(row[2]),
+        )
+
+    def posts(self, run_id: str, thread_id: int | None = None) -> list[tuple[Post, int | None]]:
+        query = (
+            "SELECT id, author_id, thread_id, parent_id, title, body, created_at, society"
+            " FROM posts WHERE run_id = ?"
+        )
+        params: tuple[object, ...] = (run_id,)
+        if thread_id is not None:
+            query += " AND thread_id = ?"
+            params += (thread_id,)
+        rows = self._conn.execute(query + " ORDER BY id", params).fetchall()
+        return [_post_with_society(row) for row in rows]
+
+    def thread_votes(self, run_id: str) -> dict[int, int]:
+        rows = self._conn.execute(
+            "SELECT thread_id, votes FROM thread_votes WHERE run_id = ?", (run_id,)
+        ).fetchall()
+        return {int(row[0]): int(row[1]) for row in rows}
 
     def run_ids(self) -> list[str]:
         rows = self._conn.execute("SELECT id FROM runs ORDER BY id").fetchall()
@@ -221,6 +301,21 @@ class EventLog:
 
     def close(self) -> None:
         self._conn.close()
+
+
+def _post_with_society(row: tuple[Any, ...]) -> tuple[Post, int | None]:
+    return (
+        Post(
+            id=int(row[0]),
+            author_id=int(row[1]),
+            thread_id=int(row[2]),
+            parent_id=None if row[3] is None else int(row[3]),
+            title=None if row[4] is None else str(row[4]),
+            body=str(row[5]),
+            created_at=float(row[6]),
+        ),
+        None if row[7] is None else int(row[7]),
+    )
 
 
 def open_event_log(settings: Settings) -> EventStore:

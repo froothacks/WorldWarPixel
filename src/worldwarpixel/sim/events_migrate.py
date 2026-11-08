@@ -19,7 +19,11 @@ from typing import Any
 import psycopg
 
 from worldwarpixel.sim.events_pg import PostgresEventLog
-from worldwarpixel.sim.migrations import postgres_run_rollup_sql
+from worldwarpixel.sim.migrations import (
+    postgres_posts_backfill_sql,
+    postgres_run_rollup_sql,
+    postgres_votes_backfill_sql,
+)
 
 INSERT_SQL = """
 INSERT INTO events (id, run_id, ts, kind, agent_id, payload)
@@ -72,6 +76,7 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
                         )
                 total += len(rows)
             if touched_run_ids:
+                run_ids = list(touched_run_ids)
                 target.execute(
                     f"""
                     INSERT INTO runs (
@@ -90,8 +95,12 @@ def migrate(sqlite_path: str | Path, database_url: str, *, batch_size: int = 100
                         answers = EXCLUDED.answers,
                         deleted = EXCLUDED.deleted
                     """,
-                    (list(touched_run_ids),),
+                    (run_ids,),
                 )
+                target.execute("DELETE FROM posts WHERE run_id = ANY(%s)", (run_ids,))
+                target.execute("DELETE FROM thread_votes WHERE run_id = ANY(%s)", (run_ids,))
+                target.execute(postgres_posts_backfill_sql(filter_run_ids=True), (run_ids, run_ids))
+                target.execute(postgres_votes_backfill_sql(filter_run_ids=True), (run_ids, run_ids))
             _reset_identity(target)
         return total
     finally:

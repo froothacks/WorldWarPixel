@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import logging
 import secrets
 import time
@@ -24,9 +25,9 @@ from pydantic import BaseModel, Field
 from worldwarpixel.config import get_settings
 from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
-from worldwarpixel.sim.archive import archived_summaries, restore_run
-from worldwarpixel.sim.board import BoardError
-from worldwarpixel.sim.events import EventStore
+from worldwarpixel.sim.archive import archived_board, archived_summaries, restore_run
+from worldwarpixel.sim.board import Board, BoardError
+from worldwarpixel.sim.events import EventStore, RunMeta
 from worldwarpixel.sim.hub import CLOSE, RESYNC, snapshot_frame
 from worldwarpixel.sim.narrator import NarratorModel, NarratorUnavailable
 from worldwarpixel.sim.run import MIN_PIXEL_INTERVAL, Run, RunConfig
@@ -50,6 +51,13 @@ def reading(log: EventStore) -> Iterator[EventStore]:
     finally:
         if reader is not log:
             reader.close()
+
+
+def _logged_run_meta(log: EventStore, run_id: str) -> RunMeta:
+    meta = log.run_meta(run_id)
+    if meta is None or meta.deleted or meta.config is None:
+        raise HTTPException(404, f"run {run_id} not found")
+    return meta
 
 
 class RunManager:
@@ -381,13 +389,42 @@ async def get_agent(run_id: str, agent_id: int, manager: ManagerDep) -> dict[str
 
 @router.get("/{run_id}/threads")
 async def list_threads(run_id: str, manager: ManagerDep) -> list[dict[str, Any]]:
-    run = await manager.fetch(run_id)
-    return run.board.listing(limit=100, name_of=run.agent_name)
+    run = manager.runs.get(run_id)
+    if run is not None:
+        return run.board.listing(limit=100, name_of=run.agent_name)
+
+    def read_board() -> tuple[Board, Callable[[int], str]] | None:
+        with reading(manager.log) as reader:
+            _logged_run_meta(reader, run_id)
+            return archived_board(reader, run_id)
+
+    archived = await asyncio.to_thread(read_board)
+    if archived is None:
+        run = await manager.fetch(run_id)
+        return run.board.listing(limit=100, name_of=run.agent_name)
+    board, name_of = archived
+    return board.listing(limit=100, name_of=name_of)
 
 
 @router.get("/{run_id}/threads/{thread_id}")
 async def get_thread(run_id: str, thread_id: int, manager: ManagerDep) -> list[dict[str, Any]]:
-    posts = (await manager.fetch(run_id)).board.thread(thread_id)
+    run = manager.runs.get(run_id)
+    if run is not None:
+        posts = run.board.thread(thread_id)
+    else:
+
+        def read_board() -> tuple[Board, Callable[[int], str]] | None:
+            with reading(manager.log) as reader:
+                _logged_run_meta(reader, run_id)
+                return archived_board(reader, run_id, thread_id)
+
+        archived = await asyncio.to_thread(read_board)
+        if archived is None:
+            run = await manager.fetch(run_id)
+            posts = run.board.thread(thread_id)
+        else:
+            board, _ = archived
+            posts = board.thread(thread_id)
     if not posts:
         raise HTTPException(404, f"thread {thread_id} not found")
     return [p.to_dict() for p in posts]
@@ -424,10 +461,10 @@ async def get_events(
     after: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 1000,
 ) -> list[dict[str, Any]]:
-    await manager.fetch(run_id)
-
     def read_events() -> list[dict[str, Any]]:
         with reading(manager.log) as reader:
+            if run_id not in manager.runs:
+                _logged_run_meta(reader, run_id)
             events = reader.read(run_id, after_id=after, limit=limit)
             return [
                 {
@@ -450,11 +487,18 @@ async def get_timelapse(
     frames: Annotated[int, Query(ge=1, le=600)] = 120,
 ) -> Response:
     """Binary keyframe deltas of the whole run so far (see sim/timelapse.py for the layout)."""
-    run = await manager.fetch(run_id)
+    run = manager.runs.get(run_id)
 
     def render() -> bytes:
         with reading(manager.log) as reader:
-            return build_timelapse(reader, run_id, run.canvas.width, run.canvas.height, frames)
+            if run is None:
+                meta = _logged_run_meta(reader, run_id)
+                assert meta.config is not None
+                config = RunConfig.model_validate(json.loads(meta.config))
+                width, height = config.width, config.height
+            else:
+                width, height = run.canvas.width, run.canvas.height
+            return build_timelapse(reader, run_id, width, height, frames)
 
     data = await asyncio.to_thread(render)
     return Response(content=data, media_type="application/octet-stream")

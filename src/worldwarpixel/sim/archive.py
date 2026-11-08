@@ -2,13 +2,15 @@
 a redeploy) can still be listed, opened and replayed. Restored runs are always stopped."""
 
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 from worldwarpixel.sim.agents import AgentSpec, RandomWalkPolicy
-from worldwarpixel.sim.board import Post
+from worldwarpixel.sim.board import Board, Post
 from worldwarpixel.sim.canvas import PixelWrite
+from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME
 from worldwarpixel.sim.events import REJECTED, EventStore
-from worldwarpixel.sim.run import Run, RunConfig
+from worldwarpixel.sim.run import GOD_ID, GOD_NAME, Run, RunConfig
 from worldwarpixel.sim.societies import SOCIETY_NAMES, Migration
 from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
@@ -56,6 +58,8 @@ def restore_run(
             stats["posts"] += 1
         elif e.kind == "god.clear_board":
             run.board.clear()
+        elif e.kind == "board.vote":
+            run.board.set_votes(int(p["thread_id"]), int(p["votes"]))
         elif e.kind == "agent.thought":
             stats["turns"] += 1
             stats["errors"] += str(p.get("thought", "")).startswith(REJECTED)
@@ -84,6 +88,33 @@ def restore_run(
         elif e.kind == "run.deleted":
             return None
     return run
+
+
+def archived_board(
+    log: EventStore, run_id: str, thread_id: int | None = None
+) -> tuple[Board, Callable[[int], str]] | None:
+    first = log.read(run_id, 0, 1)
+    if not first or first[0].kind != "run.created":
+        return None
+    created = cast(dict[str, Any], first[0].payload)
+    roster = cast(list[dict[str, Any]], created.get("agents") or [])
+    if not roster:
+        return None
+    names = {int(agent["id"]): str(agent["name"]) for agent in roster}
+
+    def name_of(agent_id: int) -> str:
+        if agent_id == DISPATCH_ID:
+            return DISPATCH_NAME
+        if agent_id == GOD_ID:
+            return GOD_NAME
+        return names.get(agent_id, f"agent {agent_id}")
+
+    board = Board()
+    for post, society in log.posts(run_id, thread_id):
+        board.restore(post, society)
+    for tid, votes in log.thread_votes(run_id).items():
+        board.set_votes(tid, votes)
+    return board, name_of
 
 
 def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:

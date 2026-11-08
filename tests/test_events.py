@@ -5,13 +5,28 @@ from pathlib import Path
 import pytest
 
 from worldwarpixel.config import Settings
-from worldwarpixel.sim.events import EventLog, open_event_log
+from worldwarpixel.sim.board import Post
+from worldwarpixel.sim.events import EventLog, RunMeta, open_event_log
 
 
 def test_append_and_read_in_order() -> None:
     log = EventLog()
     a = log.append("r1", 1.0, "pixel", 3, {"x": 1, "y": 2, "color": 4})
-    b = log.append("r1", 2.0, "post", 3, {"body": "hi"})
+    b = log.append(
+        "r1",
+        2.0,
+        "post",
+        3,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 3,
+            "title": "hello",
+            "body": "hi",
+            "created_at": 2.0,
+        },
+    )
     log.append("r2", 3.0, "pixel", 1, {})
     events = log.read("r1")
     assert [e.id for e in events] == [a, b]
@@ -52,7 +67,21 @@ def test_batch_defers_the_commit_until_the_block_ends() -> None:
         for i in range(5):
             log.append("b", float(i), "pixel", 1, {"x": i, "y": 0, "color": 1})
     assert log.count("b") == 5
-    log.append("b", 9.0, "post", 1, {})
+    log.append(
+        "b",
+        9.0,
+        "post",
+        1,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 1,
+            "title": "t",
+            "body": "body",
+            "created_at": 9.0,
+        },
+    )
     assert log.count("b") == 6
 
 
@@ -62,7 +91,21 @@ def test_run_totals_track_appends_without_replacing_config() -> None:
     log.append("r", 2.0, "run.created", None, {"config": config})
     log.append("r", 1.0, "run.created", None, {"config": {"width": 32}})
     log.append("r", 3.0, "pixel", 1, {})
-    log.append("r", 4.0, "post", 1, {})
+    log.append(
+        "r",
+        4.0,
+        "post",
+        1,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 1,
+            "title": "t",
+            "body": "body",
+            "created_at": 4.0,
+        },
+    )
     log.append("r", 5.0, "agent.thought", 1, {"thought": "Tool call rejected: bad input"})
     log.append("r", 6.0, "agent.thought", 1, {"thought": "Painting a sun"})
     log.append("r", 7.0, "narrator.update", None, {"kind": "update"})
@@ -85,6 +128,105 @@ def test_run_totals_track_appends_without_replacing_config() -> None:
     )
     assert before_status == [expected]
     assert log.run_totals() == before_status
+    log.close()
+
+
+def test_post_and_vote_projections_follow_appends_and_board_clears() -> None:
+    log = EventLog()
+    first = {
+        "id": 1,
+        "thread_id": 1,
+        "parent_id": None,
+        "author_id": 1,
+        "title": "first",
+        "body": "root",
+        "created_at": 1.0,
+        "society": 2,
+    }
+    reply = {
+        "id": 2,
+        "thread_id": 1,
+        "parent_id": 1,
+        "author_id": 2,
+        "title": None,
+        "body": "reply",
+        "created_at": 2.0,
+    }
+    log.append("r", 1.0, "post", 1, first)
+    log.append("r", 2.0, "post", 2, reply)
+    log.append("r", 3.0, "board.vote", None, {"thread_id": 1, "value": 1, "votes": 1})
+    log.append("r", 4.0, "board.vote", 2, {"thread_id": 1, "value": -1, "votes": 0})
+    assert log.posts("r") == [
+        (Post(1, 1, 1, None, "first", "root", 1.0), 2),
+        (Post(2, 2, 1, 1, None, "reply", 2.0), None),
+    ]
+    assert [post.id for post, _ in log.posts("r", thread_id=1)] == [1, 2]
+    assert log.thread_votes("r") == {1: 0}
+
+    log.append("r", 5.0, "god.clear_board", None, {})
+    assert log.posts("r") == []
+    assert log.thread_votes("r") == {}
+    after_clear = {
+        "id": 3,
+        "thread_id": 3,
+        "parent_id": None,
+        "author_id": 1,
+        "title": "after",
+        "body": "new root",
+        "created_at": 6.0,
+    }
+    log.append("r", 6.0, "post", 1, after_clear)
+    log.append("r", 7.0, "board.vote", 1, {"thread_id": 3, "value": 1, "votes": 1})
+    assert [post.id for post, _ in log.posts("r")] == [3]
+    assert log.thread_votes("r") == {3: 1}
+    log.close()
+
+
+def test_run_meta_and_canvas_only_reads() -> None:
+    log = EventLog()
+    config = {"width": 16, "height": 12}
+    log.append("r", 1.0, "run.created", None, {"config": config})
+    assert log.run_meta("r") == RunMeta(1.0, json.dumps(config, separators=(",", ":")), False)
+    assert log.run_meta("missing") is None
+    log.append("r", 2.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+    log.append("r", 3.0, "agent.status", 1, {})
+    log.append("r", 4.0, "god.clear_canvas", None, {})
+    log.append(
+        "r",
+        5.0,
+        "post",
+        1,
+        {
+            "id": 1,
+            "thread_id": 1,
+            "parent_id": None,
+            "author_id": 1,
+            "title": "t",
+            "body": "body",
+            "created_at": 5.0,
+        },
+    )
+    log.append("r", 6.0, "pixel", 1, {"x": 1, "y": 0, "color": 2})
+
+    first = log.read("r", limit=1, canvas_only=True)
+    second = log.read("r", after_id=first[-1].id, limit=1, canvas_only=True)
+    third = log.read("r", after_id=second[-1].id, limit=1, canvas_only=True)
+    assert [event.kind for event in first + second + third] == [
+        "pixel",
+        "god.clear_canvas",
+        "pixel",
+    ]
+    assert log.read("r", after_id=third[-1].id, canvas_only=True) == []
+    plan = log._conn.execute(
+        "EXPLAIN QUERY PLAN SELECT id, run_id, ts, kind, agent_id, payload FROM events"
+        " WHERE run_id = ? AND id > ? AND kind IN ('pixel', 'god.clear_canvas')"
+        " ORDER BY run_id, id LIMIT ?",
+        ("r", 0, 10),
+    ).fetchall()
+    assert any("events_run_canvas" in str(row[3]) for row in plan)
+
+    log.append("r", 7.0, "run.deleted", None, {})
+    assert log.run_meta("r") == RunMeta(1.0, json.dumps(config, separators=(",", ":")), True)
     log.close()
 
 

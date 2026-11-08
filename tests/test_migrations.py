@@ -5,20 +5,27 @@ import sys
 from pathlib import Path
 
 from worldwarpixel.sim.archive import archived_summaries
+from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.events import EventLog
-from worldwarpixel.sim.migrations import migrate_sqlite
+from worldwarpixel.sim.migrations import (
+    MIGRATIONS,
+    SQLITE_MIGRATIONS_TABLE,
+    migrate_sqlite,
+)
 from worldwarpixel.sim.run import RunConfig
 
 
 def test_sqlite_migrations_are_recorded_once(tmp_path: Path) -> None:
     path = tmp_path / "events.db"
     conn = sqlite3.connect(path)
-    assert migrate_sqlite(conn) == [1, 2]
+    assert migrate_sqlite(conn) == [1, 2, 3, 4]
     assert conn.execute(
         "SELECT version, name FROM schema_migrations ORDER BY version"
     ).fetchall() == [
         (1, "events"),
         (2, "runs"),
+        (3, "posts"),
+        (4, "events_run_canvas"),
     ]
     conn.close()
 
@@ -34,7 +41,21 @@ def test_legacy_sqlite_events_are_backfilled(tmp_path: Path) -> None:
     events: list[tuple[str, float, str, int | None, dict[str, object]]] = [
         ("listed", 1.0, "run.created", None, {"config": config}),
         ("listed", 2.0, "pixel", 1, {"x": 1, "y": 2, "color": 3}),
-        ("listed", 3.0, "post", 1, {"body": "hello"}),
+        (
+            "listed",
+            3.0,
+            "post",
+            1,
+            {
+                "id": 1,
+                "thread_id": 1,
+                "parent_id": None,
+                "author_id": 1,
+                "title": "hello",
+                "body": "hello",
+                "created_at": 3.0,
+            },
+        ),
         ("listed", 4.0, "agent.thought", 1, {"thought": "Tool call rejected: invalid"}),
         ("listed", 5.0, "agent.thought", 1, {"thought": "Painting a sun"}),
         ("listed", 6.0, "narrator.update", None, {"kind": "update", "text": "News"}),
@@ -80,6 +101,83 @@ def test_legacy_sqlite_events_are_backfilled(tmp_path: Path) -> None:
     log.close()
 
 
+def test_posts_and_votes_backfill_from_migration_two_database(tmp_path: Path) -> None:
+    path = tmp_path / "version-2.db"
+    config = {"width": 16, "height": 16, "agents": 2}
+    events = [
+        ("r", 1.0, "run.created", None, {"config": config}),
+        (
+            "r",
+            2.0,
+            "post",
+            1,
+            {
+                "id": 1,
+                "thread_id": 1,
+                "parent_id": None,
+                "author_id": 1,
+                "title": "before",
+                "body": "discarded",
+                "created_at": 2.0,
+            },
+        ),
+        ("r", 3.0, "board.vote", 1, {"thread_id": 1, "votes": 1}),
+        ("r", 4.0, "board.vote", 1, {"thread_id": 1, "votes": 2}),
+        ("r", 5.0, "god.clear_board", None, {}),
+        (
+            "r",
+            6.0,
+            "post",
+            2,
+            {
+                "id": 2,
+                "thread_id": 2,
+                "parent_id": None,
+                "author_id": 2,
+                "title": "after",
+                "body": "kept",
+                "created_at": 6.0,
+                "society": 1,
+            },
+        ),
+        ("r", 7.0, "board.vote", 2, {"thread_id": 2, "votes": 1}),
+        ("r", 8.0, "board.vote", 2, {"thread_id": 2, "votes": -1}),
+        ("r", 9.0, "board.vote", 2, {"thread_id": 3, "votes": 3}),
+    ]
+    conn = sqlite3.connect(path)
+    conn.execute(SQLITE_MIGRATIONS_TABLE)
+    for statement in MIGRATIONS[0].sqlite_statements:
+        conn.execute(statement)
+    conn.execute(
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+        (1, "events", 0.0),
+    )
+    conn.executemany(
+        "INSERT INTO events (run_id, ts, kind, agent_id, payload) VALUES (?, ?, ?, ?, ?)",
+        [
+            (run_id, ts, kind, agent_id, json.dumps(payload, separators=(",", ":")))
+            for run_id, ts, kind, agent_id, payload in events
+        ],
+    )
+    for statement in MIGRATIONS[1].sqlite_statements:
+        conn.execute(statement)
+    conn.execute(
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+        (2, "runs", 0.0),
+    )
+    conn.commit()
+    conn.close()
+
+    conn = sqlite3.connect(path)
+    assert migrate_sqlite(conn) == [3, 4]
+    conn.close()
+
+    log = EventLog(path)
+    assert log.posts("r") == [(Post(2, 2, 2, None, "after", "kept", 6.0), 1)]
+    assert log.thread_votes("r") == {2: -1, 3: 3}
+    log.close()
+
+
 def test_migration_cli_accepts_a_sqlite_path(tmp_path: Path) -> None:
     path = tmp_path / "cli.db"
     result = subprocess.run(
@@ -88,4 +186,4 @@ def test_migration_cli_accepts_a_sqlite_path(tmp_path: Path) -> None:
         text=True,
         check=True,
     )
-    assert result.stdout.strip() == "Applied migrations: 1, 2"
+    assert result.stdout.strip() == "Applied migrations: 1, 2, 3, 4"

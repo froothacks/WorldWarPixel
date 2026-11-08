@@ -11,6 +11,8 @@ from typing import Any
 import psycopg
 
 POSTGRES_MIGRATION_LOCK_ID = 7_790_184_232_151_091
+CANVAS_KINDS = ("pixel", "god.clear_canvas")
+CANVAS_KINDS_SQL = ", ".join(f"'{kind}'" for kind in CANVAS_KINDS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +43,55 @@ def postgres_run_rollup_sql(*, filter_run_ids: bool = False) -> str:
         FROM events
         {where}
         GROUP BY run_id
+    """
+
+
+def postgres_posts_backfill_sql(*, filter_run_ids: bool = False) -> str:
+    """Return the posts backfill, optionally limited to run ids in ``%s``."""
+    cleared_filter = " AND run_id = ANY(%s)" if filter_run_ids else ""
+    posts_filter = " AND e.run_id = ANY(%s)" if filter_run_ids else ""
+    return f"""
+        WITH cleared AS (
+            SELECT run_id, MAX(id) AS id FROM events
+            WHERE kind = 'god.clear_board'{cleared_filter}
+            GROUP BY run_id
+        )
+        INSERT INTO posts (
+            run_id, id, thread_id, parent_id, author_id, title, body, created_at, society
+        )
+        SELECT e.run_id, (e.p ->> 'id')::bigint, (e.p ->> 'thread_id')::bigint,
+            (e.p ->> 'parent_id')::bigint, (e.p ->> 'author_id')::integer, e.p ->> 'title',
+            e.p ->> 'body', (e.p ->> 'created_at')::double precision, (e.p ->> 'society')::integer
+        FROM (SELECT run_id, id, payload::jsonb AS p FROM events WHERE kind = 'post') AS e
+        LEFT JOIN cleared AS c ON c.run_id = e.run_id
+        WHERE e.id > COALESCE(c.id, 0){posts_filter}
+        ON CONFLICT (run_id, id) DO NOTHING
+    """
+
+
+def postgres_votes_backfill_sql(*, filter_run_ids: bool = False) -> str:
+    """Return the latest vote backfill, optionally limited to run ids in ``%s``."""
+    cleared_filter = " AND run_id = ANY(%s)" if filter_run_ids else ""
+    votes_filter = " AND e.run_id = ANY(%s)" if filter_run_ids else ""
+    return f"""
+        WITH cleared AS (
+            SELECT run_id, MAX(id) AS id FROM events
+            WHERE kind = 'god.clear_board'{cleared_filter}
+            GROUP BY run_id
+        )
+        INSERT INTO thread_votes (run_id, thread_id, votes)
+        SELECT run_id, thread_id, votes FROM (
+            SELECT DISTINCT ON (e.run_id, e.thread_id) e.run_id, e.thread_id, e.votes
+            FROM (
+                SELECT run_id, id, (payload::jsonb ->> 'thread_id')::bigint AS thread_id,
+                    (payload::jsonb ->> 'votes')::integer AS votes
+                FROM events WHERE kind = 'board.vote'
+            ) AS e
+            LEFT JOIN cleared AS c ON c.run_id = e.run_id
+            WHERE e.id > COALESCE(c.id, 0){votes_filter}
+            ORDER BY e.run_id, e.thread_id, e.id DESC
+        ) AS latest
+        ON CONFLICT (run_id, thread_id) DO NOTHING
     """
 
 
@@ -140,6 +191,105 @@ MIGRATIONS = (
             FOREIGN KEY (run_id) REFERENCES runs (id)
             ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE
             """,
+        ),
+    ),
+    Migration(
+        version=3,
+        name="posts",
+        sqlite_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS posts (
+                run_id TEXT NOT NULL,
+                id INTEGER NOT NULL,
+                thread_id INTEGER NOT NULL,
+                parent_id INTEGER,
+                author_id INTEGER NOT NULL,
+                title TEXT,
+                body TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                society INTEGER,
+                PRIMARY KEY (run_id, id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS posts_thread ON posts (run_id, thread_id, id)",
+            """
+            CREATE TABLE IF NOT EXISTS thread_votes (
+                run_id TEXT NOT NULL,
+                thread_id INTEGER NOT NULL,
+                votes INTEGER NOT NULL,
+                PRIMARY KEY (run_id, thread_id)
+            )
+            """,
+            """
+            INSERT OR IGNORE INTO posts (
+                run_id, id, thread_id, parent_id, author_id, title, body, created_at, society
+            )
+            SELECT e.run_id, json_extract(e.payload, '$.id'),
+                json_extract(e.payload, '$.thread_id'),
+                json_extract(e.payload, '$.parent_id'), json_extract(e.payload, '$.author_id'),
+                json_extract(e.payload, '$.title'), json_extract(e.payload, '$.body'),
+                json_extract(e.payload, '$.created_at'), json_extract(e.payload, '$.society')
+            FROM events AS e
+            WHERE e.kind = 'post' AND e.id > COALESCE((
+                SELECT MAX(c.id) FROM events AS c
+                WHERE c.run_id = e.run_id AND c.kind = 'god.clear_board'
+            ), 0)
+            """,
+            """
+            INSERT OR IGNORE INTO thread_votes (run_id, thread_id, votes)
+            SELECT run_id, thread_id, votes FROM (
+                SELECT e.run_id, json_extract(e.payload, '$.thread_id') AS thread_id,
+                    json_extract(e.payload, '$.votes') AS votes,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY e.run_id, json_extract(e.payload, '$.thread_id')
+                        ORDER BY e.id DESC
+                    ) AS rn
+                FROM events AS e
+                WHERE e.kind = 'board.vote' AND e.id > COALESCE((
+                    SELECT MAX(c.id) FROM events AS c
+                    WHERE c.run_id = e.run_id AND c.kind = 'god.clear_board'
+                ), 0)
+            ) WHERE rn = 1
+            """,
+        ),
+        postgres_statements=(
+            """
+            CREATE TABLE IF NOT EXISTS posts (
+                run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+                id BIGINT NOT NULL,
+                thread_id BIGINT NOT NULL,
+                parent_id BIGINT,
+                author_id INTEGER NOT NULL,
+                title TEXT,
+                body TEXT NOT NULL,
+                created_at DOUBLE PRECISION NOT NULL,
+                society INTEGER,
+                PRIMARY KEY (run_id, id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS posts_thread ON posts (run_id, thread_id, id)",
+            """
+            CREATE TABLE IF NOT EXISTS thread_votes (
+                run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+                thread_id BIGINT NOT NULL,
+                votes INTEGER NOT NULL,
+                PRIMARY KEY (run_id, thread_id)
+            )
+            """,
+            postgres_posts_backfill_sql(),
+            postgres_votes_backfill_sql(),
+        ),
+    ),
+    Migration(
+        version=4,
+        name="events_run_canvas",
+        sqlite_statements=(
+            f"CREATE INDEX IF NOT EXISTS events_run_canvas ON events (run_id, id) "
+            f"WHERE kind IN ({CANVAS_KINDS_SQL})",
+        ),
+        postgres_statements=(
+            f"CREATE INDEX IF NOT EXISTS events_run_canvas ON events (run_id, id) "
+            f"WHERE kind IN ({CANVAS_KINDS_SQL})",
         ),
     ),
 )
