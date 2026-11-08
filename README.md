@@ -144,7 +144,7 @@ Sources: UN DESA, World Population Prospects 2024; Haerpfer et al. (eds.), World
 `deploy/modal_app.py` runs the app (API + UI + WebSockets) in a single CPU [Modal Sandbox](https://modal.com/docs/guide/sandboxes). CPU Sandboxes are not preempted, but they live at most 24h and get a new tunnel URL each time, so the module also deploys:
 
 - `keep_alive`: an hourly job that starts the sandbox if it is gone and replaces it once it is 23h old.
-- `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. Share this URL.
+- `home`: a web endpoint with a stable `*.modal.run` URL that redirects to the current sandbox. It also answers `worldwarpixel.com` and `www.worldwarpixel.com` (Modal custom domains; point both DNS records at `cname.modal.domains`). Share any of these URLs.
 
 The event log is SQLite on the sandbox's local disk. `deploy/serve.py` restores it from the `worldwarpixel-data` Volume on start, writes a consistent copy back every 5 minutes (`BACKUP_INTERVAL`) and on shutdown, and commits it with `sync`. Live runs are held in memory, so they end when the sandbox is replaced (daily, or on a crash); they come back as stopped runs rebuilt from the saved log (up to 5 minutes of the latest events can be lost on a crash).
 
@@ -159,6 +159,8 @@ uv run --with modal modal deploy deploy/modal_app.py    # keeper job + stable re
 ```
 
 Set `GOD_TOKEN`: without it the god-mode controls are open to anyone with the URL. After code changes, run `launch` again; it rebuilds the image and replaces the sandbox.
+
+**Custom domain.** `home` is deployed with `custom_domains=["worldwarpixel.com", "www.worldwarpixel.com"]`, so Modal terminates TLS for them (a plain CNAME to the `*.modal.direct` URL cannot work: Modal resets handshakes for foreign SNIs). In Cloudflare, replace the apex A record and the `www` CNAME with CNAMEs to `cname.modal.domains` (the apex CNAME is flattened by Cloudflare), then deploy once so Modal provisions the certificates. Visitors are redirected (307) to the current sandbox tunnel, which changes on each daily sandbox replacement.
 
 **Continuous deploy.** `.github/workflows/deploy.yml` runs `launch` and `modal deploy` after CI passes on `main`, or from the Actions tab (*Deploy → Run workflow*). It only needs the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` repository secrets (a token from Modal → Settings → API Tokens) and is skipped while they are unset. The app's own settings stay in the `worldwarpixel` Modal secret, which can also be created in the Modal dashboard (Secrets → Custom). Every deploy replaces the sandbox, so a running simulation stops. Other commands: `python deploy/modal_app.py status | restart | backup | stop`.
 
