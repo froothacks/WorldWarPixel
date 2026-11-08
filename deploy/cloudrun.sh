@@ -35,6 +35,7 @@ gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1 \
 # The app runs as its own service account with access to the data bucket only.
 gcloud iam service-accounts describe "$RUNTIME_SA" >/dev/null 2>&1 \
   || gcloud iam service-accounts create "${RUNTIME_SA%%@*}" --display-name "WorldWarPixel Cloud Run"
+# Cloud Storage FUSE reads as the Cloud Storage service agent; objectAdmin covers it anyway.
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member "serviceAccount:$RUNTIME_SA" --role roles/storage.objectAdmin >/dev/null
 
