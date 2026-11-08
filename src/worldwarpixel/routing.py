@@ -196,6 +196,7 @@ class EndpointPool:
             )
             for endpoint, _ in self._endpoints
         }
+        self._limit_epoch: dict[str, int] = dict.fromkeys(self._limits, 0)
         self._in_flight: dict[str, int] = dict.fromkeys(self._limits, 0)
         self._successes_since_change: dict[str, int] = dict.fromkeys(self._limits, 0)
         self._slot_waiters: dict[str, deque[asyncio.Future[None]]] = {
@@ -318,8 +319,10 @@ class EndpointPool:
         self._in_flight[endpoint] -= 1
         self._wake_slot_waiters(endpoint)
 
-    def _record_success(self, endpoint: Endpoint) -> None:
+    def _record_success(self, endpoint: Endpoint, epoch: int) -> None:
         name = endpoint.name
+        if epoch != self._limit_epoch[name] or self._limited_until.get(name, 0.0) > self._clock():
+            return
         self._successes_since_change[name] += 1
         threshold = max(1, math.floor(self._limits[name]))
         if self._successes_since_change[name] < threshold:
@@ -341,6 +344,7 @@ class EndpointPool:
         self._limited_until[name] = max(self._limited_until.get(name, 0.0), now + retry)
         self._successes_since_change[name] = 0
         if not already_limited:
+            self._limit_epoch[name] += 1
             previous = self._limits[name]
             updated = max(1, math.floor(previous / 2))
             if updated != previous:
@@ -373,6 +377,7 @@ class EndpointPool:
             while True:
                 await self._wait_for_limit(endpoint.name)
                 await self._acquire_slot(endpoint.name)
+                epoch = self._limit_epoch[endpoint.name]
                 if self._limited_until.get(endpoint.name, 0.0) > self._clock():
                     self._release_slot(endpoint.name)
                     continue
@@ -389,7 +394,7 @@ class EndpointPool:
                     if isinstance(e, RateLimitError):
                         retry_wait = self._record_rate_limit(endpoint, e)
                 else:
-                    self._record_success(endpoint)
+                    self._record_success(endpoint, epoch)
                 finally:
                     self._release_slot(endpoint.name)
 

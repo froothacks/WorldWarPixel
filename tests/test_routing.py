@@ -662,6 +662,84 @@ def test_successes_increase_limit_additively_up_to_the_ceiling() -> None:
     asyncio.run(main())
 
 
+def test_429_epoch_ignores_old_successes_until_four_fresh_successes() -> None:
+    async def main() -> None:
+        clock = [0.0]
+        sleep_started = asyncio.Event()
+        resume_sleep = asyncio.Event()
+
+        async def sleep(seconds: float) -> None:
+            sleep_started.set()
+            await resume_sleep.wait()
+            clock[0] += seconds
+
+        class ControlledClient:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.entered: asyncio.Queue[int] = asyncio.Queue()
+                self.releases: list[asyncio.Event] = []
+
+            @property
+            def chat(self) -> Any:
+                return SimpleNamespace(completions=self)
+
+            async def create(self, **kwargs: Any) -> str:
+                index = self.calls
+                self.calls += 1
+                release = asyncio.Event()
+                self.releases.append(release)
+                await self.entered.put(index)
+                await release.wait()
+                if index == 0:
+                    raise _rate_limited({"retry-after": "20"})
+                return cast(str, kwargs["model"])
+
+        client = ControlledClient()
+        endpoint = Endpoint(
+            "only",
+            "https://only/v1",
+            "m",
+            "bearer",
+            (),
+            max_in_flight=8,
+            initial_in_flight=8,
+        )
+        pool = EndpointPool(
+            [(endpoint, client)], clock=lambda: clock[0], sleep=sleep, rng=NoJitter()
+        )
+        original = [asyncio.create_task(pool.create(f"old:{i}")) for i in range(5)]
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(5)] == list(range(5))
+
+        client.releases[0].set()
+        await asyncio.wait_for(sleep_started.wait(), 1)
+        assert pool.public_stats()["only"]["limit"] == 4
+
+        for release in client.releases[1:3]:
+            release.set()
+        await asyncio.gather(*original[1:3])
+        assert pool.public_stats()["only"]["limit"] == 4
+        assert pool._successes_since_change["only"] == 0
+
+        resume_sleep.set()
+        assert await asyncio.wait_for(client.entered.get(), 1) == 5
+        for release in client.releases[3:5]:
+            release.set()
+        await asyncio.gather(*original[3:])
+        assert pool.public_stats()["only"]["limit"] == 4
+        assert pool._successes_since_change["only"] == 0
+
+        fresh = [asyncio.create_task(pool.create(f"fresh:{i}")) for i in range(3)]
+        assert [await asyncio.wait_for(client.entered.get(), 1) for _ in range(3)] == [6, 7, 8]
+        for release in client.releases[5:]:
+            release.set()
+        await asyncio.gather(original[0], *fresh)
+        assert pool.public_stats()["only"]["limit"] == 5
+        assert pool._successes_since_change["only"] == 0
+        assert pool.public_stats()["only"]["in_flight"] == 0
+
+    asyncio.run(main())
+
+
 def test_describe_endpoint_returns_unknown_for_unattributed_error() -> None:
     assert describe_endpoint(ValueError()) == "unknown endpoint"
 
