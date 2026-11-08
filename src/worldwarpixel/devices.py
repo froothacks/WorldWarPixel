@@ -3,9 +3,10 @@
 Any bearer token in ``DEVICE_TOKENS`` admits a device; the society it maps to is only the default.
 A screen picks which society it shows and speaks to with ``?society=`` (HTTP and WebSocket) or a
 ``society.select`` WebSocket message, and which run with ``?run=`` or ``run.select`` (by default it
-follows the newest live run with societies; ``GET /devices/runs`` lists the choices). It receives
-that society's live state and can send a short voice clip; the clip is transcribed and condensed
-into the society's unattributed murmur. In interview mode the screen instead picks one agent
+follows the newest live run, preferring ones with societies; ``GET /devices/runs`` lists the
+choices, and runs without societies are interview-only). It receives that society's live state
+and can send a short voice clip; the clip is transcribed and condensed into the society's
+unattributed murmur. In interview mode the screen instead picks one agent
 (``agents.list`` / ``interview.select``, or a clip with ``"purpose": "pick"`` naming them) and
 asks it questions (``"purpose": "interview"``); the agent's answer comes back as
 ``interview.reply`` followed by binary 16 kHz PCM frames and ``interview.audio_end``. With no
@@ -102,14 +103,14 @@ DeviceDep = Annotated[Device, Depends(require_device)]
 
 
 def current_run(manager: RunManager, run_id: str | None = None) -> Run | None:
-    """The newest live run with societies (screens follow whatever is on show), or `run_id`."""
-    live = [r for r in manager.active() if r.societies is not None and run_id in (None, r.id)]
-    return max(live, key=lambda r: r.started_at or 0.0, default=None)
+    """The live run `run_id`, else the newest live run (preferring ones with societies)."""
+    live = [r for r in manager.active() if run_id in (None, r.id)]
+    return max(live, key=lambda r: (r.societies is not None, r.started_at or 0.0), default=None)
 
 
 def run_choices(manager: RunManager) -> list[dict[str, Any]]:
-    """Live runs a screen can join, newest first."""
-    live = [r for r in manager.active() if r.societies is not None]
+    """Live runs a screen can join, newest first (runs without societies are interview-only)."""
+    live = list(manager.active())
     live.sort(key=lambda r: r.started_at or 0.0, reverse=True)
     return [
         {
@@ -123,10 +124,14 @@ def run_choices(manager: RunManager) -> list[dict[str, Any]]:
     ]
 
 
-def _run_for(request: Request, device: Device) -> Run:
+def _run_for(request: Request, device: Device, societies: bool = True) -> Run:
     run = current_run(request.app.state.runs, request.query_params.get("run"))
-    if run is None or run.societies is None:
-        raise HTTPException(409, "no running world with societies")
+    if run is None:
+        raise HTTPException(409, "no running world")
+    if not societies:
+        return run
+    if run.societies is None:
+        raise HTTPException(409, "this world has no societies")
     if device.society >= run.societies.count:
         raise HTTPException(409, f"this world has no society {device.society}")
     return run
@@ -135,6 +140,13 @@ def _run_for(request: Request, device: Device) -> Run:
 def screen_name(society: dict[str, Any]) -> str:
     """The society's name in the screens' ASCII font (a placeholder if nothing survives)."""
     return " ".join(interview.ascii_text(society["name"]).split()) or f"Society {society['id'] + 1}"
+
+
+def society_briefs(societies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {"id": s["id"], "name": screen_name(s), "color": s["color"], "members": s["members"]}
+        for s in societies
+    ]
 
 
 def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, Any]:
@@ -147,15 +159,7 @@ def device_state(run: Run, device: Device, voice: dict[str, Any]) -> dict[str, A
             **{k: mine[k] for k in ("id", "color", "members", "joined", "left")},
             "name": screen_name(mine),
         },
-        "societies": [
-            {
-                "id": s["id"],
-                "name": screen_name(s),
-                "color": s["color"],
-                "members": s["members"],
-            }
-            for s in societies
-        ],
+        "societies": society_briefs(societies),
         "threads": [
             {"title": d["title"], "author": d["author"], "replies": d["replies"]}
             for d in run.society_threads(device.society, limit=3)
@@ -243,7 +247,7 @@ async def device_canvas(
     w: Annotated[int, Query(ge=1, le=MAX_THUMB)] = 160,
     h: Annotated[int, Query(ge=1, le=MAX_THUMB)] = 100,
 ) -> Response:
-    run = _run_for(request, device)
+    run = _run_for(request, device, societies=False)
     return Response(canvas_thumb(run, w, h), media_type="application/octet-stream")
 
 
@@ -382,8 +386,20 @@ async def device_socket(websocket: WebSocket) -> None:
             listed = runs
             await websocket.send_json({"type": "runs", "runs": runs})
         run = current_run(app.state.runs, run_id)
-        if run is None or run.societies is None or me.society >= run.societies.count:
+        if run is None:
             await websocket.send_json({"type": "state", "run": None, "voice": voice})
+            return
+        if run.societies is None or me.society >= run.societies.count:
+            briefs = society_briefs(run.society_summary()) if run.societies else []
+            await websocket.send_json(
+                {
+                    "type": "state",
+                    "run": run.id,
+                    "society": None,
+                    "societies": briefs,
+                    "voice": voice,
+                }
+            )
             return
         migs = list(run.societies.migrations)
         new = min(run.societies.moves - seen, len(migs))
