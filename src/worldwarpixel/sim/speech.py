@@ -209,6 +209,10 @@ class Speech:
         return self._audio.get(line_id)
 
     @property
+    def synth(self) -> SpeechSynth | None:
+        return self._synth
+
+    @property
     def sample_rate(self) -> int:
         return self._synth.sample_rate if self._synth is not None else SAMPLE_RATE
 

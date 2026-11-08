@@ -1,6 +1,10 @@
+import asyncio
+import logging
+import struct
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +15,7 @@ from worldwarpixel.sim.agents import AgentSpec
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import Board, Post
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import EventLog, EventStore
 from worldwarpixel.sim.hub import FRAME_SNAPSHOT
 from worldwarpixel.sim.run import RunConfig
 
@@ -96,6 +100,65 @@ def test_unknown_and_legacy_runs() -> None:
     assert raided is not None and raided.world.snapshot() != run.world.snapshot()
 
 
+def test_restore_run_reads_from_source_but_keeps_original_log() -> None:
+    log = EventLog()
+    source = EventLog()
+    config = RunConfig(width=16, height=16, agents=2, seed=3, policy="random")
+    source.append("source", 1.0, "run.created", None, {"config": config.model_dump()})
+    source.append("source", 2.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
+
+    run = restore_run(log, "source", source=source)
+
+    assert run is not None and run.log is log
+    assert run.created_at == 1.0 and run.stats["pixels"] == 1
+    assert run.canvas.get(2, 3) == 4
+
+
+def test_archived_api_reads_use_and_close_readers(
+    server: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    with TestClient(app) as client:
+        manager = client.app.state.runs  # type: ignore[attr-defined]
+        run_id = "archived"
+        config = RunConfig(width=16, height=16, agents=2, seed=3, policy="random")
+        manager.log.append(run_id, 1.0, "run.created", None, {"config": config.model_dump()})
+        manager.log.append(run_id, 2.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
+
+        readers = []
+        closed = []
+        original_reader = manager.log.reader
+
+        def tracked_reader() -> EventStore:
+            reader = cast(EventStore, original_reader())
+            readers.append(reader)
+            close = reader.close
+
+            def tracked_close() -> None:
+                closed.append(reader)
+                close()
+
+            monkeypatch.setattr(reader, "close", tracked_close)
+            return reader
+
+        monkeypatch.setattr(manager.log, "reader", tracked_reader)
+
+        with caplog.at_level(logging.INFO, logger="worldwarpixel.api"):
+            events = client.get(f"/runs/{run_id}/events")
+        assert events.status_code == 200
+        assert [event["kind"] for event in events.json()] == ["run.created", "pixel"]
+        assert events.json()[1]["payload"] == {"x": 2, "y": 3, "color": 4}
+        assert len(readers) == 2 and closed == readers
+        assert any(
+            "restored run archived pixels=1 in" in record.getMessage() for record in caplog.records
+        )
+
+        timelapse = client.get(f"/runs/{run_id}/timelapse", params={"frames": 3})
+        assert timelapse.status_code == 200
+        assert timelapse.headers["content-type"] == "application/octet-stream"
+        assert struct.unpack_from("<HHH", timelapse.content, 0) == (3, 16, 16)
+        assert len(readers) == 3 and closed == readers
+
+
 def test_board_restore_keeps_ids_and_skips_orphans() -> None:
     board = Board()
     board.restore(Post(5, 1, 5, None, "t", "root", 1.0))
@@ -149,3 +212,59 @@ def test_dispatch_posts_restore_with_the_world_news_author() -> None:
 def test_runs_archived_without_a_model_still_load() -> None:
     config = RunConfig.model_validate({**RunConfig().model_dump(), "model": None})
     assert config.model == RunConfig().model
+
+
+def test_runs_interrupted_by_a_restart_resume(
+    server: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RESUME_RUNS", "true")
+    get_settings.cache_clear()
+    with TestClient(app) as client:
+        live = client.post("/runs", json=SMALL).json()["id"]
+        paused = client.post("/runs", json=SMALL).json()["id"]
+        stopped = client.post("/runs", json=SMALL).json()["id"]
+        time.sleep(0.2)
+        client.post(f"/runs/{paused}/pause")
+        client.post(f"/runs/{stopped}/stop")
+        before = client.get(f"/runs/{live}").json()["stats"]["pixels"]
+
+    with TestClient(app) as client:
+        deadline = time.time() + 5
+        while client.get(f"/runs/{live}").json()["state"] != "running" and time.time() < deadline:
+            time.sleep(0.05)
+        assert client.get(f"/runs/{live}").json()["state"] == "running"
+        assert client.get(f"/runs/{paused}").json()["state"] == "paused"
+        assert client.get(f"/runs/{stopped}").json()["state"] == "stopped"
+        deadline = time.time() + 3
+        while client.get(f"/runs/{live}").json()["stats"]["pixels"] <= before:
+            assert time.time() < deadline
+            time.sleep(0.05)
+        kinds = [e["kind"] for e in client.get(f"/runs/{live}/events").json()]
+        assert kinds.count("run.created") == 1
+        client.delete(f"/runs/{paused}")
+
+    with TestClient(app) as client:  # resumed again after the second restart, deleted one not
+        deadline = time.time() + 5
+        while client.get(f"/runs/{live}").json()["state"] != "running" and time.time() < deadline:
+            time.sleep(0.05)
+        assert client.get(f"/runs/{live}").json()["state"] == "running"
+        assert client.get(f"/runs/{paused}").status_code == 404
+        client.post(f"/runs/{live}/stop")
+
+
+def test_restored_interrupted_runs_keep_model_and_narrator_ids() -> None:
+    log = EventLog()
+    config = RunConfig(width=32, height=16, agents=2, seed=3, policy="random")
+    log.append("m", 1.0, "run.created", None, {"config": config.model_dump()})
+    log.append("m", 2.0, "god.model_changed", 65535, {"model": "other"})
+    log.append("m", 3.0, "narrator.update", None, {"id": 4, "kind": "update", "headline": "h"})
+    log.append("m", 4.0, "run.state", None, {"state": "interrupted", "was": "running"})
+    run = restore_run(log, "m")
+    assert run is not None
+    assert run.config.model == "other"
+    assert run.narrator._next_id == 5
+    assert run.interrupted and not run.resume_paused
+    assert log.interrupted_runs() == ["m"]
+    asyncio.run(run.stop())  # stopped while waiting to resume: it must not come back
+    assert not run.interrupted
+    assert log.interrupted_runs() == []

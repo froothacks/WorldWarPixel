@@ -3,8 +3,8 @@ name: Deploy
 # After CI passes for a push to main (or on demand), deploy the always-on web container to Modal
 # (retiring the legacy Sandbox) and to Cloud Run. Each target is skipped while its repo secrets are
 # unset: MODAL_TOKEN_ID / MODAL_TOKEN_SECRET for Modal (app settings live in the `worldwarpixel`
-# Modal secret), GCP_SA_KEY (deployer service-account JSON) + GCP_APP_ENV (the app settings as
-# KEY=value lines) for Cloud Run.
+# Modal secret), and GCP_SA_KEY (deployer service-account JSON) for Cloud Run. Cloud Run reads app
+# secrets from Secret Manager by name; optional GCP_APP_ENV holds only non-secret settings.
 on:
   workflow_run:
     workflows: [CI]
@@ -71,9 +71,6 @@ jobs:
         run: |
           if [ -z "$GCP_SA_KEY" ]; then
             echo "::notice::GCP_SA_KEY not set; skipping Cloud Run deploy"
-          elif [ -z "$GCP_APP_ENV" ]; then
-            echo "::error::GCP_APP_ENV (app settings as KEY=value lines) is required for the Cloud Run deploy"
-            exit 1
           elif [ -n "$TESTED_SHA" ] && [ "$TESTED_SHA" != "$(git rev-parse HEAD)" ]; then
             echo "::notice::$TESTED_SHA is no longer main's head; skipping deploy"
           else
@@ -89,6 +86,10 @@ jobs:
         env:
           GCP_APP_ENV: ${{ secrets.GCP_APP_ENV }}
         run: |
-          # Outside the checkout so the build context never contains the app secrets.
-          printf '%s\n' "$GCP_APP_ENV" > "$RUNNER_TEMP/app.env"
-          APP_ENV_FILE="$RUNNER_TEMP/app.env" deploy/cloudrun.sh
+          if [ -n "$GCP_APP_ENV" ]; then
+            # Outside the checkout so the build context never contains app settings.
+            printf '%s\n' "$GCP_APP_ENV" > "$RUNNER_TEMP/app.env"
+            APP_ENV_FILE="$RUNNER_TEMP/app.env" deploy/cloudrun.sh
+          else
+            deploy/cloudrun.sh
+          fi

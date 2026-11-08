@@ -9,5 +9,6 @@ def _isolate_timelapses(
 ) -> None:
     """Tests that stop runs must not render videos into the repo's timelapse directory."""
     monkeypatch.setenv("TIMELAPSE_AUTO", "false")
+    monkeypatch.setenv("RESUME_RUNS", "false")
     monkeypatch.setenv("TIMELAPSE_DIR", str(tmp_path_factory.mktemp("timelapses")))
     get_settings.cache_clear()

@@ -5,15 +5,24 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from worldwarpixel.api import RunManager
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
-from worldwarpixel.devices import parse_tokens
+from worldwarpixel.devices import parse_tokens, screen_name
 from worldwarpixel.sim.agents import AgentSpec, Observation, RandomWalkPolicy
+from worldwarpixel.sim.archive import restore_run
 from worldwarpixel.sim.board import Board
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import SOCIETY_TOOLS, LLMPolicy, user_prompt
 from worldwarpixel.sim.run import Run, RunConfig
-from worldwarpixel.sim.societies import MURMUR_WINDOW, Societies, SocietyError
+from worldwarpixel.sim.societies import (
+    MURMUR_WINDOW,
+    Societies,
+    SocietyError,
+    naming_messages,
+    parse_names,
+    random_names,
+)
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget
 
 
@@ -248,7 +257,7 @@ def test_device_picks_its_run(client: TestClient) -> None:
     new = client.post("/runs", json={**SMALL, "societies": 3}).json()["id"]
     listed = client.get("/devices/runs", headers=hdr).json()
     assert [r["id"] for r in listed["runs"]] == [new, old] and listed["newest"] == new
-    assert listed["runs"][0]["societies"] == ["Red", "Blue", "Green"]
+    assert len(set(listed["runs"][0]["societies"])) == 3
     assert client.get("/devices/runs").status_code == 401
     with client.websocket_connect("/devices/ws", headers=hdr) as ws:
         hello = ws.receive_json()
@@ -403,3 +412,101 @@ def test_same_title_allowed_in_other_society_and_archive_keeps_societies() -> No
     assert restored.society_summary() == run.society_summary()
     for s in range(3):
         assert restored.society_threads(s) == run.society_threads(s)
+
+
+def test_random_names_are_distinct_and_seeded() -> None:
+    import random
+
+    names = random_names(6, random.Random(1), taken=["Amber Tide"])
+    assert len(set(n.lower() for n in names)) == 6 and "Amber Tide" not in names
+    assert names == random_names(6, random.Random(1), taken=["Amber Tide"])
+
+
+def test_parse_names_json_or_lines() -> None:
+    assert parse_names('Sure! ["Kelp Lords", "kelp lords", "The Abyss"]', 3) == [
+        "Kelp Lords",
+        "The Abyss",
+    ]
+    assert parse_names('1. "Anglers"\n- Tube Worms\n3) Vents\n4. Extra', 3) == [
+        "Anglers",
+        "Tube Worms",
+        "Vents",
+    ]
+    assert parse_names("x" * 80, 1) == ["x" * 40]
+    assert parse_names("Here are some ideas\n1. Anglers\n2. Vents", 2) == ["Anglers", "Vents"]
+    assert parse_names("Names:\nAnglers\nVents", 2) == ["Anglers", "Vents"]
+
+
+def test_naming_prompt_carries_the_theme() -> None:
+    assert "deep-sea creatures" in naming_messages(3, "deep-sea creatures")[-1]["content"]
+    assert "surprise" in naming_messages(3, None)[-1]["content"]
+
+
+def test_run_names_societies_and_logs_them() -> None:
+    log = EventLog()
+    cfg = RunConfig(width=32, height=16, agents=4, seed=3, societies=3, society_names=["Kelp"])
+    run = Run("r", cfg, log, RandomWalkPolicy(seed=0))
+    assert run.societies is not None
+    names = [s.name for s in run.societies.societies]
+    assert names[0] == "Kelp" and len(set(names)) == 3 and run.config.society_names == names
+    assert Run("r2", cfg, log, RandomWalkPolicy(seed=0)).config.society_names == names
+
+
+def test_restored_legacy_run_keeps_colour_names() -> None:
+    log = EventLog()
+    cfg = RunConfig(width=32, height=16, agents=4, seed=3, societies=2).model_dump()
+    log.append("old", 0.0, "run.created", None, {"config": cfg})
+    run = restore_run(log, "old")
+    assert run is not None and run.societies is not None
+    assert [s.name for s in run.societies.societies] == ["Red", "Blue"]
+
+
+def test_manager_asks_the_namer_with_the_theme() -> None:
+    asked: list[RunConfig] = []
+
+    async def namer(config: RunConfig) -> list[str] | None:
+        asked.append(config)
+        return ["Anglers", "Vents"]
+
+    async def go() -> list[str]:
+        manager = RunManager(EventLog(), name_societies=namer)
+        cfg = RunConfig(
+            width=32, height=16, agents=4, policy="random", societies=2, society_theme="deep sea"
+        )
+        run = await manager.create(cfg)
+        await run.stop()
+        assert run.societies is not None
+        return [s.name for s in run.societies.societies]
+
+    assert asyncio.run(go()) == ["Anglers", "Vents"]
+    assert asked[0].society_theme == "deep sea"
+
+
+def test_screen_name_is_ascii_with_a_placeholder() -> None:
+    assert screen_name({"id": 0, "name": "Café 🐟 Owls"}) == "Cafe Owls"
+    assert screen_name({"id": 1, "name": "海洋"}) == "Society 2"
+
+
+def test_openai_transcriber_sends_a_wav() -> None:
+    import io
+    import wave
+    from types import SimpleNamespace
+    from typing import Any
+
+    from worldwarpixel.voice import OpenAITranscriber
+
+    sent: dict[str, Any] = {}
+
+    async def create(**kw: Any) -> SimpleNamespace:
+        sent.update(kw)
+        return SimpleNamespace(text=" more blue \n")
+
+    client: Any = SimpleNamespace(
+        audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))
+    )
+    text = asyncio.run(
+        OpenAITranscriber(client, "gpt-4o-mini-transcribe")(b"\x01\x00" * 160, 16000)
+    )
+    assert text == "more blue" and sent["model"] == "gpt-4o-mini-transcribe"
+    with wave.open(io.BytesIO(sent["file"][1])) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getnframes()) == (16000, 1, 160)

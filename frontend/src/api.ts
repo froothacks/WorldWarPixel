@@ -16,6 +16,8 @@ export interface RunConfig {
   narrator_interval: number;
   narrator_canvas_image: boolean;
   societies: number;
+  /** Optional free-text nudge for what the generated society names are about. */
+  society_theme?: string | null;
 }
 
 export const DEFAULT_CONFIG: RunConfig = {

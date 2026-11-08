@@ -14,10 +14,10 @@ from worldwarpixel.sim.agents import AgentSpec, Observation, Policy, seed_agents
 from worldwarpixel.sim.board import Board, BoardError
 from worldwarpixel.sim.canvas import PALETTE, Canvas, PixelWrite
 from worldwarpixel.sim.dispatch import DISPATCH_ID, DISPATCH_NAME, Dispatcher
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.hub import Hub
 from worldwarpixel.sim.narrator import Narrator, NarratorModel
-from worldwarpixel.sim.societies import Societies
+from worldwarpixel.sim.societies import Societies, random_names
 from worldwarpixel.sim.speech import Speech, SpeechSynth
 from worldwarpixel.sim.tools import ToolError, ToolSet, TurnBudget, apply_writes
 from worldwarpixel.sim.world import World
@@ -71,7 +71,7 @@ class RunConfig(BaseModel):
     )
     model: str = Field(
         default="gpt-6-luna",
-        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen-c, glm-5.3-flash)",
+        description="Model preset id from GET /models (e.g. gpt-6-luna, qwen, glm)",
     )
 
     @field_validator("model", mode="before")
@@ -95,6 +95,16 @@ class RunConfig(BaseModel):
         ge=0,
         le=6,
         description="Split agents into this many societies, each with its own board (0 = off)",
+    )
+    society_theme: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Optional free-text nudge for what the generated society names are about",
+    )
+    society_names: list[str] | None = Field(
+        default=None,
+        max_length=6,
+        description="Starting society names; random (or model-generated) when omitted",
     )
     narrator_canvas_image: bool = Field(
         default=True, description="Send the narrator a downsampled PNG of the canvas"
@@ -125,7 +135,7 @@ class Run:
         self,
         run_id: str,
         config: RunConfig,
-        log: EventLog,
+        log: EventStore,
         policy: Policy,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -140,6 +150,9 @@ class Run:
         self._clock = clock
         self._sleep = sleep
         self.state: RunState = "created"
+        self.interrupted = False
+        """Rebuilt from the log of a run a server shutdown interrupted; it is due to resume."""
+        self.resume_paused = False
         self.created_at = clock()
         self._agent_votes: dict[tuple[int, int], float] = {}
         self.started_at: float | None = None
@@ -165,7 +178,13 @@ class Run:
         self.world = World(self.agents, self.board)
         self.societies: Societies | None = None
         if config.societies:
-            self.societies = Societies(config.societies, switch_cooldown=3 * config.cooldown)
+            names = [n for n in config.society_names or [] if n.strip()][: config.societies]
+            rng = random.Random(f"societies-{config.seed}") if config.seed is not None else None
+            names += random_names(config.societies - len(names), rng or random.Random(), names)
+            self.config = config = config.model_copy(update={"society_names": names})
+            self.societies = Societies(
+                config.societies, switch_cooldown=3 * config.cooldown, names=names
+            )
             self.societies.assign([a.id for a in self.agents])
         self.dispatcher = Dispatcher(
             self.board,
@@ -426,12 +445,16 @@ class Run:
 
     # -- lifecycle -------------------------------------------------------------------------
 
-    async def start(self) -> None:
-        if self.state != "created":
+    async def start(self, *, resumed: bool = False) -> None:
+        """Start the agents; ``resumed`` continues a run rebuilt from the log after a restart."""
+        if self.state != ("stopped" if resumed else "created"):
             raise RuntimeError(f"run is {self.state}")
-        self.started_at = self._clock()
-        roster = [a.to_dict() for a in self.agents]
-        self._record("run.created", None, {"config": self.config.model_dump(), "agents": roster})
+        if not resumed:
+            self.started_at = self._clock()
+            roster = [a.to_dict() for a in self.agents]
+            self._record(
+                "run.created", None, {"config": self.config.model_dump(), "agents": roster}
+            )
         self._set_state("running")
         self._running.set()
         self.hub.start()
@@ -451,7 +474,24 @@ class Run:
 
     async def stop(self) -> None:
         if self.state == "stopped":
+            if self.interrupted:  # stopping it while it waits to resume keeps it stopped
+                self.interrupted = False
+                self._record("run.state", None, {"state": "stopped"})
             return
+        await self._halt()
+        self._set_state("stopped")
+        await self.hub.stop()
+
+    async def interrupt(self) -> None:
+        """Stop for a server shutdown, logged as ``interrupted`` so the next server resumes it."""
+        if self.state in ("stopped", "created"):
+            return
+        self._record("run.state", None, {"state": "interrupted", "was": self.state})
+        await self._halt()
+        self.state = "stopped"
+        await self.hub.stop()
+
+    async def _halt(self) -> None:
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
@@ -460,8 +500,6 @@ class Run:
         self._tasks = []
         await self.narrator.stop()
         self._running.set()
-        self._set_state("stopped")
-        await self.hub.stop()
 
     def _set_state(self, state: RunState) -> None:
         self.state = state
@@ -559,10 +597,7 @@ class Run:
             board=self._feed(agent, self._clock(), society),
         )
         now = self._clock()
-        obs.memory = [
-            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
-            for t in list(self.thoughts[agent.id])[-MEMORY_TURNS:]
-        ]
+        obs.memory = self.recall(agent.id)
         if self.societies is not None and society is not None:
             obs.society = {
                 **self.societies.get(society).to_dict(),
@@ -579,17 +614,28 @@ class Run:
             try:
                 thought = await self.policy.act(agent, tools, obs)
             except ToolError as e:
-                thought = f"Tool call rejected: {e}"
+                thought = f"{REJECTED}: {e}"
                 self.stats["errors"] += 1
         if budget.posts < initial_posts:
             self._last_post_turn[agent.id] = turn
         self.stats["turns"] += 1
         self.narrator.observe_turn(agent.id)
-        entry = {"ts": self._clock(), "thought": thought}
-        self.thoughts[agent.id].append(entry)
-        self._record("agent.thought", agent.id, entry)
-        self.hub.publish("agent.thought", agent_id=agent.id, **entry)
+        self.note_thought(agent.id, thought)
         self._set_status(agent.id, "idle" if queue is None or queue.empty() else "painting")
+
+    def recall(self, agent_id: int, turns: int = MEMORY_TURNS) -> list[str]:
+        """An agent's own recent thoughts, as shown back to it."""
+        now = self._clock()
+        return [
+            f"{_ago(now - t['ts'])} ago: {_recall(t['thought'])}"
+            for t in list(self.thoughts[agent_id])[-turns:]
+        ]
+
+    def note_thought(self, agent_id: int, thought: str) -> None:
+        entry = {"ts": self._clock(), "thought": thought}
+        self.thoughts[agent_id].append(entry)
+        self._record("agent.thought", agent_id, entry)
+        self.hub.publish("agent.thought", agent_id=agent_id, **entry)
 
     # -- societies -------------------------------------------------------------------------
 

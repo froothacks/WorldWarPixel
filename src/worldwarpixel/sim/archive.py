@@ -7,23 +7,29 @@ from typing import Any, cast
 from worldwarpixel.sim.agents import AgentSpec, RandomWalkPolicy
 from worldwarpixel.sim.board import Post
 from worldwarpixel.sim.canvas import PixelWrite
-from worldwarpixel.sim.events import EventLog
+from worldwarpixel.sim.events import REJECTED, EventStore
 from worldwarpixel.sim.run import Run, RunConfig
-from worldwarpixel.sim.societies import Migration
+from worldwarpixel.sim.societies import SOCIETY_NAMES, Migration
 from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
 
-REJECTED = "Tool call rejected"
 
-
-def restore_run(log: EventLog, run_id: str, speech: SpeechSynth | None = None) -> Run | None:
-    """Replay a run's events into a stopped ``Run``; None if it is unknown or was deleted."""
-    events = iter_events(log, run_id)
+def restore_run(
+    log: EventStore,
+    run_id: str,
+    speech: SpeechSynth | None = None,
+    *,
+    source: EventStore | None = None,
+) -> Run | None:
+    """Replay a run's events into a stopped ``Run``; read from source if supplied."""
+    events = iter_events(source or log, run_id)
     first = next(iter(events), None)
     if first is None or first.kind != "run.created":
         return None
     created = cast(dict[str, Any], first.payload)
     config = RunConfig.model_validate(created["config"])
+    if config.societies and config.society_names is None:  # logged before names were generated
+        config.society_names = list(SOCIETY_NAMES[: config.societies])
     # Runs logged before the roster was recorded fall back to re-seeding (exact only with a seed).
     roster = [AgentSpec(**a) for a in created.get("agents", [])]
     run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None, speech=speech)
@@ -65,6 +71,7 @@ def restore_run(log: EventLog, run_id: str, speech: SpeechSynth | None = None) -
             socs.set_murmur(int(p["society"]), str(p["murmur"]), str(p["transcript"]), e.ts)
         elif e.kind == "narrator.update":
             narrator.history.append(p)
+            narrator._next_id = max(narrator._next_id, int(p.get("id", 0)) + 1)
             narrator.stats["answers" if p.get("kind") == "answer" else "updates"] += 1
         elif e.kind == "god.pace":
             if p.get("cooldown") is not None:
@@ -75,15 +82,20 @@ def restore_run(log: EventLog, run_id: str, speech: SpeechSynth | None = None) -
                 config.pixels_per_turn = int(p["pixels_per_turn"])
             if p.get("pixel_interval") is not None:
                 config.pixel_interval = float(p["pixel_interval"])
+        elif e.kind == "god.model_changed":
+            config.model = str(p["model"])
+        elif e.kind == "run.state":
+            run.interrupted = p.get("state") == "interrupted"
+            run.resume_paused = run.interrupted and p.get("was") == "paused"
         elif e.kind == "run.deleted":
             return None
     return run
 
 
-def archived_summaries(log: EventLog, skip: set[str]) -> list[dict[str, Any]]:
+def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:
     """``Run.summary``-shaped rows for logged runs not in ``skip``, without replaying them."""
     rows = []
-    for row in log.run_totals(REJECTED):
+    for row in log.run_totals():
         run_id, first_ts, pixels, posts, turns, errors, updates, answers, deleted, config = row
         if run_id in skip or deleted or config is None:
             continue

@@ -5,6 +5,7 @@ import logging
 import random
 import re
 import time
+import uuid
 from typing import Any, Literal, cast
 
 from openai import NOT_GIVEN, AsyncOpenAI, RateLimitError
@@ -15,6 +16,7 @@ from openai.types.chat import (
     ChatCompletionToolParam,
 )
 
+from worldwarpixel.routing import EndpointPool, as_pool, describe_endpoint
 from worldwarpixel.sim.agents import AgentSpec, Observation
 from worldwarpixel.sim.canvas import PALETTE
 from worldwarpixel.sim.tools import ToolError, ToolSet
@@ -415,7 +417,7 @@ class LLMPolicy:
 
     def __init__(
         self,
-        client: AsyncOpenAI,
+        client: AsyncOpenAI | EndpointPool,
         model: str,
         timeout: float = 45.0,
         vision: bool = True,
@@ -425,9 +427,10 @@ class LLMPolicy:
         chat_template_kwargs: bool = True,
         reasoning_effort: str | None = None,
     ) -> None:
-        self._client = client
+        self._pool = as_pool(client, model)
+        # Sticky routing key prefix: each agent of this run keeps hitting one endpoint.
+        self._route_prefix = uuid.uuid4().hex
         self._guided = guided
-        self._model = model
         self._timeout = timeout
         self._vision = vision
         self._max_tokens = max_tokens
@@ -511,8 +514,8 @@ class LLMPolicy:
                     self._reasoning_effort if self._reasoning_effort is not None else NOT_GIVEN
                 )
                 if self._token_param == "max_completion_tokens":
-                    response = await self._client.chat.completions.create(
-                        model=self._model,
+                    response = await self._pool.create(
+                        f"{self._route_prefix}:{agent.id}",
                         messages=messages,
                         tools=self._tools_for(obs),
                         tool_choice="auto",
@@ -523,8 +526,8 @@ class LLMPolicy:
                         extra_body=extra_body,
                     )
                 else:
-                    response = await self._client.chat.completions.create(
-                        model=self._model,
+                    response = await self._pool.create(
+                        f"{self._route_prefix}:{agent.id}",
                         messages=messages,
                         tools=self._tools_for(obs),
                         tool_choice="auto",
@@ -537,9 +540,13 @@ class LLMPolicy:
             except Exception as e:  # network / API errors are per-turn failures, not crashes
                 _sample(self._latency["model"], time.monotonic() - call_t0)
                 self.stats["failures"] += 1
-                self.stats["last_error"] = str(e)[:200]
-                log.warning("agent %s LLM call failed: %s", agent.id, e)
-                thoughts.append(f"(model call failed: {type(e).__name__}: {str(e)[:140]})")
+                where = describe_endpoint(e)
+                message = str(e)
+                self.stats["last_error"] = f"via {where}: {message}"[:200]
+                log.warning("agent %s LLM call failed via %s: %s", agent.id, where, e)
+                thoughts.append(
+                    f"(model call failed via {where}: {type(e).__name__}: {message[:140]})"
+                )
                 if isinstance(e, RateLimitError):
                     await asyncio.sleep(self._rng.uniform(*RATE_LIMIT_BACKOFF))
                 break
