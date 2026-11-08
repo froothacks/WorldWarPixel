@@ -210,3 +210,13 @@ def test_feed_orders_announcements_dispatch_mentions_then_hot_threads() -> None:
     assert entries[2]["thread_id"] == mention.id
     assert entries[3]["thread_id"] == hot.id
     assert run.agent_name(65534) == "World News"
+
+
+def test_hackathon_roster_run_has_one_agent_per_attendee() -> None:
+    config = RunConfig(width=64, height=64, agents=5, roster="hackathon", seed=1)
+    run = Run("h", config, EventLog(), RandomWalkPolicy(seed=1))
+    assert len(run.agents) == run.config.agents == 86
+    row = run.agent_list()[0]
+    assert row["headline"] and row["country"] and row["affiliation"]
+    stokes = next(r for r in run.agent_list() if r["name"] == "Matt Stokes")
+    assert stokes["affiliation"] == "Waterloo"

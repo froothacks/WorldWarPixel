@@ -15,9 +15,12 @@ from worldwarpixel.personas.proxy import (
     survey_country,
 )
 from worldwarpixel.personas.render import persona_card, persona_text
+from worldwarpixel.personas.roster import load_roster
+from worldwarpixel.personas.roster import persona_card as roster_card
+from worldwarpixel.personas.roster import persona_text as persona_text_roster
 from worldwarpixel.personas.schema import Respondent, read_respondents, write_respondents
 from worldwarpixel.personas.wpp import load_countries
-from worldwarpixel.sim.agents import seed_agents
+from worldwarpixel.sim.agents import seed_agents, seed_roster
 from worldwarpixel.sim.names import random_name
 
 
@@ -256,3 +259,40 @@ def test_default_pool_picks_up_an_import_without_restart(
         [Respondent(source="wvs7", country_iso3="CHN", weight=2.0, age=33, sex=1)], target
     )
     assert pool_mod.default_pool().sources == {"wvs7", "synthetic"}
+
+
+def test_hackathon_roster_is_unique_people_with_profiles() -> None:
+    roster = load_roster("hackathon")
+    names = [p.name for p in roster.people]
+    assert len(names) == 86 and len(set(names)) == 86
+    assert all(
+        p.affiliation and p.headline and p.confidence in {"high", "medium", "low"}
+        for p in roster.people
+    )
+    assert all(
+        p.linkedin is None or p.linkedin.startswith("https://www.linkedin.com/in/")
+        for p in roster.people
+    )
+
+
+def test_seed_roster_is_one_individual_agent_per_person() -> None:
+    roster = load_roster("hackathon")
+    agents = seed_roster(roster.people, roster.event, 512, 320, 1.0, random.Random(3))
+    assert sorted(a.name for a in agents) == sorted(p.name for p in roster.people)
+    assert sorted(a.id for a in agents) == list(range(1, len(agents) + 1))
+    for a in agents:
+        assert a.country == a.name and a.persona.startswith(a.name) and a.headline
+        assert a.persona_card["source"] == "roster" and "team" not in a.persona_card
+
+
+def test_roster_card_omits_missing_fields() -> None:
+    person = load_roster("hackathon").people[0]
+    card = roster_card(person, "an event")
+    assert None not in card.values() and card["event"] == "an event"
+
+
+def test_roster_persona_uses_the_personality_read() -> None:
+    person = load_roster("hackathon").people[0]
+    text = persona_text_roster(person, "an event")
+    assert person.personality["summary"] in text and person.personality["canvas_approach"] in text
+    assert "_" not in text.split("Style:")[1].split(".")[0]

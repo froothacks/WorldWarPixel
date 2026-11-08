@@ -19,6 +19,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from worldwarpixel.config import get_settings
+from worldwarpixel.personas.roster import roster_summaries
 from worldwarpixel.sim.agents import Policy, RandomWalkPolicy
 from worldwarpixel.sim.archive import archived_summaries, restore_run
 from worldwarpixel.sim.board import BoardError
@@ -130,6 +131,13 @@ def get_manager(request: Request) -> RunManager:
 ManagerDep = Annotated[RunManager, Depends(get_manager)]
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+rosters_router = APIRouter(prefix="/rosters", tags=["runs"])
+
+
+@rosters_router.get("")
+async def list_rosters() -> list[dict[str, Any]]:
+    """Bundled attendee rosters a run can use instead of the population-seeded world."""
+    return roster_summaries()
 
 
 @router.post("", status_code=201)

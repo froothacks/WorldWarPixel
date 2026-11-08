@@ -9,6 +9,8 @@ interface Props {
   palette: string[];
   highlight: string | null;
   onHighlight: (country: string | null) => void;
+  /** What a territory unit is called in the copy ("countries", or "people" in roster runs). */
+  units?: string;
   hidden?: boolean;
 }
 
@@ -25,7 +27,7 @@ const RECOUNT_MS = 1000;
 /** Deltas compare against a count taken this long ago. */
 const TREND_MS = 15_000;
 
-export default function Territory({ store, version, agents, palette, highlight, onHighlight, hidden = false }: Props) {
+export default function Territory({ store, version, agents, palette, highlight, onHighlight, hidden = false, units = "countries" }: Props) {
   const countries = useMemo(() => {
     const names: string[] = [];
     const index = new Map<string, number>();
@@ -139,7 +141,7 @@ export default function Territory({ store, version, agents, palette, highlight, 
         )}
       </header>
       <p className="muted small pad">
-        {holding} of {rows.length} countries hold pixels right now. Click one to light up its land on the canvas.
+        {holding} of {rows.length} {units} hold pixels right now. Click one to light up its land on the canvas.
         {counts && counts.god > 0 && ` God holds ${counts.god.toLocaleString()}.`}
       </p>
       <div className="agent-rows">
