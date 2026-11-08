@@ -1,6 +1,7 @@
 import asyncio
 import random
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ class FakeClient:
         self.calls: list[dict[str, Any]] = []
         self.fail = fail
         self.outcomes = outcomes or []
+        self.before_fail: Callable[[], None] | None = None
 
     @property
     def chat(self) -> Any:
@@ -47,6 +49,8 @@ class FakeClient:
                 raise outcome
             return outcome
         if self.fail is not None:
+            if self.before_fail is not None:
+                self.before_fail()
             raise self.fail
         return kw["model"]
 
@@ -267,6 +271,24 @@ def test_5xx_failover_skips_rate_limited_endpoints() -> None:
     assert cast(Any, asyncio.run(pool.create(key))) == f"m{healthy_name[-1]}"
     assert clients[int(limited_name[-1])].calls == []
     assert len(clients[int(healthy_name[-1])].calls) == 1
+
+
+def test_failover_does_not_reassign_a_key_released_in_flight() -> None:
+    pool, clients = _pool(2)
+    key = "run1:agent"
+    retained_key = "run2:agent"
+    primary = pool.route(key)
+    pool.route(retained_key)
+    failing_client = clients[int(primary[-1])]
+    failing_client.fail = _server_error()
+    failing_client.before_fail = lambda: pool.release("run1:")
+    fallback = "ws1" if primary == "ws0" else "ws0"
+
+    result = asyncio.run(pool.create(key))
+
+    assert cast(Any, result) == f"m{fallback[-1]}"
+    assert sum(stat["agents"] for stat in pool.public_stats().values()) == 1
+    assert pool.public_stats()[pool.route(retained_key)]["agents"] == 1
 
 
 def test_all_down_endpoints_raise_the_last_error() -> None:

@@ -178,8 +178,7 @@ class EndpointPool:
     def model(self) -> str:
         return self._endpoints[0][0].model
 
-    def order(self, key: str) -> list[tuple[Endpoint, Any]]:
-        """Assigned endpoint first, then least-loaded endpoints with deterministic tie-breaks."""
+    def _assign(self, key: str) -> str:
         assigned = self._assigned.get(key)
         if assigned is None:
             least_loaded = min(self._assigned_counts.values())
@@ -189,11 +188,18 @@ class EndpointPool:
             )
             self._assigned[key] = assigned
             self._assigned_counts[assigned] += 1
+        return assigned
 
-        first = next(ec for ec in self._endpoints if ec[0].name == assigned)
-        rest = [ec for ec in self._endpoints if ec[0].name != assigned]
+    def _ranked(self, key: str, primary: str) -> list[tuple[Endpoint, Any]]:
+        """Assigned endpoint first, then least-loaded endpoints with deterministic tie-breaks."""
+        first = next(ec for ec in self._endpoints if ec[0].name == primary)
+        rest = [ec for ec in self._endpoints if ec[0].name != primary]
         rest.sort(key=lambda ec: (self._assigned_counts[ec[0].name], -_score(key, ec[0].name)))
         return [first, *rest]
+
+    def order(self, key: str) -> list[tuple[Endpoint, Any]]:
+        """Assign a sticky endpoint if needed, then rank the pool for this key."""
+        return self._ranked(key, self._assign(key))
 
     def release(self, prefix: str) -> None:
         """Forget all sticky keys beginning with ``prefix``."""
@@ -204,10 +210,12 @@ class EndpointPool:
 
     def route(self, key: str) -> str:
         """Name of the endpoint the key's next call will try first."""
-        return self._candidates(key)[0][0].name
+        return self._candidates(key, set(), self._assign(key))[0][0].name
 
-    def _candidates(self, key: str, excluded: set[str] | None = None) -> list[tuple[Endpoint, Any]]:
-        ranked = self.order(key)
+    def _candidates(
+        self, key: str, excluded: set[str] | None, primary_name: str
+    ) -> list[tuple[Endpoint, Any]]:
+        ranked = self._ranked(key, primary_name)
         excluded = excluded if excluded is not None else set()
         now = self._clock()
         primary = ranked[0]
@@ -240,13 +248,13 @@ class EndpointPool:
 
     async def create(self, key: str, **kwargs: Any) -> ChatCompletion:
         """Call the assigned endpoint; pause on 429 and fail over on 5xx/connect."""
-        primary = self.order(key)[0][0].name
+        primary = self._assign(key)
         attempted: set[str] = set()
         last_error: Exception | None = None
         rate_limit_retries = 0
 
         while True:
-            candidates = self._candidates(key, attempted)
+            candidates = self._candidates(key, attempted, primary)
             if not candidates:
                 if last_error is not None:
                     raise last_error
@@ -296,7 +304,7 @@ class EndpointPool:
                     self._cooling_until[endpoint.name] = self._clock() + self._cooldown
                     attempted.add(endpoint.name)
                     last_error = e
-                    next_candidates = self._candidates(key, attempted)
+                    next_candidates = self._candidates(key, attempted, primary)
                     if not next_candidates:
                         raise
                     next_endpoint = next_candidates[0][0]
