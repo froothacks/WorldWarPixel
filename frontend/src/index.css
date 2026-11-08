@@ -127,9 +127,11 @@ button.text:hover { background: none; color: var(--text); }
 .recent { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
 .recent p { margin: 0; font-size: 13px; }
 .run-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); border: 0; gap: 2px; }
-.run-list button { width: 100%; height: auto; display: grid; grid-template-columns: 92px 74px 1fr auto auto; gap: 16px; align-items: center; text-align: left; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 4px; font-size: 13px; border: 0; border-radius: 4px; padding: 12px; }
-.run-list .run-id { font-size: 12px; }
-.run-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.run-list button { width: 100%; height: auto; display: grid; grid-template-columns: 92px 1fr auto auto auto; column-gap: 16px; row-gap: 4px; align-items: center; text-align: left; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 4px; font-size: 13px; border: 0; border-radius: 4px; padding: 12px; }
+.run-title { min-width: 0; color: var(--text); font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.run-duration { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.run-details { grid-column: 2 / -1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.run-list .run-id { color: var(--faint); font-size: 12px; }
 .run-when { color: var(--faint); font-size: 12px; }
 .run-open { color: var(--faint); font-size: 12px; }
 .run-list button:hover .run-open { color: var(--text); }

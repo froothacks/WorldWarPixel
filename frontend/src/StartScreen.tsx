@@ -39,6 +39,16 @@ function ago(ts: number): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+function duration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const minutes = Math.floor(s / 60);
+  if (s < 3600) return `${minutes}m`;
+  const hours = Math.floor(s / 3600);
+  if (s < 86400) return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
 export default function StartScreen({ onStarted }: Props) {
   const [cfg, setCfg] = useState<RunConfig>(DEFAULT_CONFIG);
   const [busy, setBusy] = useState(false);
@@ -46,6 +56,7 @@ export default function StartScreen({ onStarted }: Props) {
   const [existing, setExisting] = useState<RunSummary[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [rosters, setRosters] = useState<RosterSummary[]>([]);
+  const [now, setNow] = useState(() => Date.now() / 1000);
 
   useEffect(() => {
     api.listRuns().then(setExisting).catch(() => setExisting([]));
@@ -65,6 +76,12 @@ export default function StartScreen({ onStarted }: Props) {
       .catch(() => setModels([]));
     api.rosters().then(setRosters).catch(() => setRosters([]));
   }, []);
+
+  useEffect(() => {
+    if (!existing.some((run) => run.state === "running")) return;
+    const timer = window.setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, [existing]);
 
   const set = <K extends keyof RunConfig>(key: K, value: RunConfig[K]) =>
     setCfg((c) => ({ ...c, [key]: value }));
@@ -316,20 +333,48 @@ export default function StartScreen({ onStarted }: Props) {
             <p className="faint">Runs you start will show up here.</p>
           ) : (
             <ul className="run-list">
-              {runs.map((r) => (
-                <li key={r.id}>
-                  <button onClick={() => onStarted(r)}>
-                    <span className={`state state-${r.state}`}>{r.state}</span>
-                    <span className="mono run-id">{r.id}</span>
-                    <span className="run-meta">
-                      {r.agents} {r.config.policy === "random" ? "random" : (r.config.model ?? "LLM")} agents · {r.config.width}×{r.config.height} ·{" "}
-                      {r.stats.pixels.toLocaleString()} px
-                    </span>
-                    <span className="run-when">{ago(r.created_at)}</span>
-                    <span className="run-open">Open →</span>
-                  </button>
-                </li>
-              ))}
+              {runs.map((r) => {
+                const brain = BRAINS.find((b) => b.value === r.config.policy)?.title ?? r.config.policy;
+                const model = models.find((m) => m.id === r.config.model)?.label ?? r.config.model ?? "LLM";
+                const title = [
+                  brain,
+                  ...(r.config.policy === "random" ? [] : [model]),
+                  ...(r.config.roster === "hackathon" ? ["Hackathon roster"] : []),
+                ].join(" · ");
+                const start = r.started_at ?? r.created_at;
+                const elapsed =
+                  r.state === "running"
+                    ? `running ${duration(now - start)}`
+                    : r.last_event_at != null
+                      ? `ran ${duration(r.last_event_at - start)}`
+                      : "";
+                const details = [
+                  `${r.agents.toLocaleString()} agents`,
+                  ...(r.config.societies > 0
+                    ? [`${r.config.societies.toLocaleString()} societies`]
+                    : []),
+                  `${r.config.width.toLocaleString()}×${r.config.height.toLocaleString()}`,
+                  `${r.stats.pixels.toLocaleString()} px`,
+                  `${r.stats.posts.toLocaleString()} posts`,
+                  `${r.stats.turns.toLocaleString()} turns`,
+                  ...(r.stats.errors > 0 ? [`${r.stats.errors.toLocaleString()} errors`] : []),
+                ];
+                return (
+                  <li key={r.id}>
+                    <button onClick={() => onStarted(r)}>
+                      <span className={`state state-${r.state}`}>{r.state}</span>
+                      <span className="run-title">{title}</span>
+                      <span className="run-duration">{elapsed}</span>
+                      <span className="run-when">{ago(r.created_at)}</span>
+                      <span className="run-open">Open →</span>
+                      <span className="run-details">
+                        {details.join(" · ")}
+                        <span className="mono run-id"> · {r.id}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

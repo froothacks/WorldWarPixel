@@ -123,6 +123,8 @@ def test_unknown_and_legacy_runs() -> None:
     assert run is not None and run.state == "stopped" and len(run.agents) == 2
     [listed] = archived_summaries(log, set())
     assert listed["stats"] == run.stats and listed["narrator"] == run.narrator.stats
+    assert listed["last_event_at"] == 6.0
+    assert run.last_event_at == 6.0
     assert run.canvas.get(2, 3) == 4 and run.canvas.owner(2, 3) == 1
     assert run.stats["pixels"] == 1 and run.created_at == 1.0
     # Legacy pixel events had no prev_owner; the replayed canvas supplies it.
