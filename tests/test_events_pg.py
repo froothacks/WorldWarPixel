@@ -118,6 +118,25 @@ def test_postgres_projections_run_meta_and_canvas_reads(pg_log: PostgresEventLog
     assert pg_log.run_meta("r").deleted  # type: ignore[union-attr]
 
 
+def test_postgres_canvas_span_and_events_extract_canvas_rows(
+    pg_log: PostgresEventLog,
+) -> None:
+    pg_log.append("r", 1.0, "run.created", None, {"config": {"width": 4, "height": 2}})
+    pixel_id = pg_log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 0, "color": 3})
+    pg_log.append("r", 3.0, "agent.status", 1, {"status": "idle"})
+    clear_id = pg_log.append("r", 4.0, "god.clear_canvas", None, {})
+    last_id = pg_log.append("r", 5.0, "pixel", 2, {"x": 2, "y": 1, "color": 7})
+    pg_log.append("other", 6.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+
+    assert pg_log.canvas_span("r") == (2.0, 5.0, last_id)
+    assert pg_log.canvas_span("missing") is None
+    assert pg_log.canvas_events("r", 0, 1) == [(pixel_id, 2.0, "pixel", 1, 0, 3)]
+    assert pg_log.canvas_events("r", pixel_id, 1) == [
+        (clear_id, 4.0, "god.clear_canvas", None, None, None)
+    ]
+    assert pg_log.canvas_events("r", clear_id, 10) == [(last_id, 5.0, "pixel", 2, 1, 7)]
+
+
 def test_batch_is_a_transaction_visible_to_other_connections(pg_log: PostgresEventLog) -> None:
     reader = pg_log.reader()
     try:
@@ -513,6 +532,20 @@ def _wait_for(check: Callable[[], bool], timeout: float = 15.0) -> None:
     while not check():
         assert time.monotonic() < deadline, "timed out"
         time.sleep(0.05)
+
+
+def test_buffered_canvas_reads(pg_url: str) -> None:
+    log = BufferedPostgresEventLog(pg_url, flush_interval=0.01)
+    try:
+        log.append("r", 1.0, "pixel", 1, {"x": 2, "y": 3, "color": 4})
+        _wait_for(lambda: log.canvas_span("r") is not None)
+
+        [event] = log.canvas_events("r", 0, 10)
+
+        assert log.canvas_span("r") == (1.0, 1.0, event[0])
+        assert event[1:] == (1.0, "pixel", 2, 3, 4)
+    finally:
+        log.close()
 
 
 def test_buffered_log_reconnects_after_losing_its_connections(pg_url: str) -> None:

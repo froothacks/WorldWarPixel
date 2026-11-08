@@ -252,6 +252,25 @@ def test_run_meta_and_canvas_only_reads() -> None:
     log.close()
 
 
+def test_canvas_span_and_events_extract_canvas_rows() -> None:
+    log = EventLog()
+    log.append("r", 1.0, "run.created", None, {"config": {"width": 4, "height": 2}})
+    pixel_id = log.append("r", 2.0, "pixel", 1, {"x": 1, "y": 0, "color": 3})
+    log.append("r", 3.0, "agent.status", 1, {"status": "idle"})
+    clear_id = log.append("r", 4.0, "god.clear_canvas", None, {})
+    last_id = log.append("r", 5.0, "pixel", 2, {"x": 2, "y": 1, "color": 7})
+    log.append("other", 6.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+
+    assert log.canvas_span("r") == (2.0, 5.0, last_id)
+    assert log.canvas_span("missing") is None
+    assert log.canvas_events("r", 0, 1) == [(pixel_id, 2.0, "pixel", 1, 0, 3)]
+    assert log.canvas_events("r", pixel_id, 1) == [
+        (clear_id, 4.0, "god.clear_canvas", None, None, None)
+    ]
+    assert log.canvas_events("r", clear_id, 10) == [(last_id, 5.0, "pixel", 2, 1, 7)]
+    log.close()
+
+
 def test_run_totals_read_the_runs_table() -> None:
     log = EventLog()
     log.append("r", 1.0, "run.created", None, {"config": {"width": 16}})

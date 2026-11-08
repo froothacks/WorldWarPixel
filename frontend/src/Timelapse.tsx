@@ -7,37 +7,17 @@ interface Frame {
   colors: Uint8Array;
 }
 
+interface TimelapseData {
+  width: number;
+  height: number;
+  total: number;
+  frames: Frame[];
+}
+
 interface Props {
   runId: string;
   palette: string[];
   onClose: () => void;
-}
-
-function parse(buf: ArrayBuffer): {
-  width: number;
-  height: number;
-  frames: Frame[];
-} {
-  const view = new DataView(buf);
-  const n = view.getUint16(0, true);
-  const width = view.getUint16(2, true);
-  const height = view.getUint16(4, true);
-  let off = 6;
-  const frames: Frame[] = [];
-  for (let f = 0; f < n; f++) {
-    const ts = view.getFloat64(off, true);
-    const count = view.getUint32(off + 8, true);
-    off += 12;
-    const deltas = new Uint32Array(count);
-    const colors = new Uint8Array(count);
-    for (let i = 0; i < count; i++) {
-      deltas[i] = view.getUint32(off, true);
-      colors[i] = view.getUint8(off + 4);
-      off += 5;
-    }
-    frames.push({ ts, deltas, colors });
-  }
-  return { width, height, frames };
 }
 
 const VIDEO_TYPES = ["video/webm;codecs=vp9", "video/webm", "video/mp4"];
@@ -54,11 +34,9 @@ function videoType(): string | null {
 
 /** Replays the run's canvas history from the /timelapse endpoint with a scrubber and webm export. */
 export default function Timelapse({ runId, palette, onClose }: Props) {
-  const [data, setData] = useState<{
-    width: number;
-    height: number;
-    frames: Frame[];
-  } | null>(null);
+  const [data, setData] = useState<TimelapseData | null>(null);
+  const [loaded, setLoaded] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pos, setPos] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -85,12 +63,131 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
   );
 
   useEffect(() => {
-    fetch(`/runs/${runId}/timelapse`)
-      .then((r) =>
-        r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.statusText)),
-      )
-      .then((buf) => setData(parse(buf)))
-      .catch((e: Error) => setError(e.message));
+    let cancelled = false;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let streamData: TimelapseData | null = null;
+    let buffer = new Uint8Array(64 * 1024);
+    let used = 0;
+    let offset = 0;
+    let published = 0;
+    let lastPublishedAt = 0;
+
+    bufRef.current = null;
+    builtRef.current = -1;
+
+    const publishProgress = (force = false) => {
+      if (!streamData) return;
+      const count = streamData.frames.length;
+      const now = performance.now();
+      if (
+        count > published &&
+        (force || published === 0 || now - lastPublishedAt >= 200)
+      ) {
+        published = count;
+        lastPublishedAt = now;
+        setLoaded(count);
+      }
+    };
+
+    const consume = (bytes: Uint8Array) => {
+      if (buffer.length - used < bytes.length) {
+        const next = new Uint8Array(
+          Math.max(used + bytes.length, buffer.length * 2),
+        );
+        next.set(buffer.subarray(0, used));
+        buffer = next;
+      }
+      buffer.set(bytes, used);
+      used += bytes.length;
+
+      if (!streamData && used >= 6) {
+        const header = new DataView(buffer.buffer, buffer.byteOffset, used);
+        streamData = {
+          total: header.getUint16(0, true),
+          width: header.getUint16(2, true),
+          height: header.getUint16(4, true),
+          frames: [],
+        };
+        setData(streamData);
+        offset = 6;
+      }
+
+      if (streamData) {
+        while (used - offset >= 12) {
+          const view = new DataView(
+            buffer.buffer,
+            buffer.byteOffset + offset,
+            used - offset,
+          );
+          const ts = view.getFloat64(0, true);
+          const count = view.getUint32(8, true);
+          const frameBytes = 12 + count * 5;
+          if (used - offset < frameBytes) break;
+
+          const deltas = new Uint32Array(count);
+          const colors = new Uint8Array(count);
+          let frameOffset = 12;
+          for (let i = 0; i < count; i++) {
+            deltas[i] = view.getUint32(frameOffset, true);
+            colors[i] = view.getUint8(frameOffset + 4);
+            frameOffset += 5;
+          }
+          streamData.frames.push({ ts, deltas, colors });
+          offset += frameBytes;
+        }
+      }
+
+      if (offset > 0) {
+        buffer.copyWithin(0, offset, used);
+        used -= offset;
+        offset = 0;
+      }
+      publishProgress();
+    };
+
+    const progressTimer = window.setInterval(() => publishProgress(), 200);
+    const load = async () => {
+      setData(null);
+      setLoaded(0);
+      setLoading(true);
+      setError(null);
+      setPos(0);
+      setPlaying(true);
+      try {
+        const response = await fetch(`/runs/${runId}/timelapse`);
+        if (!response.ok) throw new Error(response.statusText);
+        if (cancelled) return;
+        reader = response.body!.getReader();
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) consume(value);
+        }
+        if (cancelled) return;
+        if (!streamData) throw new Error("timelapse response is missing its header");
+        if (used !== 0 || streamData.frames.length !== streamData.total) {
+          throw new Error("timelapse response ended before all frames arrived");
+        }
+        publishProgress(true);
+        window.clearInterval(progressTimer);
+        setLoading(false);
+        if (streamData.frames.length === 0) setPlaying(false);
+      } catch (e) {
+        window.clearInterval(progressTimer);
+        if (cancelled) return;
+        if (streamData) setLoaded(streamData.frames.length);
+        setError((e as Error).message);
+        setLoading(false);
+        if (streamData?.frames.length === 0) setPlaying(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      window.clearInterval(progressTimer);
+      if (reader) void reader.cancel().catch(() => undefined);
+    };
   }, [runId]);
 
   const rgb = useMemo(
@@ -107,6 +204,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
     const el = canvasRef.current;
     if (!data || !el) return;
     const { width, height, frames } = data;
+    const available = Math.min(loaded, frames.length);
     if (
       !bufRef.current ||
       bufRef.current.length !== width * height ||
@@ -116,11 +214,11 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
       builtRef.current = -1;
     }
     const buf = bufRef.current;
-    for (let f = builtRef.current + 1; f <= pos && f < frames.length; f++) {
+    for (let f = builtRef.current + 1; f <= pos && f < available; f++) {
       const { deltas, colors } = frames[f];
       for (let i = 0; i < deltas.length; i++) buf[deltas[i]] = colors[i];
     }
-    builtRef.current = Math.min(pos, frames.length - 1);
+    builtRef.current = Math.min(pos, available - 1);
     el.width = width;
     el.height = height;
     const ctx = el.getContext("2d")!;
@@ -133,7 +231,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
       img.data[i * 4 + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-  }, [data, pos, rgb]);
+  }, [data, loaded, pos, rgb]);
 
   const posRef = useRef(pos);
   useEffect(() => {
@@ -141,23 +239,24 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
   }, [pos]);
 
   useEffect(() => {
-    if (!playing || !data) return;
+    if (!playing || !data || loaded === 0) return;
     const t = window.setInterval(() => {
-      if (posRef.current + 1 < data.frames.length) {
+      if (posRef.current + 1 < loaded) {
         setPos(posRef.current + 1);
         return;
       }
+      if (loading) return;
       setPlaying(false);
       const rec = recRef.current;
       if (rec)
         window.setTimeout(() => rec.state === "recording" && rec.stop(), 500);
     }, 1000 / fps);
     return () => window.clearInterval(t);
-  }, [playing, data, fps]);
+  }, [playing, data, loaded, loading, fps]);
 
   const exportVideo = () => {
     const el = canvasRef.current;
-    if (!el || !data || recording || !exportType) return;
+    if (!el || !data || loading || recording || !exportType) return;
     const stream = el.captureStream(fps);
     let rec: MediaRecorder;
     try {
@@ -207,7 +306,9 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
             {error ? (
               <InlineError message={error} />
             ) : data
-                ? `${data.frames.length} frames · ${Math.round((data.frames.at(-1)?.ts ?? t0) - t0)} s of history`
+                ? loading
+                  ? `loading ${loaded}/${data.total} frames`
+                  : `${data.total} frames · ${Math.round((data.frames.at(-1)?.ts ?? t0) - t0)} s of history`
                 : "loading…"}
           </span>
           <span className="spacer" />
@@ -239,17 +340,17 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           </button>
           <input
             type="range"
-            disabled={!data || recording}
+            disabled={!data || loaded === 0 || recording}
             min={0}
-            max={Math.max(0, (data?.frames.length ?? 1) - 1)}
-            value={pos}
+            max={Math.max(0, loaded - 1)}
+            value={Math.min(pos, Math.max(0, loaded - 1))}
             onChange={(e) => {
               setPlaying(false);
               setPos(+e.target.value);
             }}
           />
           <span className="small muted">
-            {pos + 1}/{data?.frames.length ?? 0} · +{elapsed}s
+            {loaded ? pos + 1 : 0}/{loaded} · +{elapsed}s
           </span>
           <label className="small">
             fps
@@ -263,7 +364,7 @@ export default function Timelapse({ runId, palette, onClose }: Props) {
           </label>
           <button
             onClick={exportVideo}
-            disabled={!data || recording || !exportType}
+            disabled={!data || loading || recording || !exportType}
             title={
               exportType
                 ? "Plays from the start while recording, then downloads the video"
