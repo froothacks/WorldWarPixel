@@ -395,6 +395,15 @@ static void handle_interview(const char *type, const cJSON *root)
         convo_push(false, text);
         g_state.iv_status = audio ? IV_SPEAKING : IV_IDLE;
         STATE_UNLOCK();
+    } else if (!strcmp(type, "interview.text")) {
+        /* realtime replies start speaking before their text is known */
+        STATE_LOCK();
+        if (g_state.n_convo && !g_state.convo[g_state.n_convo - 1].me)
+            snprintf(g_state.convo[g_state.n_convo - 1].text,
+                     sizeof(g_state.convo[0].text), "%s", text ? text : "");
+        else
+            convo_push(false, text);
+        STATE_UNLOCK();
     } else if (!strcmp(type, "interview.audio_end")) {
         spk_end();
     } else if (!strcmp(type, "interview.error")) {
