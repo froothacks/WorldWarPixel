@@ -75,6 +75,10 @@ for secret_name in "${APP_SECRETS[@]}"; do
   secret_args+="${secret_args:+,}${secret_name}=${secret_name}:latest"
   secret_display+="${secret_display:+, }${secret_name}"
 done
+if [ -n "$CLOUDSQL_INSTANCE" ] && [[ ",$secret_args," != *",DATABASE_URL=DATABASE_URL:latest,"* ]]; then
+  echo "CLOUDSQL_INSTANCE=$CLOUDSQL_INSTANCE needs DATABASE_URL in Secret Manager (or set CLOUDSQL_INSTANCE=\"\" for SQLite)" >&2
+  exit 1
+fi
 
 gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1 \
   || gcloud artifacts repositories create "$REPO" --location="$REGION" --repository-format=docker
