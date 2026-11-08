@@ -19,12 +19,8 @@ class Settings(BaseSettings):
     """Max output tokens per narrator update; reasoning models need more to finish the JSON."""
     modal_key: SecretStr = SecretStr("")
     modal_secret: SecretStr = SecretStr("")
-    qwen_base_url: str = "https://advait-m--ep-world-war-pixel-server.us-west.modal.direct/v1"
+    qwen_base_url: str = "https://chryztoph--ep-qwen-server.us-west.modal.direct/v1"
     """Endpoint of the 'qwen' model preset (see models.py); override for another deployment."""
-    deepseek_base_url: str = (
-        "https://advait-m--ep-deepseek-v4-1-flash-server.us-west.modal.direct/v1"
-    )
-    """Endpoint of the 'deepseek' model preset (see models.py); override for another deployment."""
     glm_base_url: str = "https://chryztoph--ep-glm-5-3-flash-nvfp4-server.us-west.modal.direct/v1"
     """Endpoint of the 'glm' model preset (see models.py); override for another deployment."""
     god_token: SecretStr = SecretStr("")

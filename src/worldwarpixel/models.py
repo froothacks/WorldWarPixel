@@ -5,9 +5,8 @@ The start screen picks one per run. The quirks are load-bearing:
 - ``gpt-6-luna`` on api.openai.com rejects ``max_tokens`` (wants
   ``max_completion_tokens``), rejects our Qwen ``chat_template_kwargs`` hint with a 400,
   and rejects function tools unless ``reasoning_effort="none"``.
-- The Modal vLLM endpoints want the classic ``max_tokens`` plus the
-  ``chat_template_kwargs`` thinking hint, and DeepSeek needs a much larger output budget
-  because it reasons before calling tools.
+- The Modal vLLM Qwen endpoint wants the classic ``max_tokens`` plus the
+  ``chat_template_kwargs`` thinking hint.
 - GLM on the shared Modal endpoint needs ``reasoning_effort="low"`` without the thinking
   hint, rate-limits (429) large fast runs, and gets no canvas image.
 """
@@ -64,18 +63,9 @@ def model_registry(settings: Settings) -> list[ModelSpec]:
         ModelSpec(
             id="qwen",
             label="Qwen 0.8B",
-            model="world-war-pixel",
+            model="qwen",
             base_url=settings.qwen_base_url,
             auth="modal",
-        ),
-        ModelSpec(
-            id="deepseek",
-            label="DeepSeek V4.1 Flash",
-            model="deepseek-ai/DeepSeek-V4.1-Flash",
-            base_url=settings.deepseek_base_url,
-            auth="modal",
-            max_tokens=3000,
-            narrator_max_tokens=3000,
         ),
         ModelSpec(
             id="glm",

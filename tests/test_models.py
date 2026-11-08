@@ -14,7 +14,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry(Settings())}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm"}
+    assert set(specs) == {"gpt-6-luna", "qwen", "glm"}
 
     luna = specs["gpt-6-luna"]
     assert luna.base_url == "https://api.openai.com/v1"
@@ -30,10 +30,6 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
     assert qwen.chat_template_kwargs
     assert qwen.reasoning_effort is None
     assert qwen.max_tokens is None  # falls back to AGENT_MAX_TOKENS
-
-    deepseek = specs["deepseek"]
-    assert deepseek.auth == "modal"
-    assert deepseek.max_tokens == 3000
 
     glm = specs["glm"]
     assert glm.auth == "modal" and not glm.vision
@@ -57,7 +53,7 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
 
     settings = _settings(monkeypatch, MODAL_KEY="k", MODAL_SECRET="s")
     specs = model_registry(settings)
-    assert [model_available(settings, m) for m in specs] == [False, True, True, True]
+    assert [model_available(settings, m) for m in specs] == [False, True, True]
 
 
 def test_find_model_unknown_id() -> None:
