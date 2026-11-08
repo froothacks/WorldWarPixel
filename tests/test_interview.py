@@ -275,8 +275,9 @@ def test_realtime_releases_held_audio_when_answer_ends_before_transcript(
             ws.send_json({"type": "voice.end"})
             assert _until(ws, "interview.heard")["text"] == "..."
             assert _until(ws, "interview.reply")["audio"]
-            msg = ws.receive()
-            assert len(msg["bytes"]) == 2 * 3200
-            _until(ws, "interview.audio_end")
+            got = 0
+            while (msg := ws.receive()).get("bytes") is not None:
+                got += len(msg["bytes"])
+            assert got == 2 * 3200 and '"interview.text"' in msg["text"]
     finally:
         state.realtime = None
