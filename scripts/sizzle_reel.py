@@ -128,14 +128,17 @@ def score_run(meta: dict[str, Any]) -> float:
     )
 
 
-def load_runs(src_dir: Path) -> list[RunPick]:
+def load_runs(src_dir: Path, exclude: set[str] | None = None) -> list[RunPick]:
     runs: list[RunPick] = []
+    excluded = exclude or set()
     for sidecar in sorted(src_dir.glob("*.json")):
         try:
             meta = json.loads(sidecar.read_text())
         except json.JSONDecodeError:
             continue
         run_id = str(meta.get("run_id") or sidecar.stem)
+        if run_id in excluded:
+            continue
         video = src_dir / f"{run_id}.mp4"
         if video.name.endswith(".tmp.mp4") or not video.exists():
             continue
@@ -723,10 +726,8 @@ async def _amain(args: argparse.Namespace) -> int:
 
     print(f"fetching {args.source} -> {workdir / 'src'}")
     src_dir = fetch(args.source, workdir)
-    runs = load_runs(src_dir)
-    if args.exclude:
-        excluded = {str(x) for x in args.exclude}
-        runs = [r for r in runs if r.run_id not in excluded]
+    excluded = {str(x) for x in args.exclude}
+    runs = load_runs(src_dir, exclude=excluded)
     if not runs:
         print("no rendered timelapses found", file=sys.stderr)
         return 1
