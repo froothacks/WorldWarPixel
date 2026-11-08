@@ -325,3 +325,15 @@ def test_roster_project_context_reaches_personas_and_profile_cards(
     assert highlight in persona_text_roster(person, roster.event)
     card = roster_card(person, roster.event)
     assert highlight in card["highlights"] and url in card["links"]
+
+
+@pytest.mark.parametrize("name", ["Maddie Bernheim", "Clara Bae", "Pavla Bobosikova", "Vincent Po"])
+def test_roster_includes_confirmed_hackathon_organizer_context(name: str) -> None:
+    roster = load_roster("hackathon")
+    person = next(p for p in roster.people if p.name == name)
+    highlight = (
+        "Neo Hackathon 2026 organizer: Helped run events, food, and other hackathon logistics."
+    )
+    assert highlight in person.highlights
+    assert highlight in persona_text_roster(person, roster.event)
+    assert highlight in roster_card(person, roster.event)["highlights"]
