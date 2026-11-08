@@ -38,6 +38,9 @@ static const char *TAG = "ui";
 #define TAB2_X (LCD_W - TAB_W - 4)
 
 #define IV_SESSION_Y 92
+#define IV_REFRESH_X 230
+#define IV_REFRESH_Y 28
+#define IV_REFRESH_H 28
 #define LIST_Y       112
 #define ROW_H        26
 #define LIST_ROWS    9
@@ -213,8 +216,12 @@ static void draw_threads(const app_state_t *st)
 static void draw_canvas(const app_state_t *st)
 {
     /* thumbnail at (8, 286), max 160x100 shown as 2x2 decimation of 240x160 src */
-    if (!st->canvas_idx || st->canvas_w <= 0 || st->n_palette == 0)
+    gfx_draw_text(8, 274, "CANVAS - tap to refresh", 1, C_DIM);
+    if (!st->canvas_idx || st->canvas_w <= 0 || st->n_palette == 0) {
+        gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
+        gfx_draw_text_centered(88, 330, "TAP TO LOAD", 1, C_YELLOW);
         return;
+    }
     int dw = 160, dh = 100;
     int sx_step = st->canvas_w / dw;   if (sx_step < 1) sx_step = 1;
     int sy_step = st->canvas_h / dh;   if (sy_step < 1) sy_step = 1;
@@ -230,13 +237,11 @@ static void draw_canvas(const app_state_t *st)
         }
     }
     gfx_draw_rect_outline(7, 285, 162, 102, C_LINE);
-    gfx_draw_text(8, 274, "CANVAS", 1, C_DIM);
 }
 
 static void draw_murmur(const app_state_t *st)
 {
     int x = 176, w = LCD_W - 176 - 8;
-    if (!st->canvas_idx) { x = 8; w = LCD_W - 16; }
     gfx_draw_text(x, 274, "MURMUR", 1, C_DIM);
     if (st->has_murmur) {
         char buf[192];
@@ -369,9 +374,14 @@ static int page_count(const app_state_t *st)
     return st->n_agents ? (st->n_agents + LIST_ROWS - 1) / LIST_ROWS : 1;
 }
 
-static void draw_iv_header(const app_state_t *st)
+static void draw_iv_header(const app_state_t *st, bool flash)
 {
     if (st->iv_agent.id < 0) {
+        int w = LCD_W - 4 - IV_REFRESH_X;
+        gfx_fill_rect(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, flash ? C_YELLOW : C_PANEL);
+        gfx_draw_rect_outline(IV_REFRESH_X, IV_REFRESH_Y, w, IV_REFRESH_H, C_YELLOW);
+        gfx_draw_text_centered(IV_REFRESH_X + w / 2, IV_REFRESH_Y + 10, "REFRESH", 1,
+                               flash ? C_BG : C_YELLOW);
         gfx_draw_text(8, 34, "PICK SOMEONE", 3, C_TEXT);
         gfx_draw_text(8, 64, "tap a name, or hold the button and say it", 1, C_DIM);
         return;
@@ -398,8 +408,9 @@ static void draw_iv_header(const app_state_t *st)
 static void draw_picker(const app_state_t *st, int page)
 {
     if (st->n_agents == 0) {
-        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "loading people..." : "no live session",
-                      2, C_DIM);
+        gfx_draw_text(8, LIST_Y + 8, st->run_active ? "no people loaded" : "no live session", 2,
+                      C_DIM);
+        gfx_draw_text(8, LIST_Y + 34, "tap REFRESH to load the list", 1, C_DIM);
         return;
     }
     for (int r = 0; r < LIST_ROWS; r++) {
@@ -523,7 +534,7 @@ void ui_task(void *arg)
     bool picking = false;                /* session list on screen */
     conn_state_t prev_conn = CONN_OFFLINE;
     int page = 0;
-    int64_t agents_asked = 0, thinking_since = 0;
+    int64_t thinking_since = 0, refresh_flash = 0;
 
     while (1) {
         STATE_LOCK();
@@ -559,16 +570,17 @@ void ui_task(void *arg)
                 net_set_mode(mode);
                 spk_stop();
                 page = 0;
+                if (mode == MODE_INTERVIEW && st.conn == CONN_WS)
+                    net_agents_list();
             }
         }
 
         if (interview && live) {
-            /* keep the list of people for the current world */
-            if (st.conn == CONN_WS && st.run_active &&
-                (strcmp(st.agents_run, st.run_id) || st.n_agents == 0) &&
-                now_us - agents_asked > 4000000) {
+            /* people list: only on a tap of REFRESH (never polled) */
+            if (tap && st.iv_agent.id < 0 && tx >= IV_REFRESH_X && ty >= IV_REFRESH_Y &&
+                ty < IV_REFRESH_Y + IV_REFRESH_H) {
                 net_agents_list();
-                agents_asked = now_us;
+                refresh_flash = now_us + 400000;
             }
             /* never get stuck on THINKING if the server drops the reply */
             if (st.iv_status != IV_THINKING)
@@ -604,6 +616,10 @@ void ui_task(void *arg)
             }
         }
 
+        /* canvas thumbnail: fetched only when tapped */
+        if (!interview && live && tap && tx < 172 && ty >= 272 && ty < 390)
+            net_canvas_refresh();
+
         /* society picker strip (y 96..122): tap a segment to switch view */
         if (!interview && live && tap && ty >= 96 && ty <= 122) {
             int seg = tx / (LCD_W / MAX_SOCIETIES);
@@ -622,9 +638,13 @@ void ui_task(void *arg)
             } else if (r == 0 && st.n_runs > 0) {
                 net_run_select(NULL);   /* follow the newest live session */
                 picking = false;
+                if (interview)
+                    net_agents_list();
             } else if (r >= 1 && r - 1 < st.n_runs && r < SP_ROWS) {
                 net_run_select(st.runs[r - 1].id);
                 picking = false;
+                if (interview)
+                    net_agents_list();
             }
         }
 
@@ -667,7 +687,7 @@ void ui_task(void *arg)
                 draw_session_picker(&st);
             } else {
                 if (interview) {
-                    draw_iv_header(&st);
+                    draw_iv_header(&st, esp_timer_get_time() < refresh_flash);
                     draw_session(&st, IV_SESSION_Y + 2);
                     if (st.iv_agent.id < 0)
                         draw_picker(&st, page);

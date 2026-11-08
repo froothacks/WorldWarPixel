@@ -100,8 +100,9 @@ to see society 0 ("Ember"). It serves fake state every 2 s, migration flashes
 - Connecting: the screen never connects on its own. A human taps CONNECT;
   after each connection the session list is shown (or "NO LIVE SESSIONS"),
   and the session row reopens it. If the socket drops, the screen waits for
-  another tap. The canvas thumbnail is fetched on connect and every 30 s in
-  society mode only. Wi-Fi itself still reconnects automatically.
+  another tap. Nothing is polled: the canvas thumbnail loads when tapped, the
+  interview people list on entering interview mode, picking a session, or
+  REFRESH; failures wait for another tap. Wi-Fi itself still reconnects automatically.
 
 ## Layout
 

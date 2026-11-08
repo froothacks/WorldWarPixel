@@ -33,6 +33,7 @@ static bool s_run_resynced;        /* pinned-run re-select done this connection 
 static volatile bool s_retry_req;  /* human tapped CONNECT */
 static volatile int  s_ws_phase;   /* 0=awaiting tap, 2=handshake now, 3=last attempt failed */
 static volatile int  s_ws_attempt;
+static volatile bool s_canvas_req;  /* human tapped the canvas */
 static volatile bool s_ws_failed;  /* handshake or connection ended (error/disconnect event) */
 static uint8_t s_last_op;          /* opcode of the frame being received */
 static char *s_txt;                /* reassembly buffer for text frames split across events */
@@ -590,6 +591,11 @@ static void ws_task(void *arg)
     }
 }
 
+void net_canvas_refresh(void)
+{
+    s_canvas_req = true;
+}
+
 bool net_ws_connected(void)
 {
     return s_ws_connected;
@@ -716,21 +722,13 @@ static void canvas_task(void *arg)
     uint8_t *buf = heap_caps_malloc(240 * 160, MALLOC_CAP_SPIRAM);
     if (!buf)
         buf = heap_caps_malloc(240 * 160, MALLOC_CAP_8BIT);
-    int waited = 0, seen_attempt = -1;
-    char seen_run[12] = "";
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        if (!s_ws_connected || !buf || g_state.mode != MODE_SOCIETY)
+        vTaskDelay(pdMS_TO_TICKS(200));
+        if (!s_canvas_req)
+            continue;   /* only a tap on the canvas fetches it */
+        s_canvas_req = false;
+        if (!s_ws_connected || !buf)
             continue;
-        /* on connect or session change, then every 30 s: each poll is a fresh TLS request */
-        STATE_LOCK();
-        bool same_run = !strcmp(seen_run, g_state.run_id);
-        snprintf(seen_run, sizeof(seen_run), "%s", g_state.run_id);
-        STATE_UNLOCK();
-        if (s_ws_attempt == seen_attempt && same_run && ++waited < 30)
-            continue;
-        seen_attempt = s_ws_attempt;
-        waited = 0;
         int len = 0;
         char path[96];
         const char *rp = (g_state.run_pinned && g_state.run_id[0]) ? g_state.run_id : NULL;

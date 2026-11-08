@@ -37,3 +37,6 @@ void net_set_mode(int mode);
 /* Interview mode: ask for the run's agents, pick one to talk to. */
 void net_agents_list(void);
 void net_interview_select(int agent_id);
+
+/* Fetch the canvas thumbnail once (only ever on a human tap). */
+void net_canvas_refresh(void);
