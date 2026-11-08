@@ -63,6 +63,16 @@ def test_append_read_count_and_run_ids(pg_log: PostgresEventLog) -> None:
     assert pg_log.run_ids() == ["r1", "r2"]
 
 
+def test_repeated_reads_do_not_create_prepared_statements(pg_log: PostgresEventLog) -> None:
+    pg_log.append("r", 1.0, "pixel", 1, {"x": 0, "y": 0, "color": 1})
+
+    for _ in range(20):
+        assert len(pg_log.read("r")) == 1
+
+    result = pg_log._conn.execute("SELECT count(*) FROM pg_prepared_statements").fetchone()
+    assert result is not None and result[0] == 0
+
+
 def test_postgres_projections_run_meta_and_canvas_reads(pg_log: PostgresEventLog) -> None:
     config = {"width": 16, "height": 12}
     pg_log.append("r", 1.0, "run.created", None, {"config": config})
