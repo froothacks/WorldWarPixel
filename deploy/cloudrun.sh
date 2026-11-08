@@ -5,9 +5,9 @@
 #
 #   APP_ENV_FILE=/path/outside/repo/app.env deploy/cloudrun.sh
 #
-# APP_ENV_FILE holds the app settings (KEY=value lines, same as the Modal secret) and must set
-# GOD_TOKEN: the service is public, and without it god mode is open to anyone with the URL. Keep
-# the file outside the repo so `gcloud builds submit` never uploads it with the build context.
+# APP_ENV_FILE holds the app settings (KEY=value lines, same as the Modal secret). Keep the file
+# outside the repo so `gcloud builds submit` never uploads it with the build context. GOD_TOKEN is
+# optional: without it god mode is open to anyone with the URL, same as the Modal deploy.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,8 +19,8 @@ REPO="${ARTIFACT_REPO:-worldwarpixel}"
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$(git rev-parse --short HEAD)"
 RUNTIME_SA="${CLOUD_RUN_SA:-worldwarpixel-run}@$PROJECT.iam.gserviceaccount.com"
 
-if [ -z "${APP_ENV_FILE:-}" ] || ! grep -q '^GOD_TOKEN=.\+' "$APP_ENV_FILE"; then
-  echo "APP_ENV_FILE must point to a KEY=value file that sets GOD_TOKEN" >&2
+if [ -z "${APP_ENV_FILE:-}" ]; then
+  echo "APP_ENV_FILE must point to a KEY=value file with the app settings" >&2
   exit 1
 fi
 case "$(realpath "$APP_ENV_FILE")" in "$PWD"/*) echo "APP_ENV_FILE must be outside the repo" >&2; exit 1;; esac
