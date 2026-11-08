@@ -174,20 +174,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             reasoning: Any = (
                 spec.reasoning_effort if spec.reasoning_effort is not None else NOT_GIVEN
             )
-            response = await pool_for(spec).create(
-                key,
-                messages=cast(list[ChatCompletionMessageParam], messages),
-                temperature=temperature,
-                timeout=settings.request_timeout,
-                max_tokens=omit if completion else limit,
-                max_completion_tokens=limit if completion else omit,
-                reasoning_effort=reasoning,
-                extra_body=(
-                    {"chat_template_kwargs": {"enable_thinking": False}}
-                    if spec.chat_template_kwargs
-                    else None
-                ),
-            )
+            pool = pool_for(spec)
+            try:
+                response = await pool.create(
+                    key,
+                    messages=cast(list[ChatCompletionMessageParam], messages),
+                    temperature=temperature,
+                    timeout=settings.request_timeout,
+                    max_tokens=omit if completion else limit,
+                    max_completion_tokens=limit if completion else omit,
+                    reasoning_effort=reasoning,
+                    extra_body=(
+                        {"chat_template_kwargs": {"enable_thinking": False}}
+                        if spec.chat_template_kwargs
+                        else None
+                    ),
+                )
+            finally:
+                pool.release(key)
             return response.choices[0].message.content or ""
 
         async def interview_chat(run: Run, messages: list[dict[str, str]]) -> str:

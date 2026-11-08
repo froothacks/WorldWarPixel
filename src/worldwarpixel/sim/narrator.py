@@ -102,6 +102,9 @@ class OpenAINarratorModel:
         # Shares the preset's endpoint cap with the agents so narrations count too.
         self._semaphore = semaphore
 
+    def close(self) -> None:
+        self._pool.release(self._route_key)
+
     async def complete(self, messages: list[ChatCompletionMessageParam]) -> str:
         if self._semaphore is None:
             return await self._complete(messages)
@@ -320,6 +323,10 @@ class Narrator:
         self._next_id = 1
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+
+    @property
+    def model(self) -> NarratorModel | None:
+        return self._model
 
     # -- lifecycle -------------------------------------------------------------------------
 

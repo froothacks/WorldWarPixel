@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -60,6 +61,44 @@ def test_swap_model_replaces_policy_and_records_event() -> None:
         events = run.log.read("m")
         changed = [e for e in events if e.kind == "god.model_changed"]
         assert changed and changed[-1].payload["model"] == "glm-5.3-flash"
+
+    asyncio.run(main())
+
+
+def test_swap_and_stop_close_routing_components() -> None:
+    class CloseablePolicy(RandomWalkPolicy):
+        def __init__(self, seed: int) -> None:
+            super().__init__(seed=seed)
+            self.closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    class CloseableNarratorModel:
+        def __init__(self) -> None:
+            self.closed = 0
+
+        async def complete(self, _messages: Any) -> str:
+            return "{}"
+
+        def close(self) -> None:
+            self.closed += 1
+
+    async def main() -> None:
+        config = CONFIG.model_copy(update={"policy": "llm", "model": "qwen"})
+        old_policy = CloseablePolicy(seed=1)
+        old_model = CloseableNarratorModel()
+        run = Run("m", config, EventLog(), old_policy, narrator_model=old_model)
+        new_policy = CloseablePolicy(seed=2)
+        new_model = CloseableNarratorModel()
+
+        run.swap_model(new_policy, new_model, "glm-5.3-flash")
+
+        assert old_policy.closed == 1
+        assert old_model.closed == 1
+        await run.stop()
+        assert new_policy.closed == 1
+        assert new_model.closed == 1
 
     asyncio.run(main())
 

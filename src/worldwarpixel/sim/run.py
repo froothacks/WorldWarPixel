@@ -34,6 +34,12 @@ by one core for the random policy (~100 turns/s)."""
 LIST_FIELDS = ("id", "name", "country", "color", "home_x", "home_y", "cooldown", "headline")
 
 
+def _close_if_supported(value: object | None) -> None:
+    close = getattr(value, "close", None)
+    if callable(close):
+        close()
+
+
 class RunConfig(BaseModel):
     width: int = Field(default=512, ge=16, le=4096)
     height: int = Field(default=320, ge=16, le=4096)
@@ -304,6 +310,17 @@ class Run:
 
     def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
         """Switch the LLM preset mid-run; agents and the narrator pick it up on next use."""
+        old_components = (self.policy, self.narrator.model)
+        new_components = (policy, narrator_model)
+        closed: set[int] = set()
+        for component in old_components:
+            if (
+                component is not None
+                and not any(component is new for new in new_components)
+                and id(component) not in closed
+            ):
+                closed.add(id(component))
+                _close_if_supported(component)
         self.policy = policy
         self.narrator.set_model(narrator_model)
         self.config = self.config.model_copy(update={"model": model})
@@ -515,6 +532,11 @@ class Run:
                 await t
         self._tasks = []
         await self.narrator.stop()
+        closed: set[int] = set()
+        for component in (self.policy, self.narrator.model):
+            if component is not None and id(component) not in closed:
+                closed.add(id(component))
+                _close_if_supported(component)
         self._running.set()
 
     def _set_state(self, state: RunState) -> None:

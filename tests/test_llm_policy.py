@@ -638,6 +638,19 @@ def test_rate_limited_agent_backs_off(monkeypatch: Any) -> None:
     assert llm_policy.RATE_LIMIT_BACKOFF[0] <= slept[0] <= llm_policy.RATE_LIMIT_BACKOFF[1]
 
 
+def test_close_releases_agent_routes() -> None:
+    from worldwarpixel.routing import EndpointPool
+
+    pool = EndpointPool.single(FakeClient([]), "m")
+    policy = LLMPolicy(pool, "m")
+    route_key = f"{policy._route_prefix}:agent"
+    pool.route(route_key)
+
+    policy.close()
+
+    assert pool.public_stats()["default"]["agents"] == 0
+
+
 def test_tool_calls_left_in_text_are_parsed_and_run() -> None:
     from worldwarpixel.sim.llm_policy import _text_tool_calls
 

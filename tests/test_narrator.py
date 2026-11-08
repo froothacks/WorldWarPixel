@@ -11,6 +11,7 @@ from openai import NOT_GIVEN
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
+from worldwarpixel.routing import EndpointPool
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
@@ -40,6 +41,16 @@ def test_narrator_max_tokens_is_passed_to_the_model() -> None:
     model = OpenAINarratorModel(client, "m", max_tokens=3000)  # type: ignore[arg-type]
     asyncio.run(model.complete([{"role": "user", "content": "hi"}]))
     assert completions.requests[0]["max_tokens"] == 3000
+
+
+def test_close_releases_narrator_route() -> None:
+    pool = EndpointPool.single(SimpleNamespace(), "m")
+    model = OpenAINarratorModel(pool, "m")
+    pool.route(model._route_key)
+
+    model.close()
+
+    assert pool.public_stats()["default"]["agents"] == 0
 
 
 def test_text_only_narrator_model_drops_the_canvas_image() -> None:
