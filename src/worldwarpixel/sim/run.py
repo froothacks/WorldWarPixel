@@ -63,6 +63,10 @@ class RunConfig(BaseModel):
     max_concurrency: int = Field(default=1000, ge=1, le=1000, description="Turns in flight at once")
     seed: int | None = None
     policy: Literal["llm", "random"] = "llm"
+    model: str = Field(
+        default="gpt-6-luna",
+        description="Model preset id from GET /models (qwen, deepseek, gpt-6-luna)",
+    )
     narrator_interval: float = Field(
         default=60.0, ge=5, le=3600, description="Seconds between narrator updates"
     )

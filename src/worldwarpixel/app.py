@@ -2,7 +2,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -15,10 +15,11 @@ from worldwarpixel.api import RunManager, random_policy
 from worldwarpixel.api import router as runs_router
 from worldwarpixel.config import Settings, get_settings
 from worldwarpixel.llm import ChatService
+from worldwarpixel.models import ModelSpec, find_model, model_available, model_registry
 from worldwarpixel.sim.agents import Policy
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.llm_policy import LLMPolicy
-from worldwarpixel.sim.narrator import OpenAINarratorModel
+from worldwarpixel.sim.narrator import NarratorModel, OpenAINarratorModel
 from worldwarpixel.sim.run import RunConfig
 from worldwarpixel.sim.stage import OpenAISpeech, SpeechSynth
 
@@ -83,6 +84,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     speech: SpeechSynth | None = (
         OpenAISpeech(tts, settings.tts_model, settings.request_timeout) if tts else None
     )
+    specs = model_registry(settings)
+    app.state.model_specs = specs
+    # One client per model preset, created lazily and shared by every run using it.
+    clients: dict[str, AsyncOpenAI] = {}
+
+    def client_for(spec: ModelSpec) -> AsyncOpenAI:
+        client = clients.get(spec.id)
+        if client is None:
+            if spec.auth == "modal":
+                client = AsyncOpenAI(
+                    api_key="none",
+                    base_url=spec.base_url,
+                    timeout=settings.request_timeout,
+                    # Modal presets authenticate with their own headers, scoped to Modal
+                    # hosts so an overridden preset URL never receives the credentials.
+                    default_headers=settings.modal_headers_for(spec.base_url) or None,
+                )
+            else:
+                client = AsyncOpenAI(
+                    api_key=settings.openai_api_key.get_secret_value() or "none",
+                    base_url=spec.base_url,
+                    timeout=settings.request_timeout,
+                )
+            clients[spec.id] = client
+        return client
+
+    def resolve_model(config: RunConfig) -> ModelSpec:
+        spec = find_model(settings, config.model)
+        if spec is None:
+            known = ", ".join(s.id for s in specs)
+            raise HTTPException(422, f"unknown model {config.model!r}; choose one of: {known}")
+        if not model_available(settings, spec):
+            raise HTTPException(
+                400, f"model {spec.id!r} is unavailable: this server lacks its credentials"
+            )
+        return spec
+
     async with AsyncOpenAI(
         api_key=settings.api_key(),
         base_url=settings.openai_base_url,
@@ -92,36 +130,58 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.chat_service = ChatService(
             client, settings.openai_model, settings.max_concurrency
         )
-        agent_model = settings.agent_model or settings.openai_model
 
         def make_policy(config: RunConfig) -> Policy:
             if config.policy == "llm":
+                spec = resolve_model(config)
                 return LLMPolicy(
-                    client,
-                    agent_model,
+                    client_for(spec),
+                    spec.model,
                     timeout=settings.request_timeout,
                     vision=settings.agent_vision,
-                    max_tokens=settings.agent_max_tokens,
+                    max_tokens=(
+                        spec.max_tokens
+                        if spec.max_tokens is not None
+                        else settings.agent_max_tokens
+                    ),
+                    token_param=spec.token_param,
+                    chat_template_kwargs=spec.chat_template_kwargs,
+                    reasoning_effort=spec.reasoning_effort,
                 )
             return random_policy(config)
+
+        def make_narrator(config: RunConfig) -> NarratorModel | None:
+            if config.policy != "llm":
+                return None
+            spec = resolve_model(config)
+            return OpenAINarratorModel(
+                client_for(spec),
+                spec.model,
+                settings.request_timeout,
+                max_tokens=(
+                    spec.narrator_max_tokens
+                    if spec.narrator_max_tokens is not None
+                    else settings.narrator_max_tokens
+                ),
+                token_param=spec.token_param,
+                chat_template_kwargs=spec.chat_template_kwargs,
+                reasoning_effort=spec.reasoning_effort,
+            )
 
         app.state.runs = RunManager(
             EventLog(settings.event_log_path),
             settings.max_active_runs,
             make_policy,
-            OpenAINarratorModel(
-                client,
-                settings.narrator_model or settings.openai_model,
-                settings.request_timeout,
-                max_tokens=settings.narrator_max_tokens,
-            ),
-            speech,
-            stage_model(settings, client, tts),
+            make_narrator=make_narrator,
+            speech=speech,
+            stage_model=stage_model(settings, client, tts),
         )
         try:
             yield
         finally:
             await app.state.runs.shutdown()
+            for model_client in clients.values():
+                await model_client.close()
             if tts is not None:
                 await tts.close()
 
@@ -141,6 +201,21 @@ ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/models")
+async def list_models() -> list[dict[str, Any]]:
+    """The model presets runs can pick, with whether this server has their credentials."""
+    settings = get_settings()
+    return [
+        {
+            "id": spec.id,
+            "label": spec.label,
+            "model": spec.model,
+            "available": model_available(settings, spec),
+        }
+        for spec in app.state.model_specs
+    ]
 
 
 @app.get("/health/config")
@@ -172,7 +247,7 @@ async def chat_batch(body: BatchChatRequest, service: ChatServiceDep) -> BatchCh
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-API_PREFIXES = {"runs", "chat", "health", "docs", "redoc", "openapi.json"}
+API_PREFIXES = {"runs", "chat", "health", "models", "docs", "redoc", "openapi.json"}
 
 
 async def frontend(path: str) -> FileResponse:

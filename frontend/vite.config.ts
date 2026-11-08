@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       "/runs": { target: backend, ws: true },
       "/health": backend,
+      "/models": backend,
     },
   },
 });
