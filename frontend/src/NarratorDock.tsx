@@ -98,7 +98,7 @@ export default function NarratorDock({ narrator, paused, onHighlight, onAsk }: P
         <span className="spacer" />
         {count > 1 && (
           <button type="button" className="text" onClick={() => setShowLog(!showLog)}>
-            {showLog ? "hide log" : `log (${count})`}
+            {showLog ? "Hide history" : `History (${count})`}
           </button>
         )}
       </div>
@@ -128,7 +128,7 @@ export default function NarratorDock({ narrator, paused, onHighlight, onAsk }: P
         />
         {error && <InlineError message={error} />}
         <button type="submit" disabled={pending || !narrator || !hasModel || !question.trim()}>
-          {pending ? "asking…" : "ask"}
+          {pending ? "Asking…" : "Ask"}
         </button>
       </form>
     </footer>
@@ -148,45 +148,47 @@ function UpdateItem({ update: u, open, onToggle, onHighlight }: ItemProps) {
   const hasDetail = u.bullets.length > 0 || events.length > 0 || u.question !== null || u.highlights.length > 0;
   return (
     <div className={`narr-item ${u.kind} ${open ? "open" : ""}`}>
-      <div className="narr-row">
-        <span className="narr-time">{time}</span>
-        {u.kind === "answer" && <span className="narr-kind">Answer</span>}
-        <button type="button" className="narr-headline" onClick={onToggle} disabled={!hasDetail} title={open ? "Collapse" : "Expand"}>
-          {u.headline}
-        </button>
+      <span className="narr-time">{time}</span>
+      <div className="narr-body">
+        <div className="narr-row">
+          {u.kind === "answer" && <span className="narr-kind">Answer</span>}
+          <button type="button" className="narr-headline" onClick={onToggle} disabled={!hasDetail} title={open ? "Collapse" : "Expand"}>
+            {u.headline}
+          </button>
+          {hasDetail && <span className="narr-toggle">{open ? "−" : "+"}</span>}
+        </div>
         {!open && u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
-        {hasDetail && <span className="narr-toggle">{open ? "−" : "+"}</span>}
-      </div>
-      {open && (
-        <div className="narr-detail">
-          {u.question && <div className="narr-question">{u.question}</div>}
-          {u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
-          {u.bullets.length > 0 && (
-            <ul className="narr-bullets">
-              {u.bullets.map((b, i) => (
-                <li key={i}>{b}</li>
-              ))}
-            </ul>
-          )}
-          {events.length > 0 && (
-            <details className="narr-events">
-              <summary>{events.length} events</summary>
-              <ul>
-                {events.map((e, i) => (
-                  <li key={i} className={`ev ev-${e.kind}`}>
-                    <span className="ev-kind">{EVENT_MARK[e.kind] ?? "·"}</span>
-                    {e.text}
-                  </li>
+        {open && (
+          <div className="narr-detail">
+            {u.question && <div className="narr-question">{u.question}</div>}
+            {u.highlights.length > 0 && <Chips highlights={u.highlights} onHighlight={onHighlight} />}
+            {u.bullets.length > 0 && (
+              <ul className="narr-bullets">
+                {u.bullets.map((b, i) => (
+                  <li key={i}>{b}</li>
                 ))}
               </ul>
-            </details>
-          )}
-          <span className="narr-note">
-            {u.kind === "update" && `last ${Math.round(u.window.seconds)}s: ${u.window.turns} turns, ${u.window.pixels} px, ${u.window.posts} posts`}
-            {u.source === "fallback" && (u.error ? " · stats only, model unavailable" : " · stats only")}
-          </span>
-        </div>
-      )}
+            )}
+            {events.length > 0 && (
+              <details className="narr-events">
+                <summary>{events.length} events</summary>
+                <ul>
+                  {events.map((e, i) => (
+                    <li key={i} className={`ev ev-${e.kind}`}>
+                      <span className="ev-kind">{EVENT_MARK[e.kind] ?? "·"}</span>
+                      {e.text}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            <span className="narr-note">
+              {u.kind === "update" && `last ${Math.round(u.window.seconds)}s: ${u.window.turns} turns, ${u.window.pixels} px, ${u.window.posts} posts`}
+              {u.source === "fallback" && (u.error ? " · stats only, model unavailable" : " · stats only")}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
