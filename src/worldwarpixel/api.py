@@ -85,7 +85,9 @@ class RunManager:
             return run
         task = self._loading.get(run_id)
         if task is None:
-            task = asyncio.create_task(asyncio.to_thread(restore_run, self.log, run_id))
+            task = asyncio.create_task(
+                asyncio.to_thread(restore_run, self.log, run_id, self.speech)
+            )
             self._loading[run_id] = task
             task.add_done_callback(lambda _: self._loading.pop(run_id, None))
         restored = await task
@@ -415,6 +417,8 @@ async def speak(
     run_id: str, body: SpeechRequest, manager: ManagerDep, _god: GodDep
 ) -> dict[str, bool]:
     run = await manager.fetch(run_id)
+    if run.state == "stopped":
+        raise HTTPException(409, "run is not running")
     try:
         run.speech.say(body.text, body.agent_id)
     except ValueError as e:

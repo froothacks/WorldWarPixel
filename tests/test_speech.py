@@ -239,6 +239,28 @@ def test_speech_api_websocket_audio_and_god_auth(
         time.sleep(0.01)
     assert run.speech.devices == 0
 
+    assert client.post(f"/runs/{run_id}/stop").json()["state"] == "stopped"
+    stopped = client.post(f"/runs/{run_id}/speak", json={"text": "Dropped"})
+    assert stopped.status_code == 409
+    assert stopped.json()["detail"] == "run is not running"
+
     monkeypatch.setenv("GOD_TOKEN", "panel-secret")
     get_settings.cache_clear()
     assert client.post(f"/runs/{run_id}/speak", json={"text": "Protected"}).status_code == 403
+
+
+def test_restored_run_uses_manager_speech_synth(client: TestClient) -> None:
+    run_id = client.post(
+        "/runs",
+        json={"width": 32, "height": 16, "agents": 3, "cooldown": 600, "policy": "random"},
+    ).json()["id"]
+    manager = cast(FastAPI, client.app).state.runs
+    run = manager.get(run_id)
+    assert not run.speech.state()["enabled"]
+    assert client.post(f"/runs/{run_id}/stop").json()["state"] == "stopped"
+    manager.speech = FakeSpeech()
+    manager.runs.pop(run_id)
+
+    restored = client.get(f"/runs/{run_id}/speech")
+    assert restored.status_code == 200
+    assert restored.json()["enabled"] is True

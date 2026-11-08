@@ -10,12 +10,13 @@ from worldwarpixel.sim.canvas import PixelWrite
 from worldwarpixel.sim.events import EventLog
 from worldwarpixel.sim.run import Run, RunConfig
 from worldwarpixel.sim.societies import Migration
+from worldwarpixel.sim.speech import SpeechSynth
 from worldwarpixel.sim.timelapse import iter_events
 
 REJECTED = "Tool call rejected"
 
 
-def restore_run(log: EventLog, run_id: str) -> Run | None:
+def restore_run(log: EventLog, run_id: str, speech: SpeechSynth | None = None) -> Run | None:
     """Replay a run's events into a stopped ``Run``; None if it is unknown or was deleted."""
     events = iter_events(log, run_id)
     first = next(iter(events), None)
@@ -25,7 +26,7 @@ def restore_run(log: EventLog, run_id: str) -> Run | None:
     config = RunConfig.model_validate(created["config"])
     # Runs logged before the roster was recorded fall back to re-seeding (exact only with a seed).
     roster = [AgentSpec(**a) for a in created.get("agents", [])]
-    run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None)
+    run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None, speech=speech)
     run.created_at = run.started_at = first.ts
     run.state = "stopped"
     stats, narrator, socs = run.stats, run.narrator, run.societies
