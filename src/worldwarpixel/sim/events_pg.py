@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import json
+import logging
+import queue
+import threading
+import time
 from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import Any
 
 import psycopg
 
 from worldwarpixel.sim.events import Event, EventStore, run_deltas
 from worldwarpixel.sim.migrations import migrate_postgres
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresEventLog(EventStore):
@@ -163,3 +169,109 @@ class PostgresEventLog(EventStore):
 
     def close(self) -> None:
         self._conn.close()
+
+
+_Row = tuple[str, float, str, int | None, Mapping[str, object]]
+"""One queued event: run id, timestamp, kind, agent id and JSON-able payload."""
+
+
+class BufferedPostgresEventLog(EventStore):
+    """Postgres event log that keeps appends off the caller's thread.
+
+    ``append`` only enqueues; a single writer thread drains the queue and inserts each flush in
+    one transaction, so a burst of pixel writes never blocks the asyncio loop on a DB round-trip.
+    Reads use a separate connection and only see flushed (committed) events.
+    """
+
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        flush_interval: float = 0.1,
+        batch_size: int = 2000,
+        initialize_schema: bool = True,
+    ) -> None:
+        if flush_interval <= 0:
+            raise ValueError("flush_interval must be positive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        self.database_url = database_url
+        self.flush_interval = flush_interval
+        self.batch_size = batch_size
+        self._reader = PostgresEventLog(database_url, initialize_schema=initialize_schema)
+        self._queue: queue.Queue[Any] = queue.Queue()
+        self._stop = object()
+        self._closed = False
+        self._thread = threading.Thread(target=self._writer, name="event-log-writer", daemon=True)
+        self._thread.start()
+
+    def append(
+        self, run_id: str, ts: float, kind: str, agent_id: int | None, payload: Mapping[str, object]
+    ) -> int:
+        self._queue.put((run_id, ts, kind, agent_id, payload))
+        return 0
+
+    def batch(self) -> AbstractContextManager[None]:
+        # The writer already groups each flush into one transaction.
+        return nullcontext()
+
+    def read(self, run_id: str, after_id: int = 0, limit: int = 1000) -> list[Event]:
+        return self._reader.read(run_id, after_id=after_id, limit=limit)
+
+    def count(self, run_id: str) -> int:
+        return self._reader.count(run_id)
+
+    def run_ids(self) -> list[str]:
+        return self._reader.run_ids()
+
+    def run_totals(self) -> list[tuple[str, float, int, int, int, int, int, int, bool, str | None]]:
+        return self._reader.run_totals()
+
+    def reader(self) -> PostgresEventLog:
+        """An unbuffered log on a new connection, for readers in other threads."""
+        return PostgresEventLog(self.database_url, initialize_schema=False)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._queue.put(self._stop)
+        self._thread.join(timeout=10)
+        self._reader.close()
+
+    def _writer(self) -> None:
+        log = PostgresEventLog(self.database_url, initialize_schema=False)
+        try:
+            while True:
+                batch: list[_Row] = []
+                deadline = time.monotonic() + self.flush_interval
+                stop = False
+                while True:
+                    wait = deadline - time.monotonic()
+                    if batch and wait <= 0:
+                        break
+                    try:
+                        item = self._queue.get(timeout=wait if batch else self.flush_interval)
+                    except queue.Empty:
+                        break
+                    if item is self._stop:
+                        stop = True
+                        break
+                    batch.append(item)
+                    if len(batch) >= self.batch_size:
+                        break
+                if batch:
+                    self._flush(log, batch)
+                if stop:
+                    break
+        finally:
+            log.close()
+
+    @staticmethod
+    def _flush(log: PostgresEventLog, batch: list[_Row]) -> None:
+        try:
+            with log.batch():
+                for row in batch:
+                    log.append(*row)
+        except Exception:
+            logger.exception("event log flush failed; dropped %d events", len(batch))

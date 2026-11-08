@@ -210,7 +210,11 @@ class EventLog:
 def open_event_log(settings: Settings) -> EventStore:
     """Open the configured event store: Postgres when DATABASE_URL is set, else SQLite."""
     if settings.database_url:
-        from worldwarpixel.sim.events_pg import PostgresEventLog
+        from worldwarpixel.sim.events_pg import BufferedPostgresEventLog
 
-        return PostgresEventLog(settings.database_url)
+        return BufferedPostgresEventLog(
+            settings.database_url,
+            flush_interval=settings.event_log_flush_interval,
+            batch_size=settings.event_log_batch_size,
+        )
     return EventLog(settings.event_log_path)

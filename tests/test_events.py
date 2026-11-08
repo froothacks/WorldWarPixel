@@ -88,10 +88,12 @@ def test_open_event_log_uses_postgres_when_database_url_is_set(
 ) -> None:
     from worldwarpixel.sim import events_pg
 
-    class FakePostgres:
-        def __init__(self, database_url: str) -> None:
+    class FakeBuffered:
+        def __init__(self, database_url: str, **kwargs: object) -> None:
             self.database_url = database_url
+            self.kwargs = kwargs
 
-    monkeypatch.setattr(events_pg, "PostgresEventLog", FakePostgres)
+    monkeypatch.setattr(events_pg, "BufferedPostgresEventLog", FakeBuffered)
     log = open_event_log(Settings(database_url="postgresql://example"))
     assert getattr(log, "database_url", None) == "postgresql://example"
+    assert getattr(log, "kwargs", {}).get("flush_interval") == 0.1

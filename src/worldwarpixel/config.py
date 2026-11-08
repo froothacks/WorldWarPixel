@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     event_log_path: str = "events.db"
     database_url: str | None = None
     """Postgres DSN for the event log; when set it replaces the SQLite event_log_path."""
+    event_log_flush_interval: float = 0.1
+    """Seconds the Postgres event writer waits to accumulate a batch before flushing."""
+    event_log_batch_size: int = 2000
+    """Max events the Postgres writer inserts per transaction."""
     max_active_runs: int = 4
 
     @property
