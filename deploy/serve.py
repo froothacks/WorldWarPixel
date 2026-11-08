@@ -1,6 +1,7 @@
-"""Restore and back up the event log for the Modal app and legacy Sandbox.
+"""Restore and back up the SQLite event log for the Modal app and legacy Sandbox.
 
-SQLite lives on the container's local disk (WAL needs real file locking, which a network Volume
+When DATABASE_URL selects Postgres, restore()/backup() are no-ops. SQLite lives on the
+container's local disk (WAL needs real file locking, which a network Volume
 does not promise). The Modal ASGI container calls ``restore()`` before app startup and backs up
 periodically and on exit. ``python serve.py`` remains the legacy server entrypoint, and
 ``python serve.py backup`` is used to retire its Sandbox. Backups are committed with ``sync``
