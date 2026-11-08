@@ -42,6 +42,31 @@ LEONFATTAKHOV = "LEONFATTAKHOV_"
 GLM_MODEL = "nvidia/GLM-5.3-Flash-NVFP4"
 GLM_SERVER = "ep-glm-5-3-flash-nvfp4-server"
 
+SAIL_BASE = "https://api.sailresearch.com/v1"
+SAIL_KEYS = 8
+# SAIL_API_KEY plus SAIL_API_KEY_2..SAIL_API_KEY_8: one endpoint per key, so several people's
+# Sail accounts share the load (keys that are not configured are simply skipped).
+
+
+def sail_endpoint(
+    index: int,
+    model: str,
+    *,
+    max_in_flight: int = 16,
+    initial_in_flight: int | None = None,
+) -> Endpoint:
+    """A Sail bearer endpoint for the ``index``-th API key (0 = SAIL_API_KEY)."""
+    secret = "SAIL_API_KEY" if index == 0 else f"SAIL_API_KEY_{index + 1}"
+    return Endpoint(
+        name="sail" if index == 0 else f"sail-{index + 1}",
+        base_url=SAIL_BASE,
+        model=model,
+        auth="bearer",
+        secrets=(secret,),
+        max_in_flight=max_in_flight,
+        initial_in_flight=initial_in_flight,
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
@@ -66,8 +91,6 @@ class ModelSpec:
     """Default narrator output budget; None falls back to Settings.narrator_max_tokens."""
     vision: bool = True
     """Show the model the canvas image (GLM reasons for minutes over images, so it gets text)."""
-    concurrency: int | None = None
-    """Cap on simultaneous model calls per preset; None means no preset cap."""
 
     @property
     def model(self) -> str:
@@ -100,24 +123,39 @@ def model_registry() -> list[ModelSpec]:
         ModelSpec(
             id="deepseek",
             label="DeepSeek V4.1 Flash",
+            # The shared endpoint 429s above ~16 concurrent calls; 8 each keeps the preset at 16.
             endpoints=(
                 modal_endpoint(
                     "advait-m",
                     "ep-deepseek-v4-1-flash-server",
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=ADVAIT,
+                    max_in_flight=8,
+                    initial_in_flight=8,
                 ),
                 modal_endpoint(
                     "leonfattakhov",
                     "ep-deepseek-v4-1-flash-server",
                     "deepseek-ai/DeepSeek-V4.1-Flash",
                     secret_prefix=LEONFATTAKHOV,
+                    max_in_flight=8,
+                    initial_in_flight=8,
                 ),
             ),
             max_tokens=3000,
             narrator_max_tokens=3000,
-            # The shared endpoint 429s above ~16 concurrent calls.
-            concurrency=16,
+        ),
+        ModelSpec(
+            id="deepseek-sail",
+            label="DeepSeek V4.1 Flash (Sail)",
+            endpoints=tuple(
+                sail_endpoint(i, "deepseek-ai/DeepSeek-V4.1-Flash-1017") for i in range(SAIL_KEYS)
+            ),
+            # Sail is not vLLM: the thinking hint is accepted but unnecessary (tool calls come
+            # back in ~3 s at the default 700-token budget, no reasoning burn like the Modal one).
+            chat_template_kwargs=False,
+            max_tokens=3000,
+            narrator_max_tokens=3000,
         ),
         ModelSpec(
             id="glm",

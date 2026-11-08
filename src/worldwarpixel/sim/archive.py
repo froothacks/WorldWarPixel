@@ -43,9 +43,11 @@ def restore_run(
     roster = [AgentSpec(**a) for a in created.get("agents", [])]
     run = Run(run_id, config, log, RandomWalkPolicy(seed=0), agents=roster or None, speech=speech)
     run.created_at = run.started_at = first.ts
+    run.last_event_at = first.ts
     run.state = "stopped"
     stats, narrator, socs = run.stats, run.narrator, run.societies
     for e in events:
+        run.last_event_at = e.ts
         p = cast(dict[str, Any], e.payload)
         if e.kind == "pixel":
             x, y = int(p["x"]), int(p["y"])
@@ -137,7 +139,19 @@ def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:
     """``Run.summary``-shaped rows for logged runs not in ``skip``, without replaying them."""
     rows = []
     for row in log.run_totals():
-        run_id, first_ts, pixels, posts, turns, errors, updates, answers, deleted, config = row
+        (
+            run_id,
+            first_ts,
+            pixels,
+            posts,
+            turns,
+            errors,
+            updates,
+            answers,
+            deleted,
+            config,
+            last_ts,
+        ) = row
         if run_id in skip or deleted or config is None:
             continue
         cfg = _stored_config(json.loads(config)).model_dump()
@@ -148,6 +162,7 @@ def archived_summaries(log: EventStore, skip: set[str]) -> list[dict[str, Any]]:
                 "config": cfg,
                 "created_at": first_ts,
                 "started_at": first_ts,
+                "last_event_at": last_ts,
                 "stats": {"pixels": pixels, "posts": posts, "turns": turns, "errors": errors},
                 "agents": cfg["agents"],
                 "threads": 0,

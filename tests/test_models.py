@@ -1,7 +1,14 @@
 import pytest
 
 from worldwarpixel.config import Settings
-from worldwarpixel.models import available_endpoints, find_model, model_available, model_registry
+from worldwarpixel.models import (
+    available_endpoints,
+    find_model,
+    model_available,
+    model_registry,
+    sail_endpoint,
+)
+from worldwarpixel.routing import modal_endpoint
 
 SECRETS = (
     "OPENAI_API_KEY",
@@ -13,6 +20,14 @@ SECRETS = (
     "MEGANWCHUN_MODAL_SECRET",
     "LEONFATTAKHOV_MODAL_KEY",
     "LEONFATTAKHOV_MODAL_SECRET",
+    "SAIL_API_KEY",
+    "SAIL_API_KEY_2",
+    "SAIL_API_KEY_3",
+    "SAIL_API_KEY_4",
+    "SAIL_API_KEY_5",
+    "SAIL_API_KEY_6",
+    "SAIL_API_KEY_7",
+    "SAIL_API_KEY_8",
 )
 
 
@@ -26,7 +41,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
 
 def test_registry_has_the_known_models_with_their_quirks() -> None:
     specs = {m.id: m for m in model_registry()}
-    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "glm"}
+    assert set(specs) == {"gpt-6-luna", "qwen", "deepseek", "deepseek-sail", "glm"}
 
     luna = specs["gpt-6-luna"]
     (openai,) = luna.endpoints
@@ -46,10 +61,26 @@ def test_registry_has_the_known_models_with_their_quirks() -> None:
 
     deepseek = specs["deepseek"]
     assert deepseek.max_tokens == 3000
-    # The shared DeepSeek endpoint 429s above ~16 concurrent calls; the preset caps it.
-    assert deepseek.concurrency == 16
-    assert specs["gpt-6-luna"].concurrency is None
-    assert specs["qwen"].concurrency is None
+    assert [(e.max_in_flight, e.initial_in_flight) for e in deepseek.endpoints] == [(8, 8), (8, 8)]
+    assert all(
+        (endpoint.max_in_flight, endpoint.initial_in_flight) == (16, None)
+        for spec in specs.values()
+        if spec.id != "deepseek"
+        for endpoint in spec.endpoints
+    )
+
+    sail = specs["deepseek-sail"]
+    assert sail.model == "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    assert not sail.chat_template_kwargs
+    assert sail.max_tokens == 3000 and sail.narrator_max_tokens == 3000
+    assert [e.name for e in sail.endpoints] == ["sail"] + [f"sail-{i}" for i in range(2, 9)]
+    assert [e.secrets for e in sail.endpoints] == [("SAIL_API_KEY",)] + [
+        (f"SAIL_API_KEY_{i}",) for i in range(2, 9)
+    ]
+    assert all(
+        e.auth == "bearer" and e.base_url == "https://api.sailresearch.com/v1"
+        for e in sail.endpoints
+    )
 
     glm = specs["glm"]
     assert glm.model == "nvidia/GLM-5.3-Flash-NVFP4"
@@ -97,6 +128,26 @@ def test_modal_endpoints_pair_secrets_with_their_workspace() -> None:
         "deepseek-ai/DeepSeek-V4.1-Flash",
         "deepseek-ai/DeepSeek-V4.1-Flash",
     ]
+    sail = find_model("deepseek-sail")
+    assert sail is not None
+    assert len(sail.endpoints) == 8
+    assert sail.endpoints[0].secrets == ("SAIL_API_KEY",)
+    assert sail.endpoints[7].secrets == ("SAIL_API_KEY_8",)
+
+
+def test_endpoint_factories_pass_through_concurrency_limits() -> None:
+    modal = modal_endpoint(
+        "workspace",
+        "server",
+        "model",
+        secret_prefix="",
+        max_in_flight=9,
+        initial_in_flight=3,
+    )
+    sail = sail_endpoint(0, "model", max_in_flight=7, initial_in_flight=2)
+
+    assert (modal.max_in_flight, modal.initial_in_flight) == (9, 3)
+    assert (sail.max_in_flight, sail.initial_in_flight) == (7, 2)
 
 
 def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,6 +156,11 @@ def test_availability_follows_credentials(monkeypatch: pytest.MonkeyPatch) -> No
 
     settings = _settings(monkeypatch, **{v: "x" for v in SECRETS})
     assert all(model_available(settings, m) for m in model_registry())
+
+    sail_spec = find_model("deepseek-sail")
+    assert sail_spec is not None
+    settings = _settings(monkeypatch, SAIL_API_KEY="sk", SAIL_API_KEY_3="sk3")
+    assert [e.name for e in available_endpoints(settings, sail_spec)] == ["sail", "sail-3"]
 
     settings = _settings(monkeypatch, MODAL_KEY="k", MODAL_SECRET="s")
     assert [m.id for m in model_registry() if model_available(settings, m)] == [

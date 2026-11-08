@@ -100,7 +100,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pools: dict[str, EndpointPool] = {}
     app.state.model_pools = pools
     clients: list[AsyncOpenAI] = []
-    semaphores: dict[str, asyncio.Semaphore] = {}
 
     def pool_for(spec: ModelSpec) -> EndpointPool:
         pool = pools.get(spec.id)
@@ -134,16 +133,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             client, settings.openai_model, settings.max_concurrency
         )
 
-        def semaphore_for(spec: ModelSpec) -> asyncio.Semaphore | None:
-            """One semaphore per preset shared by every run, so N runs can't multiply the cap."""
-            if spec.concurrency is None:
-                return None
-            sem = semaphores.get(spec.id)
-            if sem is None:
-                sem = asyncio.Semaphore(spec.concurrency)
-                semaphores[spec.id] = sem
-            return sem
-
         def make_policy(config: RunConfig) -> Policy:
             if config.policy in ("llm", "llm-guided"):
                 spec = resolve_model(config)
@@ -161,8 +150,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     token_param=spec.token_param,
                     chat_template_kwargs=spec.chat_template_kwargs,
                     reasoning_effort=spec.reasoning_effort,
-                    max_concurrency=spec.concurrency,
-                    semaphore=semaphore_for(spec),
                 )
             return random_policy(config)
 
@@ -216,6 +203,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return parse_names(raw, config.societies) or None
 
         app.state.interview_chat = interview_chat
+        app.state.realtime = (
+            tts
+            if tts is not None and not settings.tts_base_url and settings.interview_realtime_model
+            else None
+        )
+        app.state.realtime_model = settings.interview_realtime_model
         transcriber: Transcriber = NoTranscriber()
         if tts is not None and not settings.tts_base_url:
             transcriber = OpenAITranscriber(
@@ -244,7 +237,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 token_param=spec.token_param,
                 chat_template_kwargs=spec.chat_template_kwargs,
                 reasoning_effort=spec.reasoning_effort,
-                semaphore=semaphore_for(spec),
                 vision=spec.vision,
             )
 

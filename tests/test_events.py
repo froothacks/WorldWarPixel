@@ -125,9 +125,31 @@ def test_run_totals_track_appends_without_replacing_config() -> None:
         1,
         True,
         json.dumps(config, separators=(",", ":")),
+        9.0,
     )
     assert before_status == [expected]
     assert log.run_totals() == before_status
+    log.close()
+
+
+def test_run_last_ts_tracks_max_counted_event_timestamp() -> None:
+    log = EventLog()
+    log.append("r", 2.0, "run.created", None, {"config": {"width": 16}})
+    log.append("r", 8.0, "pixel", 1, {})
+    log.append("r", 5.0, "pixel", 1, {})
+
+    [row] = log.run_totals()
+    assert row[-1] == 8.0
+    log.close()
+
+
+def test_uncounted_only_run_gets_last_ts_from_its_first_upsert() -> None:
+    log = EventLog()
+    log.append("r", 1.0, "agent.status", 1, {"status": "idle"})
+    log.append("r", 2.0, "agent.status", 1, {"status": "thinking"})
+
+    [row] = log.run_totals()
+    assert row[-1] == 1.0
     log.close()
 
 

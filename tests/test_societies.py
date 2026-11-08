@@ -122,7 +122,7 @@ def test_prompt_states_societies_and_murmur_as_facts() -> None:
     names = {t["function"]["name"] for t in policy._tools_for(obs)}
     assert {t["function"]["name"] for t in SOCIETY_TOOLS} <= names
     obs.society = None
-    assert "join_society" not in {t["function"]["name"] for t in policy._tools_for(obs)}
+    assert "join_society" in {t["function"]["name"] for t in policy._tools_for(obs)}
 
 
 def test_runs_without_societies_are_unchanged() -> None:

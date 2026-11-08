@@ -138,6 +138,8 @@ static void parse_runs(const cJSON *arr)
             jstrncpy(ri->id, sizeof(ri->id), r, "id");
             ri->agents = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(r, "agents"));
             jstrncpy(ri->model, sizeof(ri->model), r, "model");
+            const cJSON *mins = cJSON_GetObjectItem(r, "minutes");
+            ri->minutes = cJSON_IsNumber(mins) ? (int)cJSON_GetNumberValue(mins) : -1;
             /* join society names */
             ri->soc_names[0] = 0;
             const cJSON *sn = cJSON_GetObjectItem(r, "societies");
@@ -392,6 +394,15 @@ static void handle_interview(const char *type, const cJSON *root)
         STATE_LOCK();
         convo_push(false, text);
         g_state.iv_status = audio ? IV_SPEAKING : IV_IDLE;
+        STATE_UNLOCK();
+    } else if (!strcmp(type, "interview.text")) {
+        /* realtime replies start speaking before their text is known */
+        STATE_LOCK();
+        if (g_state.n_convo && !g_state.convo[g_state.n_convo - 1].me)
+            snprintf(g_state.convo[g_state.n_convo - 1].text,
+                     sizeof(g_state.convo[0].text), "%s", text ? text : "");
+        else
+            convo_push(false, text);
         STATE_UNLOCK();
     } else if (!strcmp(type, "interview.audio_end")) {
         spk_end();

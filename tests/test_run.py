@@ -25,6 +25,12 @@ def test_pixel_interval_has_a_50_ms_minimum_and_default() -> None:
         RunConfig(pixel_interval=0.005)
 
 
+def test_summary_exposes_last_event_at() -> None:
+    run = Run("summary", CONFIG, EventLog(), RandomWalkPolicy(0), clock=lambda: 42.0)
+    run.record("pixel", 1, {})
+    assert run.summary()["last_event_at"] == 42.0
+
+
 async def _settle() -> None:
     await asyncio.sleep(0.1)
 

@@ -11,7 +11,7 @@ from openai import NOT_GIVEN
 
 from worldwarpixel.app import app
 from worldwarpixel.config import get_settings
-from worldwarpixel.routing import EndpointPool
+from worldwarpixel.routing import Endpoint, EndpointPool
 from worldwarpixel.sim.agents import RandomWalkPolicy
 from worldwarpixel.sim.canvas import Canvas, PixelWrite
 from worldwarpixel.sim.events import EventLog
@@ -84,7 +84,7 @@ def test_narrator_openai_reasoning_model_params() -> None:
     assert not request.get("extra_body")
 
 
-def test_narrator_complete_shares_the_preset_semaphore() -> None:
+def test_narrator_calls_share_the_endpoint_limit() -> None:
     active = 0
     peak = 0
 
@@ -98,11 +98,17 @@ def test_narrator_complete_shares_the_preset_semaphore() -> None:
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=_SlowCompletions()))
-    sem = asyncio.Semaphore(1)
-    narrators = [
-        OpenAINarratorModel(client, "m", semaphore=sem)  # type: ignore[arg-type]
-        for _ in range(2)
-    ]
+    endpoint = Endpoint(
+        "only",
+        "https://only/v1",
+        "m",
+        "bearer",
+        (),
+        max_in_flight=1,
+        initial_in_flight=1,
+    )
+    pool = EndpointPool([(endpoint, client)])
+    narrators = [OpenAINarratorModel(pool, "m") for _ in range(2)]
 
     async def main() -> None:
         await asyncio.gather(*(n.complete([{"role": "user", "content": "hi"}]) for n in narrators))
