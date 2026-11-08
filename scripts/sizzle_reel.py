@@ -891,6 +891,7 @@ async def _amain(args: argparse.Namespace) -> int:
                 else:
                     print(f"  vertex {r.run_id}: no result", file=sys.stderr)
 
+        analyzed_ids = {r.run_id for r in pool}
         usable = [
             r
             for r in pool
@@ -899,13 +900,17 @@ async def _amain(args: argparse.Namespace) -> int:
                 and (r.vertex.get("random_pixels") is True or r.vertex.get("useful") is False)
             )
         ]
-        if usable:
-            pool = usable
+        backfill = [
+            r
+            for r in sorted(runs, key=lambda r: r.score, reverse=True)
+            if r.run_id not in analyzed_ids
+        ]
+        candidates = usable + backfill or sorted(runs, key=lambda r: r.score, reverse=True)
 
         def combined(r: RunPick) -> float:
             return r.score + (_num(r.vertex or {}, "cinematic_score", 5.0) - 5.0) * 25.0
 
-        picked = sorted(pool, key=combined, reverse=True)[: max(1, args.top)]
+        picked = sorted(candidates, key=combined, reverse=True)[: max(1, args.top)]
     else:
         picked = sorted(runs, key=lambda r: r.score, reverse=True)[: max(1, args.top)]
     for i, r in enumerate(picked, 1):
