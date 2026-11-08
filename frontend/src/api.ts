@@ -277,4 +277,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(pace),
     }),
+  godModel: (id: string, model: string) =>
+    request<RunSummary>(`/runs/${id}/god/model`, {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    }),
 };

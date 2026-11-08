@@ -191,6 +191,13 @@ class Run:
         self._record("god.clear_board", GOD_ID, {})
         self.hub.publish("board.cleared")
 
+    def swap_model(self, policy: Policy, narrator_model: NarratorModel | None, model: str) -> None:
+        """Switch the LLM preset mid-run; agents and the narrator pick it up on next use."""
+        self.policy = policy
+        self.narrator.set_model(narrator_model)
+        self.config = self.config.model_copy(update={"model": model})
+        self._record("god.model_changed", GOD_ID, {"model": model})
+
     def god_announce(self, title: str, body: str) -> dict[str, Any]:
         """Post a thread as the human; agents see it on the board like any other thread."""
         post = self.board.post_thread(GOD_ID, title, body, self._clock())

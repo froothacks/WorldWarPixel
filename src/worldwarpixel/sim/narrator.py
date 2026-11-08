@@ -292,6 +292,10 @@ class Narrator:
             self._task = None
         self.next_update_at = None
 
+    def set_model(self, model: NarratorModel | None) -> None:
+        """Swap the model mid-run (god mode); the next digest uses it."""
+        self._model = model
+
     async def _loop(self) -> None:
         while True:
             self.next_update_at = self._clock() + self.interval

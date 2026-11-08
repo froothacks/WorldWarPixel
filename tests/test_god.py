@@ -49,6 +49,21 @@ def test_god_paint_erase_and_clear() -> None:
     asyncio.run(main())
 
 
+def test_swap_model_replaces_policy_and_records_event() -> None:
+    async def main() -> None:
+        config = CONFIG.model_copy(update={"policy": "llm", "model": "qwen"})
+        run = Run("m", config, EventLog(), RandomWalkPolicy(seed=1))
+        new_policy = RandomWalkPolicy(seed=2)
+        run.swap_model(new_policy, None, "deepseek")
+        assert run.config.model == "deepseek"
+        assert run.policy is new_policy
+        events = run.log.read("m")
+        changed = [e for e in events if e.kind == "god.model_changed"]
+        assert changed and changed[-1].payload["model"] == "deepseek"
+
+    asyncio.run(main())
+
+
 def test_god_board_and_pace() -> None:
     async def main() -> None:
         run = Run("g", CONFIG, EventLog(), RandomWalkPolicy(seed=1))
